@@ -84,6 +84,51 @@
   </div>
 
 
+  <!-- ===== ONBOARDING VIEW ===== -->
+<div id="view-onboard" class="view view-onboard" hidden>
+  <div class="onboard-wrap">
+    <div class="onboard-steps">
+      <div class="onboard-step-dot onboard-step-dot--active"></div>
+      <div class="onboard-step-dot"></div>
+      <div class="onboard-step-dot"></div>
+    </div>
+
+    <div class="onboard-page" id="onboard-page-1">
+      <div class="onboard-emoji">🎙️</div>
+      <h1 class="onboard-title">Chào mừng đến<br>ShadowEcho</h1>
+      <p class="onboard-desc">Luyện phát âm theo phương pháp shadowing chuyên nghiệp.<br>Nghe — nói — nhận phản hồi tức thì.</p>
+      <button class="onboard-btn-next" id="onboard-next-1">Bắt đầu →</button>
+      <button class="onboard-skip" id="onboard-skip">Bỏ qua</button>
+    </div>
+
+    <div class="onboard-page" id="onboard-page-2" hidden>
+      <div class="onboard-emoji">🌍</div>
+      <h1 class="onboard-title">Bạn đang học<br>ngôn ngữ nào?</h1>
+      <div class="onboard-lang-grid">
+        <button class="onboard-lang-btn" data-lang="de">🇩🇪<span>German</span></button>
+        <button class="onboard-lang-btn" data-lang="en">🇬🇧<span>English</span></button>
+        <button class="onboard-lang-btn" data-lang="fr">🇫🇷<span>French</span></button>
+        <button class="onboard-lang-btn" data-lang="es">🇪🇸<span>Spanish</span></button>
+        <button class="onboard-lang-btn" data-lang="ja">🇯🇵<span>Japanese</span></button>
+        <button class="onboard-lang-btn" data-lang="ko">🇰🇷<span>Korean</span></button>
+      </div>
+      <button class="onboard-btn-next" id="onboard-next-2">Tiếp tục →</button>
+    </div>
+
+    <div class="onboard-page" id="onboard-page-3" hidden>
+      <div class="onboard-emoji">💡</div>
+      <h1 class="onboard-title">Cách sử dụng</h1>
+      <ol class="onboard-tips">
+        <li><strong>Mở YouTube</strong> — chọn video ngôn ngữ bạn học</li>
+        <li><strong>Click Auto</strong> — tải phụ đề tự động</li>
+        <li><strong>Click Mic</strong> — cho phép truy cập microphone</li>
+        <li><strong>Click câu → Nói</strong> — xem điểm phát âm</li>
+      </ol>
+      <button class="onboard-btn-primary" id="onboard-finish">Bắt đầu luyện! 🚀</button>
+    </div>
+  </div>
+</div>
+
   <!-- ===== LIST VIEW (default) ===== -->
   <div id="view-list" class="view">
 
@@ -254,6 +299,7 @@
         <button class="record-close-btn" id="btn-record-close" aria-label="Close record panel">&#10005;</button>
       </div>
       <div class="you-said-label">YOU SAID</div>
+      <canvas id="waveform-canvas" class="waveform-canvas" width="280" height="50"></canvas>
       <div class="you-said-text" id="you-said-text"></div>
       <div class="record-panel-footer">
         <span class="match-pct" id="match-pct">Match &ndash;</span>
@@ -590,6 +636,61 @@
   <section class="pane" id="flash" hidden></section>
   <section class="pane" id="progress" hidden></section>
 
+
+  <!-- ===== UPGRADE MODAL ===== -->
+  <div class="upgrade-backdrop" id="upgrade-modal" hidden>
+    <div class="upgrade-card">
+      <button class="upgrade-close" id="upgrade-close">&#10005;</button>
+      <div class="upgrade-header">
+        <div class="upgrade-icon">⚡</div>
+        <h2 class="upgrade-title">Nâng cấp gói</h2>
+        <p class="upgrade-subtitle" id="upgrade-reason">Nâng cấp để dùng không giới hạn.</p>
+      </div>
+      <div class="upgrade-plans">
+        <div class="upgrade-plan">
+          <div class="upgrade-plan-name">Free</div>
+          <div class="upgrade-plan-price">$0</div>
+          <ul class="upgrade-plan-features">
+            <li>20 dịch/ngày</li>
+            <li>10 AI calls/ngày</li>
+            <li>Shadowing cơ bản</li>
+          </ul>
+        </div>
+        <div class="upgrade-plan upgrade-plan--basic">
+          <div class="upgrade-plan-name">Basic</div>
+          <div class="upgrade-plan-price">$4.99<span>/tháng</span></div>
+          <ul class="upgrade-plan-features">
+            <li>200 dịch/ngày</li>
+            <li>100 AI calls/ngày</li>
+            <li>Tất cả tính năng</li>
+          </ul>
+          <button class="upgrade-plan-btn" data-plan="basic">Chọn Basic</button>
+        </div>
+        <div class="upgrade-plan upgrade-plan--pro">
+          <div class="upgrade-plan-badge">⭐ Phổ biến</div>
+          <div class="upgrade-plan-name">Pro</div>
+          <div class="upgrade-plan-price">$9.99<span>/tháng</span></div>
+          <ul class="upgrade-plan-features">
+            <li>2,000 dịch/ngày</li>
+            <li>1,000 AI calls/ngày</li>
+            <li>Ưu tiên hỗ trợ</li>
+          </ul>
+          <button class="upgrade-plan-btn" data-plan="pro">Chọn Pro</button>
+        </div>
+        <div class="upgrade-plan upgrade-plan--lifetime">
+          <div class="upgrade-plan-name">Lifetime</div>
+          <div class="upgrade-plan-price">$49.99<span> 1 lần</span></div>
+          <ul class="upgrade-plan-features">
+            <li>Không giới hạn</li>
+            <li>Truy cập mãi mãi</li>
+            <li>Mọi tính năng tương lai</li>
+          </ul>
+          <button class="upgrade-plan-btn" data-plan="lifetime">Chọn Lifetime</button>
+        </div>
+      </div>
+      <p class="upgrade-contact">Liên hệ mua: <a href="mailto:contact@spiragiving.dev">contact@spiragiving.dev</a></p>
+    </div>
+  </div>
 
   <script src="content/freq-de.js"></script>
   <script src="vendor/vad-silero.js"></script>
