@@ -14,6 +14,11 @@
   **không lỗi console, bản dịch không bị lặp**. Chạy `npm run test:e2e`. CI chạy cả unit + E2E.
 - **🔧 Sửa nhiều bug (review 3 lớp):** chống tải lại/đua model Whisper, timeout chống treo,
   Google/Microsoft free dịch ổn định hơn, siết bảo mật Worker (encode query, validate UUID).
+- **🎤 Sửa "Chrome đang chặn micro":** Side Panel chạy ở origin của **extension** (không phải
+  youtube.com) nên bật mic cho YouTube KHÔNG có tác dụng, và Side Panel không hiện được hộp
+  thoại xin quyền. Thêm trang `mic-permission.html` (mở trong tab, có thanh địa chỉ) để cấp
+  quyền micro cho extension — cấp 1 lần là Side Panel dùng được. Nút **🎤 Cấp quyền micro**
+  hiện khi mic bị chặn.
 
 ## 🆕 v0.19.0 — Whisper tự chọn theo máy + nâng cấp dần + dịch ưu tiên YouTube
 

@@ -26,6 +26,16 @@
     return 'Không mở được micro: ' + ((error && error.message) || error || 'lỗi không xác định');
   }
 
+  // Mở trang xin quyền micro của extension (cùng origin với Side Panel).
+  // Hộp thoại micro hiện đúng trong TAB (có thanh địa chỉ) — Side Panel thì không.
+  function openMicPermissionPage() {
+    try {
+      const url = chrome.runtime.getURL('mic-permission.html');
+      if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url });
+      else window.open(url, '_blank');
+    } catch (_) {}
+  }
+
   async function enableMic(options) {
     const button = $('#micButton');
     try {
@@ -245,10 +255,10 @@
       let m = f.error, micFix = false;
       if (/server-unavailable/.test(f.error)) m = 'Cannot reach STT Server (' + f.error.replace('server-unavailable:', '') + '). Check server URL or switch Engine to Web Speech.';
       else if (/whisper-unavailable/.test(f.error)) m = 'Whisper not ready — run build-release to embed it, or switch Engine to Web Speech.';
-      else if (/^mic|not-allowed/.test(f.error)) { m = 'Cannot access microphone.'; micFix = true; }
+      else if (/^mic|not-allowed/.test(f.error)) { m = 'Side Panel cần quyền micro của <b>extension</b> (khác với quyền của youtube.com). Bấm nút bên dưới để cấp quyền.'; micFix = true; }
       else if (/empty-transcript/.test(f.error)) { m = '🤔 Nothing heard. Try speaking louder or check your mic.'; }
-      box.innerHTML = '<div class="err">⚠️ ' + m + (micFix ? ' <button class="mini sh" id="micfix">🎤 Enable mic</button>' : '') + '</div>';
-      if (micFix) $('#micfix').onclick = () => enableMic();
+      box.innerHTML = '<div class="err">⚠️ ' + m + (micFix ? ' <button class="mini sh" id="micfix">🎤 Cấp quyền micro</button>' : '') + '</div>';
+      if (micFix) $('#micfix').onclick = () => openMicPermissionPage();
       return;
     }
     const sc = f.score;
