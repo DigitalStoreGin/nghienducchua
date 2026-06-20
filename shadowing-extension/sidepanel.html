@@ -94,11 +94,18 @@
         <span class="brand-name">ShadowEcho</span>
       </div>
       <div class="list-topbar-right">
+        <!-- Streak + XP (gamification) -->
+        <div class="streak-xp" id="streak-xp" title="Streak & XP">
+          <span class="streak-flame" id="streak-count">🔥 0</span>
+          <span class="xp-chip" id="xp-count">⭐ 0</span>
+        </div>
+        <!-- Dark mode toggle -->
+        <button class="icon-btn dark-toggle" id="btn-dark-mode" title="Dark mode">🌙</button>
         <!-- conn-dot: JS does $('#conn').classList.toggle('on', ...) — we keep a wrapper with id="conn" -->
         <div id="conn" class="conn-wrap">
           <span class="conn-dot" id="conn-dot" title="Connection"></span>
         </div>
-        <button class="icon-btn" id="btn-open-menu" title="Menu" aria-label="Open menu">&#9776;</button>
+        <button class="icon-btn" id="btn-open-menu" title="Menu (M)" aria-label="Open menu">&#9776;</button>
       </div>
     </div>
 
@@ -120,6 +127,19 @@
         <span class="src-btn-icon">&#127908;</span> Mic
         <span class="mic-dot"></span>
       </button>
+    </div>
+
+    <!-- Search bar -->
+    <div class="search-bar" id="search-bar" hidden>
+      <input type="search" id="search-input" class="search-input" placeholder="🔍 Search subtitles…" autocomplete="off">
+    </div>
+
+    <!-- Sentence status filter bar -->
+    <div class="status-filter" id="status-filter" hidden>
+      <button class="sf-btn sf-btn--active" data-sf="all">All</button>
+      <button class="sf-btn" data-sf="new">🔵 New</button>
+      <button class="sf-btn" data-sf="learning">🟡 Learning</button>
+      <button class="sf-btn" data-sf="known">🟢 Known</button>
     </div>
 
     <!-- Status line — id="status" used by sidepanel.js -->
@@ -507,6 +527,60 @@
     </div>
   </div>
 
+
+  <!-- ===== SESSION STATS MODAL ===== -->
+  <div class="session-modal-backdrop" id="session-modal" hidden>
+    <div class="session-modal-card">
+      <button class="session-modal-close" id="session-modal-close">&#10005;</button>
+      <div class="session-modal-icon">🎉</div>
+      <h2 class="session-modal-title">Session Complete!</h2>
+      <div class="session-stats-grid">
+        <div class="session-stat">
+          <div class="session-stat-val" id="stat-sentences">0</div>
+          <div class="session-stat-label">Sentences</div>
+        </div>
+        <div class="session-stat">
+          <div class="session-stat-val" id="stat-avg-score">—</div>
+          <div class="session-stat-label">Avg Score</div>
+        </div>
+        <div class="session-stat">
+          <div class="session-stat-val" id="stat-best">—</div>
+          <div class="session-stat-label">Best Score</div>
+        </div>
+        <div class="session-stat">
+          <div class="session-stat-val" id="stat-xp-earned">+0 XP</div>
+          <div class="session-stat-label">XP Earned</div>
+        </div>
+      </div>
+      <div class="session-streak-row">
+        <span id="stat-streak-msg">Keep it up!</span>
+      </div>
+      <button class="session-modal-cta" id="session-modal-continue">Continue Practice</button>
+    </div>
+  </div>
+
+  <!-- ===== KEYBOARD SHORTCUT OVERLAY ===== -->
+  <div class="kbd-overlay" id="kbd-overlay" hidden>
+    <div class="kbd-card">
+      <div class="kbd-header">
+        <span>Keyboard Shortcuts</span>
+        <button class="kbd-close" id="kbd-close">&#10005;</button>
+      </div>
+      <div class="kbd-grid">
+        <div class="kbd-row"><kbd>Space</kbd><span>Record / Submit</span></div>
+        <div class="kbd-row"><kbd>Enter</kbd><span>Play / Pause</span></div>
+        <div class="kbd-row"><kbd>←</kbd><span>Previous sentence</span></div>
+        <div class="kbd-row"><kbd>→</kbd><span>Next sentence</span></div>
+        <div class="kbd-row"><kbd>↑ ↓</kbd><span>Change speed</span></div>
+        <div class="kbd-row"><kbd>R</kbd><span>Listen to model</span></div>
+        <div class="kbd-row"><kbd>L</kbd><span>Toggle loop</span></div>
+        <div class="kbd-row"><kbd>B</kbd><span>Hide/show text</span></div>
+        <div class="kbd-row"><kbd>S / Esc</kbd><span>Stop recording</span></div>
+        <div class="kbd-row"><kbd>M</kbd><span>Open menu</span></div>
+        <div class="kbd-row"><kbd>?</kbd><span>This cheat sheet</span></div>
+      </div>
+    </div>
+  </div>
 
   <!-- ===== LEGACY TAB PANES (hidden; sidepanel.js references these IDs) ===== -->
   <!-- sidepanel.js shows/hides these by tab; we keep them hidden and the menu

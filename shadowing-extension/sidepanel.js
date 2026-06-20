@@ -189,9 +189,19 @@
   function isFav(t) { return favorites.some((f) => f.text === t); }
   function renderList() {
     const c = $('#list'); c.innerHTML = '';
+    const filtered = filterSentences();
+    // Show/hide filter + search bars
+    const filterBar = $('#status-filter'); if (filterBar) filterBar.hidden = !sentences.length;
+    const searchBar = $('#search-bar'); if (searchBar) searchBar.hidden = !sentences.length;
     if (!sentences.length) { c.innerHTML = '<div class="empty">No subtitles loaded. Click Auto / Live / File above.</div>'; return; }
-    sentences.forEach((s, i) => {
+    if (!filtered.length) { c.innerHTML = '<div class="empty">No sentences match the current filter.</div>'; return; }
+    filtered.forEach((s) => {
+      const i = sentences.indexOf(s);
       const row = document.createElement('div'); row.className = 'row' + (i === current ? ' cur' : ''); row.dataset.i = i;
+      // Status dot
+      const dot = document.createElement('span');
+      dot.className = 'row-status-dot ' + getSentStatus(s.text);
+      row.appendChild(dot);
       // Play button
       const playBtn = document.createElement('button'); playBtn.className = 'row-play-btn'; playBtn.textContent = '▶';
       playBtn.onclick = (e) => { e.stopPropagation(); cmd('select', { i }); openPractice(i); };
@@ -230,10 +240,37 @@
       return;
     }
     const sc = f.score;
-    const g = (l, v) => { const cls = v === '—' ? '' : (v >= 80 ? 'hi' : v >= 55 ? 'mid' : 'lo'); return '<div class="gauge ' + cls + '"><b>' + v + '</b><span>' + l + '</span></div>'; };
+    // Track XP and sentence status
+    if (sc.overall != null) {
+      recordPractice(sc.overall);
+      const curSent = sentences[current];
+      if (curSent) autoUpdateStatus(curSent.text, sc.overall);
+    }
+    // Animated score rings (like ELSA Speak)
+    const ring = (label, val) => {
+      const v = val == null || val === '—' ? null : +val;
+      const cls = v == null ? '' : (v >= 80 ? 'hi' : v >= 55 ? 'mid' : 'lo');
+      const pct = v == null ? 0 : v;
+      const r = 24, circ = 2 * Math.PI * r;
+      const offset = circ - (pct / 100) * circ;
+      return `<div class="score-ring">
+        <div class="score-ring-svg-wrap">
+          <svg width="58" height="58" viewBox="0 0 58 58">
+            <circle class="score-ring-track" cx="29" cy="29" r="${r}"/>
+            <circle class="score-ring-fill ${cls}" cx="29" cy="29" r="${r}"
+              stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"/>
+          </svg>
+          <div class="score-ring-val">${v == null ? '—' : v}</div>
+        </div>
+        <div class="score-ring-lbl">${label}</div>
+      </div>`;
+    };
     const words = sc.words.map((w) => '<span class="fw ' + w.status + '" title="heard: ' + esc(w.heard || '—') + '">' + esc(w.text) + '</span>').join(' ');
-    box.innerHTML = '<div class="scores">' + g('Pronunc.', sc.pronunciation) + g('Fluency', sc.fluency) + g('Intonation', sc.intonation == null ? '—' : sc.intonation) + g('Overall', sc.overall) + '</div>' +
-      '<div class="words">' + words + '</div><div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>';
+    box.innerHTML = '<div class="score-ring-wrap" style="position:relative">' +
+      ring('Overall', sc.overall) + ring('Pronunc.', sc.pronunciation) +
+      ring('Fluency', sc.fluency) + ring('Intonation', sc.intonation) + '</div>' +
+      '<div class="words">' + words + '</div>' +
+      '<div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>';
     // Update record panel
     const ys = $('#you-said-text'); if (ys) ys.textContent = sc.transcript || '–';
     const mp = $('#match-pct'); if (mp) mp.textContent = sc.overall != null ? 'Match ' + sc.overall + '%' : 'Match –';
@@ -254,7 +291,7 @@
     text.split(/(\s+)/).forEach((w) => {
       if (/^\s*$/.test(w)) { container.appendChild(document.createTextNode(w)); return; }
       const sp = document.createElement('span'); sp.className = 'w'; sp.textContent = w;
-      if (freqOn && !window.SD_FREQ_DE.isCommon(w)) sp.classList.add('freq-rare');
+      if (freqOn && window.SD_FREQ_DE && !window.SD_FREQ_DE.isCommon(w)) sp.classList.add('freq-rare');
       sp.onclick = (e) => { e.stopPropagation(); lookup(w, text, e.clientX, e.clientY); };
       container.appendChild(sp);
     });
@@ -531,6 +568,129 @@
     if (glossCache[word]) return glossCache[word];
     const g = await translateText(word, 'de', settings.nativeLang || 'vi');
     glossCache[word] = g; return g;
+  }
+
+  // ===== 🔥 STREAK & XP SYSTEM (Duolingo-style) =====
+  const STREAK_KEY = 'se_streak_v1';
+  let streakData = { streak: 0, lastDate: null, xp: 0, sessionXp: 0, sessionScores: [], sessionSentences: 0 };
+
+  async function loadStreak() {
+    const r = await chrome.storage.local.get(STREAK_KEY);
+    if (r[STREAK_KEY]) streakData = Object.assign(streakData, r[STREAK_KEY]);
+    renderStreak();
+  }
+
+  async function saveStreak() {
+    await chrome.storage.local.set({ [STREAK_KEY]: streakData });
+  }
+
+  function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+  async function recordPractice(score) {
+    const today = todayStr();
+    const xpEarned = score >= 80 ? 15 : score >= 60 ? 10 : 5;
+    streakData.xp += xpEarned;
+    streakData.sessionXp += xpEarned;
+    streakData.sessionSentences++;
+    streakData.sessionScores.push(score);
+
+    // Update streak
+    if (streakData.lastDate !== today) {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      streakData.streak = (streakData.lastDate === yesterday) ? streakData.streak + 1 : 1;
+      streakData.lastDate = today;
+    }
+    await saveStreak();
+    renderStreak();
+  }
+
+  function renderStreak() {
+    const sc = $('#streak-count'); if (sc) sc.textContent = '🔥 ' + (streakData.streak || 0);
+    const xc = $('#xp-count'); if (xc) xc.textContent = '⭐ ' + (streakData.xp || 0);
+  }
+
+  // ===== 🏷️ SENTENCE STATUS (LingQ-style: new/learning/known) =====
+  const SENT_STATUS_KEY = 'se_sent_status_v1';
+  let sentStatus = {};
+  let statusFilter = 'all';
+
+  async function loadSentStatus() {
+    const r = await chrome.storage.local.get(SENT_STATUS_KEY);
+    if (r[SENT_STATUS_KEY]) sentStatus = r[SENT_STATUS_KEY];
+  }
+
+  async function setSentStatus(text, status) {
+    const key = text.slice(0, 60);
+    const prev = sentStatus[key] || { practices: 0, bestScore: 0 };
+    sentStatus[key] = Object.assign(prev, { status, updatedAt: Date.now() });
+    await chrome.storage.local.set({ [SENT_STATUS_KEY]: sentStatus });
+    renderList();
+  }
+
+  function getSentStatus(text) {
+    return (sentStatus[text.slice(0, 60)] || {}).status || 'unseen';
+  }
+
+  function autoUpdateStatus(text, score) {
+    const current = getSentStatus(text);
+    const key = text.slice(0, 60);
+    const prev = sentStatus[key] || { practices: 0, bestScore: 0 };
+    prev.practices = (prev.practices || 0) + 1;
+    prev.bestScore = Math.max(prev.bestScore || 0, score);
+    prev.updatedAt = Date.now();
+    if (score >= 80) prev.status = 'known';
+    else if (score >= 50 || prev.practices >= 2) prev.status = 'learning';
+    else if (current === 'unseen') prev.status = 'new';
+    sentStatus[key] = prev;
+    chrome.storage.local.set({ [SENT_STATUS_KEY]: sentStatus });
+  }
+
+  // ===== 🌙 DARK MODE =====
+  async function loadDarkMode() {
+    const r = await chrome.storage.local.get('se_dark_mode');
+    if (r.se_dark_mode) applyDarkMode(true, false);
+  }
+
+  function applyDarkMode(on, save = true) {
+    document.body.classList.toggle('dark', on);
+    const btn = $('#btn-dark-mode'); if (btn) btn.textContent = on ? '☀️' : '🌙';
+    if (save) chrome.storage.local.set({ se_dark_mode: on });
+  }
+
+  // ===== 📊 SESSION STATS MODAL =====
+  function showSessionStats() {
+    const { sessionSentences, sessionScores, sessionXp, streak } = streakData;
+    if (!sessionSentences) return;
+    const avg = sessionScores.length ? Math.round(sessionScores.reduce((a, b) => a + b, 0) / sessionScores.length) : 0;
+    const best = sessionScores.length ? Math.max(...sessionScores) : 0;
+    const ss = $('#stat-sentences'); if (ss) ss.textContent = sessionSentences;
+    const sa = $('#stat-avg-score'); if (sa) sa.textContent = avg ? avg + '%' : '—';
+    const sb = $('#stat-best'); if (sb) sb.textContent = best ? best + '%' : '—';
+    const sx = $('#stat-xp-earned'); if (sx) sx.textContent = '+' + sessionXp + ' XP';
+    const sm = $('#stat-streak-msg'); if (sm) {
+      sm.textContent = streak >= 7 ? '🔥 ' + streak + ' day streak! Incredible!' :
+                       streak >= 3 ? '🔥 ' + streak + ' day streak! Keep going!' :
+                       streak === 1 ? 'Day 1! Start a streak!' : 'Great session!';
+    }
+    const modal = $('#session-modal'); if (modal) modal.hidden = false;
+  }
+
+  function resetSessionStats() {
+    streakData.sessionXp = 0;
+    streakData.sessionScores = [];
+    streakData.sessionSentences = 0;
+  }
+
+  // ===== 🔍 SUBTITLE SEARCH =====
+  let searchQuery = '';
+  function filterSentences() {
+    if (!searchQuery && statusFilter === 'all') return sentences;
+    return sentences.filter((s, i) => {
+      const matchSearch = !searchQuery || s.text.toLowerCase().includes(searchQuery.toLowerCase()) || (s.trans || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const status = getSentStatus(s.text);
+      const matchFilter = statusFilter === 'all' || status === statusFilter || (statusFilter === 'new' && status === 'unseen');
+      return matchSearch && matchFilter;
+    });
   }
 
   // ===== GĐ2: chép chính tả (dictation) =====
@@ -838,6 +998,42 @@
   { const b = $('#anki-export'); if (b) b.onclick = exportAnki; }
   { const b = $('#anki-sync'); if (b) b.onclick = exportAnkiConnect; }
 
+  // ===== New feature wiring =====
+
+  // Dark mode toggle
+  { const b = $('#btn-dark-mode'); if (b) b.onclick = () => { applyDarkMode(!document.body.classList.contains('dark')); }; }
+
+  // Keyboard overlay
+  { const b = $('#kbd-close'); if (b) b.onclick = () => { const o = $('#kbd-overlay'); if (o) o.hidden = true; }; }
+  document.addEventListener('click', (e) => {
+    const overlay = $('#kbd-overlay');
+    if (overlay && !overlay.hidden && e.target === overlay) overlay.hidden = true;
+  });
+
+  // Session stats modal
+  { const b = $('#session-modal-close'); if (b) b.onclick = () => { const m = $('#session-modal'); if (m) m.hidden = true; }; }
+  { const b = $('#session-modal-continue'); if (b) b.onclick = () => {
+    const m = $('#session-modal'); if (m) m.hidden = true;
+    resetSessionStats(); saveStreak();
+    showView('list');
+  }; }
+
+  // Search input
+  { const inp = $('#search-input'); if (inp) {
+    inp.addEventListener('input', () => { searchQuery = inp.value; renderList(); });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.value = ''; searchQuery = ''; renderList(); inp.blur(); } });
+  }; }
+
+  // Status filter buttons
+  document.querySelectorAll('.sf-btn').forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll('.sf-btn').forEach((b) => b.classList.remove('sf-btn--active'));
+      btn.classList.add('sf-btn--active');
+      statusFilter = btn.dataset.sf || 'all';
+      renderList();
+    };
+  });
+
   // ===== Auth state handler =====
   if (typeof ShadowAuth !== 'undefined') {
     ShadowAuth.onAuthStateChange(async (user) => {
@@ -904,9 +1100,16 @@
       case 'KeyL': e.preventDefault(); cmd('loop').then((r) => { if (r) { const b = $('#loop'); if (b) b.classList.toggle('on', !!r.loop); } }); break;
       case 'KeyB': e.preventDefault(); toggleBlur(); break;
       case 'KeyS': case 'Escape': e.preventDefault(); try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {} cmd('stop'); break;
+      case 'KeyM': e.preventDefault(); openMenu(); break;
+      case 'Slash': if (e.shiftKey) { e.preventDefault(); const o = $('#kbd-overlay'); if (o) o.hidden = !o.hidden; } break;
       default: break;
     }
   });
+  // Load persistent data
+  loadStreak();
+  loadSentStatus();
+  loadDarkMode();
+
   maybeOnboard();
   connectPort();
   // refresh() is called by auth state handler after login; skip here to avoid duplicate
