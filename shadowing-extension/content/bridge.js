@@ -86,9 +86,14 @@
   });
 
   // Tai phu de tu tracklist YouTube (fmt=json3) khi nguoi dung bam "Phu de tu dong"
+  // Gán bản dịch theo ĐIỂM GIỮA của cue: mỗi cue dịch thuộc đúng 1 câu -> tránh
+  // lặp bản dịch khi 1 câu dài bị tách thành nhiều câu con (splitLongSentence).
   function attachTrans(sentences, tcues) {
     for (const s of sentences) {
-      const parts = tcues.filter((c) => c.startMs < s.endMs && c.endMs > s.startMs).map((c) => c.text);
+      const parts = tcues.filter((c) => {
+        const mid = (c.startMs + c.endMs) / 2;
+        return mid >= s.startMs && mid < s.endMs;
+      }).map((c) => c.text);
       if (parts.length) s.trans = parts.join(' ').replace(/\s+/g, ' ').trim();
     }
   }

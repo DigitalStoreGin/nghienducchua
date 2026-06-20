@@ -282,7 +282,8 @@
       ring('Overall', sc.overall) + ring('Pronunc.', sc.pronunciation) +
       ring('Fluency', sc.fluency) + ring('Intonation', sc.intonation) + '</div>' +
       '<div class="words">' + words + '</div>' +
-      '<div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>';
+      '<div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>' +
+      (sc.lowConfidence ? '<div class="err" style="margin-top:6px">🤔 Nhận diện chưa chắc chắn — thử nói lại rõ hơn để chấm chính xác.</div>' : '');
     // Update record panel
     const ys = $('#you-said-text'); if (ys) ys.textContent = sc.transcript || '–';
     const mp = $('#match-pct'); if (mp) mp.textContent = sc.overall != null ? 'Match ' + sc.overall + '%' : 'Match –';
@@ -525,14 +526,17 @@
     return (typeof ShadowAuth !== 'undefined') ? ShadowAuth.workerHeaders() : { 'Content-Type': 'application/json' };
   }
 
+  // Khi đã hết quota trong phiên -> ngừng gọi lại (tránh spam 429 + bật modal liên tục).
+  let _quotaHitDeepL = false, _quotaHitAI = false;
+
   async function deeplTranslate(text, from, to) {
-    if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn()) return '';
+    if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn() || _quotaHitDeepL) return '';
     const tgt = DEEPL_TGT[to]; if (!tgt) return '';
     const body = { text, target_lang: tgt };
     if (DEEPL_TGT[from]) body.source_lang = DEEPL_TGT[from].split('-')[0];
     const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: workerHeaders(), body: JSON.stringify(body) });
     if (!r.ok) {
-      if (r.status === 429) { const j = await r.json(); showUpgradeModal('Đã hết hạn mức dịch hôm nay. Nâng cấp để tiếp tục.'); return ''; }
+      if (r.status === 429) { _quotaHitDeepL = true; try { await r.json(); } catch (_) {} showUpgradeModal('Đã hết hạn mức dịch hôm nay. Nâng cấp để tiếp tục.'); return ''; }
       throw new Error('worker-deepl-' + r.status);
     }
     const j = await r.json();
@@ -540,7 +544,7 @@
   }
 
   async function openrouterTranslate(text, from, to, model) {
-    if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn()) return '';
+    if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn() || _quotaHitAI) return '';
     const r = await fetch(WORKER_URL + '/ai-translate', {
       method: 'POST',
       headers: workerHeaders(),
@@ -553,7 +557,7 @@
       }),
     });
     if (!r.ok) {
-      if (r.status === 429) { showUpgradeModal('Đã hết hạn mức AI hôm nay. Nâng cấp để tiếp tục.'); return ''; }
+      if (r.status === 429) { _quotaHitAI = true; showUpgradeModal('Đã hết hạn mức AI hôm nay. Nâng cấp để tiếp tục.'); return ''; }
       throw new Error('worker-or-' + r.status);
     }
     const j = await r.json();
@@ -574,25 +578,32 @@
     const r = await fetch(url);
     if (!r.ok) throw new Error('google-' + r.status);
     const j = await r.json();
-    // j[0] = [[chunkDịch, chunkGốc, ...], ...]
-    return ((j && j[0]) || []).map((seg) => (seg && seg[0]) || '').join('').trim();
+    // j[0] = [[chunkDịch, chunkGốc, ...], ...] — chỉ map khi đúng dạng mảng (tránh throw khi bị chặn/HTML)
+    if (!j || !Array.isArray(j[0])) return '';
+    return j[0].map((seg) => (seg && seg[0]) || '').join('').trim();
   }
   let _msTok = null, _msTokAt = 0;
-  async function microsoftFreeTranslate(text, from, to) {
-    // Token JWT miễn phí từ edge.microsoft.com (hết hạn ~10 phút -> cache)
-    if (!_msTok || Date.now() - _msTokAt > 9 * 60 * 1000) {
+  async function msAuthToken(force) {
+    if (force || !_msTok || Date.now() - _msTokAt > 9 * 60 * 1000) {
       const tr = await fetch('https://edge.microsoft.com/translate/auth');
       if (!tr.ok) throw new Error('ms-auth-' + tr.status);
-      _msTok = (await tr.text()).trim(); _msTokAt = Date.now();
+      const tok = (await tr.text()).trim();
+      if (!tok) throw new Error('ms-auth-empty');
+      _msTok = tok; _msTokAt = Date.now();
     }
+    return _msTok;
+  }
+  async function microsoftFreeTranslate(text, from, to) {
     const url = 'https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=' +
       encodeURIComponent(from || '') + '&to=' + encodeURIComponent(to);
-    const r = await fetch(url, {
+    const doFetch = async (tok) => fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _msTok },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
       body: JSON.stringify([{ Text: text }]),
     });
-    if (!r.ok) { if (r.status === 401) _msTok = null; throw new Error('ms-' + r.status); }
+    let r = await doFetch(await msAuthToken(false));
+    if (r.status === 401) { _msTok = null; r = await doFetch(await msAuthToken(true)); } // token hết hạn -> lấy mới & thử lại 1 lần
+    if (!r.ok) throw new Error('ms-' + r.status);
     const j = await r.json();
     return ((j[0] && j[0].translations && j[0].translations[0] && j[0].translations[0].text) || '').trim();
   }

@@ -147,8 +147,9 @@
     const track = pickTrack(tracks, langPref);
     if (!track) { emit({ source: 'youtube', format: 'yt-error', reason: 'no-track', videoId: vid }); return; }
 
+    // Bỏ luôn &lang= cũ trong baseUrl rồi thêm lại 1 lần (tránh trùng tham số lang).
     const base = track.baseUrl
-      .replace(/&fmt=\w+/g, '').replace(/&pot=[^&]*/g, '').replace(/&tlang=[^&]*/g, '');
+      .replace(/&fmt=\w+/g, '').replace(/&pot=[^&]*/g, '').replace(/&tlang=[^&]*/g, '').replace(/&lang=[^&]*/g, '');
     const pot = await ensurePot(vid);
     const potParam = pot ? ('&pot=' + pot) : '';
     const url = base + '&fmt=json3' + potParam + '&c=WEB&lang=' + encodeURIComponent(track.languageCode || langPref || 'de');

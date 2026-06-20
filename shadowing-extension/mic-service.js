@@ -314,6 +314,7 @@
   let activeModelId = null;
   let targetModelId = null;
   let _pendingUpgrade = null;
+  let _warmupStarted = false;
 
   function getWorker() {
     if (worker) return worker;
@@ -343,6 +344,7 @@
     const target = pickWhisperModel(override);
     const threads = pickThreads();
     targetModelId = target.id;
+    _warmupStarted = true;
     try {
       const w = getWorker();
       const manual = override && override !== 'auto';
@@ -390,45 +392,49 @@
       r.fallback = true;
       return r;
     }
-    // Chọn tay -> đúng model đó. AUTO -> dùng model ĐÃ sẵn sàng (tiny lúc đầu,
-    // tự lên model phù hợp máy khi nạp xong ở nền) để khách không phải chờ.
+    // Chọn tay -> đúng model đó. AUTO -> KHÔNG ghim model (gửi undefined) để worker
+    // dùng pipe HIỆN TẠI (tiny lúc đầu, tự lên model phù hợp máy khi nạp xong ở nền) —
+    // tránh ghim nhầm model cũ làm worker nạp lại / tải song song 2 model nặng.
     const threads = pickThreads();
-    let modelId;
-    if (opts.whisperModel && opts.whisperModel !== 'auto') {
-      modelId = pickWhisperModel(opts.whisperModel).id;
-    } else {
-      // Nếu chưa warmup (activeModelId null) -> khởi động progressive ngay rồi dùng tiny.
-      if (!activeModelId) { try { warmupWhisper('auto'); } catch (_) {} }
-      modelId = activeModelId || TINY.id;
-    }
+    const manual = !!(opts.whisperModel && opts.whisperModel !== 'auto');
+    let transcribeModel; // undefined cho AUTO
+    if (manual) transcribeModel = pickWhisperModel(opts.whisperModel).id;
+    else if (!activeModelId && !_warmupStarted) { try { warmupWhisper('auto'); } catch (_) {} }
+    const labelModel = transcribeModel || activeModelId || TINY.id;
     const data = await recordRaw(opts.maxMs || 7000, opts.abortSignal, opts.vad), id = crypto.randomUUID();
     try {
       const result = await new Promise((resolve, reject) => {
         const w = getWorker();
+        let done = false;
+        const cleanup = () => {
+          try { w.removeEventListener('message', listener); } catch (_) {}
+          clearTimeout(to);
+          if (opts.abortSignal) { try { opts.abortSignal.removeEventListener('abort', onAbort); } catch (_) {} }
+        };
         const listener = (event) => {
           const msg = event.data || {};
-          if (msg.id !== id) return;
-          w.removeEventListener('message', listener);
+          if (msg.id !== id || done) return;
+          done = true; cleanup();
           if (msg.type === 'result') resolve(msg); else reject(new Error(msg.error || 'whisper-error'));
         };
+        const onAbort = () => { if (done) return; done = true; cleanup(); reject(new Error('recording-aborted')); };
+        // Lưới an toàn: worker treo/OOM -> không kẹt vĩnh viễn (rộng rãi cho lần tải model đầu).
+        const to = setTimeout(() => { if (done) return; done = true; cleanup(); reject(new Error('whisper-timeout')); }, 120000);
         w.addEventListener('message', listener);
+        if (opts.abortSignal) opts.abortSignal.addEventListener('abort', onAbort, { once: true });
         w.postMessage(
-          { type: 'transcribe', id, audio: data.audio16k, sampleRate: 16000, model: modelId, numThreads: threads, language: opts.language || 'german' },
+          { type: 'transcribe', id, audio: data.audio16k, sampleRate: 16000, model: transcribeModel, numThreads: threads, language: opts.language || 'german' },
           [data.audio16k.buffer]
         );
       });
-      activeModelId = result.model || modelId; // worker báo model thực tế đã dùng
+      activeModelId = result.model || activeModelId; // worker báo model thực tế đã dùng
       const txt = (result.text || '').trim();
-      // KIỂM TRA kết quả trước khi trả: nếu CÓ chữ nhưng là "ảo giác"/lặp vô nghĩa
-      // -> hạ xuống Web Speech (chuẩn hơn cho audio thật). Rỗng = khách chưa nói -> trả rỗng.
+      // KIỂM TRA kết quả: nếu CÓ chữ nhưng là "ảo giác"/lặp vô nghĩa -> vẫn trả TEXT THẬT
+      // của audio (Web Speech KHÔNG ghi lại được tiếng đã nói) nhưng gắn cờ lowConfidence
+      // để UI nhắc nói lại thay vì chấm điểm thấp oan. Rỗng = khách chưa nói.
       const V = root.ShadowValidate;
-      if (txt && V && V.classifyTranscript && V.classifyTranscript(txt) === 'bad') {
-        try {
-          const r = await webSpeech(Object.assign({}, opts, { engineLabel: 'webspeech (Whisper ảo giác)' }));
-          if (r && r.transcript && r.transcript.trim()) { r.fallback = true; r.whisperRejected = txt.slice(0, 80); return r; }
-        } catch (_) { /* Web Speech cũng lỗi -> dùng kết quả Whisper vậy */ }
-      }
-      return { transcript: txt, words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + shortFromId(result.model || modelId) };
+      const bad = !!(txt && V && V.classifyTranscript && V.classifyTranscript(txt) === 'bad');
+      return { transcript: txt, words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + shortFromId(result.model || labelModel), lowConfidence: bad };
     } catch (err) {
       // Whisper lỗi lúc chạy (hiếm) → hạ xuống Web Speech (phương án cuối) để không kẹt.
       const r = await webSpeech(Object.assign({}, opts, { engineLabel: 'webspeech (Whisper lỗi)' }));

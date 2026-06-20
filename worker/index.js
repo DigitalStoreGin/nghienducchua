@@ -37,6 +37,10 @@ export function parseSentryDsn(dsn) {
   return { key: m[1], host: m[2], projectId: m[3] };
 }
 
+// UUID v4-ish (Supabase user id) — chặn giá trị lạ chèn vào query PostgREST.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuid(v) { return typeof v === 'string' && UUID_RE.test(v); }
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -55,11 +59,18 @@ export default {
 
     // Public health check
     if (url.pathname === '/health') {
-      return json({ ok: true, version: '2.1.0', arch: 'supabase-jwt', features: ['ratelimit', 'error-log'] });
+      return json({ ok: true, version: '2.2.0', arch: 'supabase-jwt', features: ['ratelimit', 'error-log', 'log-ratelimit'] });
     }
 
-    // Public error/telemetry sink (no auth — but capped & rate-limited)
+    // Public error/telemetry sink (no auth) — giới hạn theo IP để chống lạm dụng.
     if (url.pathname === '/log') {
+      if (env.RATE_LIMITER) {
+        try {
+          const ip = request.headers.get('CF-Connecting-IP') || 'anon';
+          const { success } = await env.RATE_LIMITER.limit({ key: 'log:' + ip });
+          if (!success) return json({ error: 'rate_limited' }, 429);
+        } catch (_) { /* binding lỗi -> không chặn */ }
+      }
       return handleLog(request, env);
     }
 
@@ -152,7 +163,7 @@ async function handleMe(env, user) {
   try {
     const [profileRes, usageRes] = await Promise.all([
       fetch(
-        `${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=plan,email,full_name`,
+        `${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=plan,email,full_name`,
         {
           headers: {
             'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
@@ -161,7 +172,7 @@ async function handleMe(env, user) {
         }
       ),
       fetch(
-        `${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${user.id}&date=eq.${today()}&select=translation_count,ai_count`,
+        `${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${encodeURIComponent(user.id)}&date=eq.${today()}&select=translation_count,ai_count`,
         {
           headers: {
             'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
@@ -174,11 +185,12 @@ async function handleMe(env, user) {
     const profiles = profileRes.ok ? await profileRes.json() : [];
     const usages   = usageRes.ok   ? await usageRes.json()   : [];
     const profile  = profiles[0] || { plan: 'free', email: user.email };
+    const planName = profile.plan || 'free'; // tránh ?name=eq.undefined
     const usage    = usages[0]   || { translation_count: 0, ai_count: 0 };
 
     // Get plan quotas
     const planRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/plans?name=eq.${profile.plan}&select=daily_translations,daily_ai_calls,display_name`,
+      `${env.SUPABASE_URL}/rest/v1/plans?name=eq.${encodeURIComponent(planName)}&select=daily_translations,daily_ai_calls,display_name`,
       {
         headers: {
           'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
@@ -191,7 +203,7 @@ async function handleMe(env, user) {
 
     return json({
       email: profile.email || user.email,
-      plan: profile.plan,
+      plan: planName,
       planName: plan.display_name,
       usage: {
         translations: { used: usage.translation_count, limit: plan.daily_translations },
@@ -289,7 +301,7 @@ async function handleAdmin(request, pathname, env) {
   // POST /admin/upgrade  — upgrade a user's plan
   if (pathname === '/admin/upgrade') {
     const { user_id, plan, months } = body;
-    if (!user_id || !plan) return json({ error: 'missing user_id or plan' }, 400);
+    if (!isUuid(user_id) || !plan) return json({ error: 'invalid user_id or missing plan' }, 400);
 
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/admin_set_plan`, {
       method: 'POST',
@@ -307,10 +319,10 @@ async function handleAdmin(request, pathname, env) {
   // POST /admin/usage  — get a user's usage stats
   if (pathname === '/admin/usage') {
     const { user_id } = body;
-    if (!user_id) return json({ error: 'missing user_id' }, 400);
+    if (!isUuid(user_id)) return json({ error: 'invalid user_id' }, 400);
 
     const res = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${user_id}&order=date.desc&limit=30`,
+      `${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${encodeURIComponent(user_id)}&order=date.desc&limit=30`,
       {
         headers: {
           'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,

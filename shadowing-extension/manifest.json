@@ -101,6 +101,7 @@
       ],
       "matches": [
         "https://www.youtube.com/*",
+        "https://m.youtube.com/*",
         "https://www.netflix.com/*"
       ]
     }

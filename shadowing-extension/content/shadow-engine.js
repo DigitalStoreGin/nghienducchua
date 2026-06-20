@@ -180,6 +180,7 @@
         pitch: res.pitch || [], spokenMs: res.spokenMs, refMs: (s.endMs - s.startMs),
       });
       score.engine = res.engine;
+      score.lowConfidence = !!res.lowConfidence; // Whisper trả kết quả "ảo giác" -> UI nhắc nói lại
       this.emit('feedback', { score, sentence: s, rep: this.rep });
       root.SD.storage.addAttempt({
         text: s.text, transcript: res.transcript,

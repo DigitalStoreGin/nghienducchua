@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { OR_MODELS, allowedModel, parseSentryDsn } from '../worker/index.js';
+import { OR_MODELS, allowedModel, parseSentryDsn, isUuid } from '../worker/index.js';
+
+describe('isUuid — chặn user_id lạ chèn vào query PostgREST', () => {
+  it('UUID hợp lệ -> true', () => {
+    expect(isUuid('3f8b2c1a-1234-4abc-89de-0123456789ab')).toBe(true);
+  });
+  it('giá trị lạ / chèn filter -> false', () => {
+    expect(isUuid('123')).toBe(false);
+    expect(isUuid('eq.x&select=*')).toBe(false);
+    expect(isUuid('')).toBe(false);
+    expect(isUuid(undefined)).toBe(false);
+    expect(isUuid(null)).toBe(false);
+  });
+});
 
 describe('allowedModel — whitelist model OpenRouter', () => {
   it('giữ nguyên model hợp lệ', () => {
