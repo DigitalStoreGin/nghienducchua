@@ -418,7 +418,17 @@
         );
       });
       activeModelId = result.model || modelId; // worker báo model thực tế đã dùng
-      return { transcript: (result.text || '').trim(), words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + shortFromId(result.model || modelId) };
+      const txt = (result.text || '').trim();
+      // KIỂM TRA kết quả trước khi trả: nếu CÓ chữ nhưng là "ảo giác"/lặp vô nghĩa
+      // -> hạ xuống Web Speech (chuẩn hơn cho audio thật). Rỗng = khách chưa nói -> trả rỗng.
+      const V = root.ShadowValidate;
+      if (txt && V && V.classifyTranscript && V.classifyTranscript(txt) === 'bad') {
+        try {
+          const r = await webSpeech(Object.assign({}, opts, { engineLabel: 'webspeech (Whisper ảo giác)' }));
+          if (r && r.transcript && r.transcript.trim()) { r.fallback = true; r.whisperRejected = txt.slice(0, 80); return r; }
+        } catch (_) { /* Web Speech cũng lỗi -> dùng kết quả Whisper vậy */ }
+      }
+      return { transcript: txt, words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + shortFromId(result.model || modelId) };
     } catch (err) {
       // Whisper lỗi lúc chạy (hiếm) → hạ xuống Web Speech (phương án cuối) để không kẹt.
       const r = await webSpeech(Object.assign({}, opts, { engineLabel: 'webspeech (Whisper lỗi)' }));

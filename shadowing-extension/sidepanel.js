@@ -566,16 +566,56 @@
     return (j && j.responseData && j.responseData.translatedText) || '';
   }
 
+  // --- API dịch MIỄN PHÍ (không cần key), kiểu GTranslate (d4n3436/GTranslate) ---
+  // Chỉ dùng làm DỰ PHÒNG khi OpenRouter/DeepL lỗi hoặc trả kết quả sai.
+  async function googleFreeTranslate(text, from, to) {
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' +
+      encodeURIComponent(from || 'auto') + '&tl=' + encodeURIComponent(to) + '&dt=t&q=' + encodeURIComponent(text);
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('google-' + r.status);
+    const j = await r.json();
+    // j[0] = [[chunkDịch, chunkGốc, ...], ...]
+    return ((j && j[0]) || []).map((seg) => (seg && seg[0]) || '').join('').trim();
+  }
+  let _msTok = null, _msTokAt = 0;
+  async function microsoftFreeTranslate(text, from, to) {
+    // Token JWT miễn phí từ edge.microsoft.com (hết hạn ~10 phút -> cache)
+    if (!_msTok || Date.now() - _msTokAt > 9 * 60 * 1000) {
+      const tr = await fetch('https://edge.microsoft.com/translate/auth');
+      if (!tr.ok) throw new Error('ms-auth-' + tr.status);
+      _msTok = (await tr.text()).trim(); _msTokAt = Date.now();
+    }
+    const url = 'https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=' +
+      encodeURIComponent(from || '') + '&to=' + encodeURIComponent(to);
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _msTok },
+      body: JSON.stringify([{ Text: text }]),
+    });
+    if (!r.ok) { if (r.status === 401) _msTok = null; throw new Error('ms-' + r.status); }
+    const j = await r.json();
+    return ((j[0] && j[0].translations && j[0].translations[0] && j[0].translations[0].text) || '').trim();
+  }
+
+  function validTrans(out, src, from, to) {
+    return (typeof ShadowValidate !== 'undefined')
+      ? ShadowValidate.isValidTranslation(out, src, from, to)
+      : !!(out && String(out).trim());
+  }
+
   async function translateText(text, from, to) {
     if (!text) return '';
     const ck = from + '|' + to + '|' + text;
     if (transCache[ck]) return transCache[ck];
-    // Ưu tiên OpenRouter (AI) trước → DeepL → MyMemory (theo yêu cầu)
+    // LUÔN ưu tiên OpenRouter (AI) -> DeepL. Mỗi nguồn đều KIỂM TRA kết quả trước khi nhận;
+    // nếu rỗng/sai thì hạ xuống API miễn phí: Google -> Microsoft -> MyMemory (kiểu GTranslate).
     for (const m of OR_MODELS) {
-      try { const t = await openrouterTranslate(text, from, to, m); if (t) { transCache[ck] = t; return t; } } catch (e) {}
+      try { const t = await openrouterTranslate(text, from, to, m); if (validTrans(t, text, from, to)) { transCache[ck] = t; return t; } } catch (e) {}
     }
-    try { const d = await deeplTranslate(text, from, to); if (d) { transCache[ck] = d; return d; } } catch (e) {}
-    try { const t = await myMemoryTranslate(text, from, to); if (t) { transCache[ck] = t; return t; } } catch (e) {}
+    try { const d = await deeplTranslate(text, from, to); if (validTrans(d, text, from, to)) { transCache[ck] = d; return d; } } catch (e) {}
+    try { const g = await googleFreeTranslate(text, from, to); if (validTrans(g, text, from, to)) { transCache[ck] = g; return g; } } catch (e) {}
+    try { const ms = await microsoftFreeTranslate(text, from, to); if (validTrans(ms, text, from, to)) { transCache[ck] = ms; return ms; } } catch (e) {}
+    try { const t = await myMemoryTranslate(text, from, to); if (validTrans(t, text, from, to)) { transCache[ck] = t; return t; } } catch (e) {}
     // Tất cả nguồn dịch đều thất bại — báo về Worker /log để theo dõi
     try { if (self.ShadowReport) self.ShadowReport.error('all-translate-failed', { from, to, len: text.length }, 'translateText'); } catch (_) {}
     return '';
