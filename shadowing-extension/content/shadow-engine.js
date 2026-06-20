@@ -139,7 +139,8 @@
         const LANG = { de: 'de-DE', en: 'en-US', fr: 'fr-FR', es: 'es-ES', it: 'it-IT', ja: 'ja-JP', ko: 'ko-KR', zh: 'zh-CN', ru: 'ru-RU', nl: 'nl-NL' };
         const tgt = this.settings?.targetLang || 'de';
         const recPromise = root.SD.speech.recognize({
-          maxMs, engine: this.settings?.engine || 'webspeech',
+          maxMs, engine: this.settings?.engine || 'whisper',
+          whisperModel: this.settings?.whisperModel || 'auto',
           lang: LANG[tgt] || (tgt + '-' + tgt.toUpperCase()),
           lang2: tgt,
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',

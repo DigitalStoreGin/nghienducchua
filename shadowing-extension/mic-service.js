@@ -291,6 +291,45 @@
     return { transcript: (result.text || '').trim(), words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'server' };
   }
 
+  // ── Phát hiện cấu hình máy & chọn model Whisper phù hợp ───────────────
+  //  Mục tiêu: chạy mượt trên máy 4GB–8GB. transformers.js v2 chạy WASM (CPU).
+  //  Chọn model MẠNH NHẤT mà máy vẫn chạy được; Web Speech chỉ là phương án CUỐI.
+  let _hwCache = null;
+  function detectHardware() {
+    if (_hwCache) return _hwCache;
+    const mem = navigator.deviceMemory || 4;          // GB (Chrome giới hạn tối đa 8)
+    const cores = navigator.hardwareConcurrency || 2; // số luồng CPU
+    const gpu = !!(navigator.gpu);                     // WebGPU (dự phòng nâng cấp v3)
+    const coi = !!self.crossOriginIsolated;            // cho phép WASM đa luồng?
+    _hwCache = { mem, cores, gpu, coi };
+    return _hwCache;
+  }
+
+  // Bảng model: tiny(~75MB) < base(~145MB) < small(~480MB). Bản quantized (int8).
+  const WHISPER_MODELS = {
+    tiny:  { id: 'Xenova/whisper-tiny',  label: 'Tiny (nhẹ, máy yếu)',  short: 'tiny' },
+    base:  { id: 'Xenova/whisper-base',  label: 'Base (cân bằng)',       short: 'base' },
+    small: { id: 'Xenova/whisper-small', label: 'Small (mạnh nhất)',     short: 'small' },
+  };
+
+  // Tự chọn theo RAM + số nhân CPU. Có thể ép bằng override ('tiny'|'base'|'small').
+  function pickWhisperModel(override) {
+    if (override && override !== 'auto' && WHISPER_MODELS[override]) return WHISPER_MODELS[override];
+    const { mem, cores } = detectHardware();
+    if (mem >= 8 && cores >= 8) return WHISPER_MODELS.small; // máy mạnh: model mạnh nhất
+    if (mem >= 6 && cores >= 4) return WHISPER_MODELS.base;  // 6–8GB phổ thông
+    if (mem >= 4 && cores >= 4) return WHISPER_MODELS.base;  // 4GB nhiều nhân: vẫn chạy base tốt
+    if (mem >= 4)               return WHISPER_MODELS.tiny;  // 4GB ít nhân: nhẹ cho mượt
+    return WHISPER_MODELS.tiny;                              // máy yếu hơn
+  }
+
+  // Số luồng WASM: chỉ >1 khi crossOriginIsolated (có SharedArrayBuffer).
+  function pickThreads() {
+    const hw = detectHardware();
+    if (!hw.coi) return 1;
+    return Math.max(1, Math.min(4, hw.cores - 1));
+  }
+
   function getWorker() {
     if (worker) return worker;
     worker = new Worker(chrome.runtime.getURL('whisper-worker.js'), { type: 'module' });
@@ -299,6 +338,16 @@
       if (msg.type === 'progress' && onProgress) onProgress(msg.status, msg.progress);
     });
     return worker;
+  }
+
+  // Nạp sẵn model (tải + khởi tạo) để lần ghi âm đầu không phải chờ.
+  async function warmupWhisper(override) {
+    if (!(await isWhisperAvailable())) return false;
+    const sel = pickWhisperModel(override);
+    try {
+      getWorker().postMessage({ type: 'warmup', model: sel.id, numThreads: pickThreads() });
+      return true;
+    } catch (_) { return false; }
   }
 
   // Whisper co san khong? (vendor/transformers.min.js da duoc nhung qua build-release chua)
@@ -319,19 +368,31 @@
       r.fallback = true;
       return r;
     }
+    const sel = pickWhisperModel(opts.whisperModel);   // model theo cấu hình máy (hoặc override)
+    const threads = pickThreads();
     const data = await recordRaw(opts.maxMs || 7000, opts.abortSignal, opts.vad), id = crypto.randomUUID();
-    const result = await new Promise((resolve, reject) => {
-      const w = getWorker();
-      const listener = (event) => {
-        const msg = event.data || {};
-        if (msg.id !== id) return;
-        w.removeEventListener('message', listener);
-        if (msg.type === 'result') resolve(msg); else reject(new Error(msg.error || 'whisper-error'));
-      };
-      w.addEventListener('message', listener);
-      w.postMessage({ type: 'transcribe', id, audio: data.audio16k, sampleRate: 16000 }, [data.audio16k.buffer]);
-    });
-    return { transcript: (result.text || '').trim(), words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper' };
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const w = getWorker();
+        const listener = (event) => {
+          const msg = event.data || {};
+          if (msg.id !== id) return;
+          w.removeEventListener('message', listener);
+          if (msg.type === 'result') resolve(msg); else reject(new Error(msg.error || 'whisper-error'));
+        };
+        w.addEventListener('message', listener);
+        w.postMessage(
+          { type: 'transcribe', id, audio: data.audio16k, sampleRate: 16000, model: sel.id, numThreads: threads, language: opts.language || 'german' },
+          [data.audio16k.buffer]
+        );
+      });
+      return { transcript: (result.text || '').trim(), words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + sel.short };
+    } catch (err) {
+      // Whisper lỗi lúc chạy (hiếm) → hạ xuống Web Speech (phương án cuối) để không kẹt.
+      const r = await webSpeech(Object.assign({}, opts, { engineLabel: 'webspeech (Whisper lỗi)' }));
+      r.fallback = true; r.whisperError = String(err.message || err);
+      return r;
+    }
   }
 
   async function recognize(opts) {
@@ -375,6 +436,8 @@
           reply({ ok: true, state }); return;
         }
         if (msg.action === 'recognize') { reply({ ok: true, result: await recognize(msg.opts || {}) }); return; }
+        if (msg.action === 'warmup') { const ok = await warmupWhisper((msg.opts || {}).whisperModel); reply({ ok: true, started: ok }); return; }
+        if (msg.action === 'hardware') { reply({ ok: true, hw: detectHardware(), model: pickWhisperModel((msg.opts || {}).whisperModel) }); return; }
         if (msg.action === 'abort') { abortRecording(); reply({ ok: true }); return; }
         if (msg.action === 'finalize') { finalizeRecording(); reply({ ok: true }); return; }
         reply({ ok: false, error: 'unknown-action' });
@@ -383,5 +446,5 @@
     return true;
   });
 
-  root.ShadowMic = { ensureMic, recognize, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener };
+  root.ShadowMic = { ensureMic, recognize, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper };
 })(window);

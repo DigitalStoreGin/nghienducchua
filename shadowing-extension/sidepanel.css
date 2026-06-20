@@ -1917,3 +1917,11 @@ body.dark .flash-grade-btn--skip { background: #3c4043; color: #9aa0a6; }
 .flash-srs-badge--ok  { background: #e6f4ea; color: #137333; }
 
 /* dark mode onboarding (not needed — it has its own blue bg) */
+
+/* ── Hardware info / Whisper model selector ───────────────── */
+.setting-hw { padding: 4px 0 2px; }
+.setting-hw-text {
+  font-size: 11px; line-height: 1.4; color: #5f6368;
+  background: #f1f3f4; border-radius: 6px; padding: 6px 8px; display: block; width: 100%;
+}
+body.dark .setting-hw-text { color: #9aa0a6; background: #2a2b2e; }

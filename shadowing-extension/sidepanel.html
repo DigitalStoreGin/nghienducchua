@@ -428,12 +428,27 @@
 
         <!-- Speech Engine — id="engine" used by sidepanel.js -->
         <div class="setting-row">
-          <label class="setting-label" for="engine">Speech Engine</label>
+          <label class="setting-label" for="engine">Chấm phát âm</label>
           <select id="engine" class="setting-select">
-            <option value="webspeech">Web Speech</option>
-            <option value="server">Server</option>
-            <option value="whisper">Browser Whisper</option>
+            <option value="whisper">Whisper AI (khuyên dùng)</option>
+            <option value="webspeech">Web Speech (yếu — dự phòng)</option>
+            <option value="server">Server riêng</option>
           </select>
+        </div>
+
+        <!-- Whisper model — tự chọn theo cấu hình máy, có thể ép tay -->
+        <div class="setting-row">
+          <label class="setting-label" for="whisperModel">Model Whisper</label>
+          <select id="whisperModel" class="setting-select">
+            <option value="auto">Tự động (theo máy)</option>
+            <option value="tiny">Tiny — nhẹ (máy 4GB)</option>
+            <option value="base">Base — cân bằng</option>
+            <option value="small">Small — mạnh nhất (máy 8GB)</option>
+          </select>
+        </div>
+        <!-- Hiển thị máy đã phát hiện + model đang chọn -->
+        <div class="setting-row setting-hw" id="hwInfoRow">
+          <span class="setting-hw-text" id="hwInfo">Đang kiểm tra cấu hình máy…</span>
         </div>
 
         <!-- Silero VAD — id="silerovad" used by sidepanel.js -->

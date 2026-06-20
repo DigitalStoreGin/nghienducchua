@@ -1,12 +1,16 @@
 # vendor/ — thư viện chạy Whisper cục bộ (transformers.js + onnxruntime WASM)
 
-Whisper chạy 100% trong trình duyệt cần 2 thứ đặt sẵn ở đây (CSP của extension
-không cho tải script/wasm từ CDN ngoài lúc chạy):
+✅ **ĐÃ NHÚNG SẴN** — các file dưới đây đã có trong repo, bạn KHÔNG cần làm gì thêm.
+Chỉ cần load extension là engine Whisper chạy được ngay.
 
-- `transformers.min.js`  (thư viện @xenova/transformers 2.17.2)
-- các file `*.wasm` của onnxruntime-web (ort-wasm*.wasm)
+- `transformers.min.js`  (thư viện @xenova/transformers 2.17.2) — đã có
+- các file `*.wasm` của onnxruntime-web (ort-wasm*.wasm) — đã có
 
-## Cách lấy (chạy 1 lần)
+> Model Whisper (tiny/base/small) tự tải từ HuggingFace lần đầu chấm điểm rồi được
+> browser cache. Kích thước model được CHỌN TỰ ĐỘNG theo RAM/CPU của máy
+> (4GB→tiny/base, 8GB→small). Xem `mic-service.js` → `pickWhisperModel()`.
+
+## Cách lấy lại / cập nhật (nếu cần — đã có sẵn nên thường không cần)
 
 **Windows (PowerShell):** chuột phải `download-vendor.ps1` → Run with PowerShell
 hoặc trong thư mục này chạy:

@@ -10,7 +10,7 @@
   const $ = (s) => document.querySelector(s);
   const esc = (t) => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const WORKER_URL = (typeof CONFIG !== 'undefined' ? CONFIG.WORKER_URL : null) || 'https://nghienducchua-proxy.thoatran21012.workers.dev';
-  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, engine: 'webspeech', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
+  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, engine: 'whisper', whisperModel: 'auto', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
   let sentences = [], favorites = [], current = 0;
   let recState = ''; // trang thai engine hien tai (de phim Space biet nen ghi hay finalize)
   let port = null;
@@ -377,13 +377,21 @@
   bindSetting('rate', 'rate', 'num'); bindSetting('rep', 'repeat', 'num'); bindSetting('autonext', 'autoNext', 'bool');
   bindSetting('autorec', 'autoRecord', 'bool'); bindSetting('engine', 'engine', 'str'); bindSetting('offset', 'offsetMs', 'num');
   bindSetting('silerovad', 'useSileroVad', 'bool');
+  if ($('#whisperModel')) $('#whisperModel').onchange = () => {
+    settings.whisperModel = $('#whisperModel').value; cmd('settings', settings);
+    updateHwInfo();
+    // Nạp sẵn model mới chọn để lần ghi âm sau không phải chờ
+    try { if (settings.engine === 'whisper' && window.ShadowMic) window.ShadowMic.warmupWhisper(settings.whisperModel); } catch (_) {}
+  };
   bindSetting('target', 'targetLang', 'str'); bindSetting('native', 'nativeLang', 'str'); bindSetting('serverurl', 'serverUrl', 'str');
   $('#vsubs').onchange = (e) => { settings.videoSubs = e.target.checked; cmd('settings', settings); cmd('vsubs', { on: e.target.checked }); };
   $('#uilang').onchange = (e) => { settings.uiLang = e.target.value; cmd('settings', settings); applyI18n(settings.uiLang); };
   function applySettings() {
     $('#rate').value = settings.rate; $('#rep').value = settings.repeat; $('#autonext').checked = settings.autoNext;
     $('#autorec').checked = settings.autoRecord; $('#engine').value = settings.engine; $('#offset').value = settings.offsetMs;
+    if ($('#whisperModel')) $('#whisperModel').value = settings.whisperModel || 'auto';
     if ($('#silerovad')) $('#silerovad').checked = !!settings.useSileroVad;
+    updateHwInfo();
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
     $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;
     if ($('#serverurl')) $('#serverurl').value = settings.serverUrl || 'http://localhost:8000';
@@ -505,8 +513,10 @@
   // Khách hàng chỉ cần nhập License Key — không thấy DeepL/OpenRouter keys.
   const transCache = {};
   const OR_MODELS = [
+    'openai/gpt-oss-120b:free',
     'nvidia/nemotron-3-ultra-550b-a55b:free',
     'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
   ];
   const DEEPL_TGT = { vi: 'VI', en: 'EN-US', de: 'DE', fr: 'FR', es: 'ES', it: 'IT', ja: 'JA', zh: 'ZH', ko: 'KO' };
   const LANG_NAME = { vi: 'Vietnamese', en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean' };
@@ -560,10 +570,11 @@
     if (!text) return '';
     const ck = from + '|' + to + '|' + text;
     if (transCache[ck]) return transCache[ck];
-    try { const d = await deeplTranslate(text, from, to); if (d) { transCache[ck] = d; return d; } } catch (e) {}
+    // Ưu tiên OpenRouter (AI) trước → DeepL → MyMemory (theo yêu cầu)
     for (const m of OR_MODELS) {
       try { const t = await openrouterTranslate(text, from, to, m); if (t) { transCache[ck] = t; return t; } } catch (e) {}
     }
+    try { const d = await deeplTranslate(text, from, to); if (d) { transCache[ck] = d; return d; } } catch (e) {}
     try { const t = await myMemoryTranslate(text, from, to); if (t) { transCache[ck] = t; return t; } } catch (e) {}
     return '';
   }
@@ -1334,6 +1345,25 @@
     showView('list');
   }
 
+  // ===== Hiển thị cấu hình máy + model Whisper đã chọn =====
+  async function updateHwInfo() {
+    const el = $('#hwInfo'); if (!el) return;
+    if (!window.ShadowMic || !window.ShadowMic.detectHardware) { el.textContent = ''; return; }
+    try {
+      const avail = await window.ShadowMic.isWhisperAvailable();
+      const hw = window.ShadowMic.detectHardware();
+      const sel = window.ShadowMic.pickWhisperModel(settings.whisperModel);
+      const memTxt = hw.mem >= 8 ? '8GB+' : hw.mem + 'GB';
+      if (settings.engine !== 'whisper') {
+        el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân CPU';
+      } else if (!avail) {
+        el.textContent = '⚠️ Thiếu thư viện Whisper (vendor/) — đang dùng Web Speech tạm. Xem README.';
+      } else {
+        el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân → Whisper ' + sel.short.toUpperCase() + ' (' + sel.label + ')';
+      }
+    } catch (_) { el.textContent = ''; }
+  }
+
   // ===== Init =====
   if (window.ShadowMic) {
     window.ShadowMic.setLevelListener((level) => {
@@ -1341,6 +1371,11 @@
       const meter = $('#micLevel'); if (meter) meter.style.transform = 'scaleY(' + Math.max(.08, level).toFixed(2) + ')';
     });
     window.ShadowMic.setProgressListener((status, pct) => onProgress({ status, pct }));
+    // Nạp sẵn model Whisper khi mở panel (nếu đang dùng Whisper) để lần đầu nhanh
+    if (settings.engine === 'whisper' && window.ShadowMic.warmupWhisper) {
+      window.ShadowMic.warmupWhisper(settings.whisperModel);
+    }
+    updateHwInfo();
   }
   // Nut "Toi noi xong -> cham ngay": dung ghi am tuc thi nhung van cham diem
   {
