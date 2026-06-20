@@ -666,6 +666,214 @@
     if (save) chrome.storage.local.set({ se_dark_mode: on });
   }
 
+  // ===== 🎯 ONBOARDING =====
+  const ONBOARD_KEY = 'se_onboarding_v1';
+
+  async function checkOnboarding() {
+    const r = await chrome.storage.local.get(ONBOARD_KEY);
+    return !!r[ONBOARD_KEY];
+  }
+
+  async function completeOnboarding(selectedLang) {
+    if (selectedLang) {
+      const targetEl = document.getElementById('target');
+      if (targetEl) targetEl.value = selectedLang;
+      settings.targetLang = selectedLang;
+      await chrome.storage.local.set({ se_settings: settings });
+    }
+    await chrome.storage.local.set({ [ONBOARD_KEY]: true });
+    showView('list');
+  }
+
+  function initOnboardingUI() {
+    let selectedLang = 'de';
+
+    // Lang buttons
+    document.querySelectorAll('.onboard-lang-btn').forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll('.onboard-lang-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedLang = btn.dataset.lang;
+      };
+    });
+    // Set default selected
+    const defBtn = document.querySelector('.onboard-lang-btn[data-lang="de"]');
+    if (defBtn) defBtn.classList.add('selected');
+
+    // Step navigation
+    const goStep = (from, to) => {
+      const fp = document.getElementById('onboard-page-' + from);
+      const tp = document.getElementById('onboard-page-' + to);
+      if (fp) fp.hidden = true;
+      if (tp) { tp.hidden = false; }
+      // Update dots
+      const dots = document.querySelectorAll('.onboard-step-dot');
+      dots.forEach((d, i) => d.classList.toggle('onboard-step-dot--active', i === to - 1));
+    };
+
+    const n1 = document.getElementById('onboard-next-1'); if (n1) n1.onclick = () => goStep(1, 2);
+    const n2 = document.getElementById('onboard-next-2'); if (n2) n2.onclick = () => goStep(2, 3);
+    const skip = document.getElementById('onboard-skip'); if (skip) skip.onclick = () => completeOnboarding(selectedLang);
+    const finish = document.getElementById('onboard-finish'); if (finish) finish.onclick = () => completeOnboarding(selectedLang);
+  }
+
+  // ===== 💳 UPGRADE MODAL =====
+  function showUpgradeModal(reason) {
+    const modal = document.getElementById('upgrade-modal');
+    const reasonEl = document.getElementById('upgrade-reason');
+    if (reasonEl && reason) reasonEl.textContent = reason;
+    if (modal) modal.hidden = false;
+  }
+
+  function hideUpgradeModal() {
+    const modal = document.getElementById('upgrade-modal');
+    if (modal) modal.hidden = true;
+  }
+
+  function initUpgradeUI() {
+    const closeBtn = document.getElementById('upgrade-close');
+    if (closeBtn) closeBtn.onclick = hideUpgradeModal;
+
+    const backdrop = document.getElementById('upgrade-modal');
+    if (backdrop) backdrop.onclick = (e) => { if (e.target === backdrop) hideUpgradeModal(); };
+
+    // Plan buttons — open email contact
+    document.querySelectorAll('.upgrade-plan-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const plan = btn.dataset.plan;
+        const subject = encodeURIComponent('ShadowEcho Upgrade — ' + plan);
+        const body = encodeURIComponent('Hi, I want to upgrade to the ' + plan + ' plan.\n\nEmail: ' + (ShadowAuth.getUser()?.email || ''));
+        window.open('mailto:contact@spiragiving.dev?subject=' + subject + '&body=' + body, '_blank');
+      };
+    });
+
+    // btn-upgrade in menu
+    const upgradeMenuBtn = document.getElementById('btn-upgrade');
+    if (upgradeMenuBtn) upgradeMenuBtn.onclick = () => {
+      const slideMenu = document.getElementById('slide-menu');
+      const menuOverlay = document.getElementById('menu-overlay');
+      if (slideMenu) slideMenu.hidden = true;
+      if (menuOverlay) menuOverlay.hidden = true;
+      showUpgradeModal('Nâng cấp để có nhiều lượt dịch và AI hơn mỗi ngày.');
+    };
+  }
+
+  // ===== 🎵 WAVEFORM VISUALIZER =====
+  let waveAnimFrame = null;
+  let waveActive = false;
+  const waveHistory = new Float32Array(70).fill(0);
+
+  function startWaveform() {
+    waveActive = true;
+    const canvas = document.getElementById('waveform-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height, mid = H / 2;
+
+    function draw() {
+      if (!waveActive) return;
+      ctx.clearRect(0, 0, W, H);
+      // Shift history
+      for (let i = 0; i < waveHistory.length - 1; i++) waveHistory[i] = waveHistory[i + 1];
+      waveHistory[waveHistory.length - 1] = Math.random() * 0.7 + 0.1; // simulated amplitude
+
+      const grad = ctx.createLinearGradient(0, 0, W, 0);
+      grad.addColorStop(0, '#1a73e8');
+      grad.addColorStop(0.5, '#34a853');
+      grad.addColorStop(1, '#1a73e8');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      const step = W / waveHistory.length;
+      waveHistory.forEach((v, i) => {
+        const x = i * step;
+        const y = mid + Math.sin(i * 0.4 + Date.now() / 200) * v * (mid - 4);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      waveAnimFrame = requestAnimationFrame(draw);
+    }
+    draw();
+  }
+
+  function stopWaveform() {
+    waveActive = false;
+    if (waveAnimFrame) { cancelAnimationFrame(waveAnimFrame); waveAnimFrame = null; }
+    const canvas = document.getElementById('waveform-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Draw flat line
+    ctx.strokeStyle = '#dadce0';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height / 2);
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
+  }
+
+  // ===== 📚 FLASHCARD SRS (SM-2 simplified) =====
+  const FLASH_KEY = 'se_flashcards_v1';
+  let flashCards = [];
+  let currentFlashIdx = 0;
+  let flashRevealed = false;
+
+  async function loadFlashCards() {
+    const r = await chrome.storage.local.get([FLASH_KEY, 'se_favorites']);
+    const srsData = r[FLASH_KEY] || {};
+    const favs = r.se_favorites || [];
+
+    flashCards = favs.map((fav) => {
+      const srs = srsData[fav.text] || { interval: 1, ease: 2.5, due: 0, reviews: 0 };
+      return { text: fav.text, trans: fav.trans || '', srs };
+    });
+
+    // Sort: due first, then by due date ascending
+    const now = Date.now();
+    flashCards.sort((a, b) => {
+      const aDue = a.srs.due <= now;
+      const bDue = b.srs.due <= now;
+      if (aDue && !bDue) return -1;
+      if (!aDue && bDue) return 1;
+      return a.srs.due - b.srs.due;
+    });
+
+    currentFlashIdx = 0;
+    flashRevealed = false;
+    renderFlash();
+  }
+
+  async function gradeFlash(quality) { // quality: 0=hard, 3=good, 5=skip
+    if (!flashCards.length) return;
+    const card = flashCards[currentFlashIdx];
+    if (!card) return;
+
+    if (quality !== 5) {
+      const srs = card.srs;
+      if (quality === 0) { // Hard
+        srs.interval = Math.max(1, Math.round(srs.interval * 0.5));
+        srs.ease = Math.max(1.3, srs.ease - 0.2);
+      } else { // Good
+        srs.interval = Math.round(srs.interval * srs.ease);
+        srs.ease = Math.min(2.5 + 0.15, srs.ease + 0.1);
+      }
+      srs.due = Date.now() + srs.interval * 86400000;
+      srs.reviews = (srs.reviews || 0) + 1;
+
+      // Persist SRS data
+      const r = await chrome.storage.local.get(FLASH_KEY);
+      const all = r[FLASH_KEY] || {};
+      all[card.text] = srs;
+      await chrome.storage.local.set({ [FLASH_KEY]: all });
+    }
+
+    // Next card
+    currentFlashIdx = (currentFlashIdx + 1) % flashCards.length;
+    flashRevealed = false;
+    renderFlash();
+  }
+
   // ===== 📊 SESSION STATS MODAL =====
   function showSessionStats() {
     const { sessionSentences, sessionScores, sessionXp, streak } = streakData;
