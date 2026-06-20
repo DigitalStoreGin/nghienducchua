@@ -1,4 +1,22 @@
 
+## 🆕 v0.19.0 — Whisper tự chọn theo máy + nâng cấp dần + dịch ưu tiên YouTube
+
+- **🎙️ Chấm phát âm bằng Whisper, tự thích nghi máy khách:** mặc định engine là **Whisper**
+  (không còn Web Speech làm mặc định — Web Speech chỉ là phương án CUỐI khi thiếu thư viện).
+  Khi mở panel, extension **kiểm tra máy trước** (RAM/CPU qua `navigator.deviceMemory` &
+  `hardwareConcurrency`) rồi chọn model phù hợp: máy 4GB ít nhân → **tiny**, 4–6GB nhiều nhân →
+  **base**, 8GB+ & ≥8 nhân → **small**. Logic nằm ở `lib/whisper-select.js` (có unit test).
+- **⚡ Nâng cấp dần (nhanh mà vẫn chuẩn):** nạp **model nhỏ nhất (tiny ~75MB) TRƯỚC** để khách
+  ghi âm/chấm điểm được **ngay**, rồi **tự nâng lên model phù hợp máy Ở NỀN**. Worker giữ model
+  nhỏ chạy trong lúc tải model lớn, **swap nguyên tử** khi sẵn sàng — không bắt khách chờ tải
+  ~480MB mới dùng được. Ô cấu hình máy hiển thị `đang nâng lên SMALL…` rồi cập nhật khi xong.
+- **🌐 Dịch ưu tiên phụ đề tự động YouTube:** cả transcript được dịch sẵn bằng bản dịch tự động
+  của YouTube (`&tlang=`) — miễn phí, tức thì, không tốn quota. **Model (OpenRouter → DeepL →
+  MyMemory) chỉ dùng khi cần dịch lẻ** một từ / một câu theo yêu cầu.
+- **🛡️ Giám sát lỗi (Sentry) + rate limit + test tự động:** extension gửi lỗi về Worker `/log`
+  (chuyển tiếp Sentry nếu có `SENTRY_DSN`), Worker giới hạn burst 30 lần/60s mỗi user, và bộ
+  **unit test (Vitest) chạy tự động qua GitHub Actions** mỗi lần push.
+
 ## 🆕 v0.18.0 — Dịch đa nguồn (DeepL/LLM) + sửa bug "Luyện câu treo"
 
 - **🐛 Sửa bug treo:** lần chấm trước treo làm `busy` kẹt → bấm Luyện câu không phản hồi.

@@ -304,6 +304,16 @@
   function detectHardware() { return (_hwCache = _hwCache || WS.detectHardware()); }
   function pickWhisperModel(override) { return WS.pickWhisperModel(detectHardware(), override); }
   function pickThreads() { return WS.pickThreads(detectHardware()); }
+  const TINY = (WS.WHISPER_MODELS && WS.WHISPER_MODELS.tiny) || { id: 'Xenova/whisper-tiny', short: 'tiny' };
+  function shortFromId(id) { return String(id || '').replace('Xenova/whisper-', '') || 'base'; }
+
+  // ── Trạng thái nâng cấp dần ──────────────────────────────────────────
+  //  activeModelId : model ĐÃ sẵn sàng trong worker -> dùng để phiên dịch NGAY.
+  //  targetModelId : model phù hợp máy (đích nâng cấp).
+  //  _pendingUpgrade: chờ model nhỏ 'ready' rồi mới nạp đích Ở NỀN (tránh tải song song nặng).
+  let activeModelId = null;
+  let targetModelId = null;
+  let _pendingUpgrade = null;
 
   function getWorker() {
     if (worker) return worker;
@@ -311,18 +321,55 @@
     worker.addEventListener('message', (event) => {
       const msg = event.data || {};
       if (msg.type === 'progress' && onProgress) onProgress(msg.status, msg.progress);
+      // Model nhỏ đã sẵn sàng -> khách dùng được NGAY; nếu có đích, nạp đích Ở NỀN.
+      if (msg.type === 'ready') {
+        activeModelId = msg.model;
+        if (_pendingUpgrade && _pendingUpgrade.id !== msg.model) {
+          try { worker.postMessage({ type: 'upgrade', model: _pendingUpgrade.id, numThreads: _pendingUpgrade.threads }); } catch (_) {}
+        }
+        _pendingUpgrade = null;
+      }
+      // Model phù hợp máy đã nạp xong (ở nền) -> từ giờ phiên dịch dùng model mạnh hơn.
+      if (msg.type === 'upgraded') activeModelId = msg.model;
     });
     return worker;
   }
 
-  // Nạp sẵn model (tải + khởi tạo) để lần ghi âm đầu không phải chờ.
+  // Nạp sẵn model để lần ghi âm đầu không phải chờ.
+  //  Chế độ AUTO: nạp TINY trước (nhẹ ~75MB, sẵn sàng nhanh) cho khách dùng ngay,
+  //  rồi tự nâng cấp lên model PHÙ HỢP MÁY ở nền. Chọn tay (override) -> nạp đúng model đó.
   async function warmupWhisper(override) {
     if (!(await isWhisperAvailable())) return false;
-    const sel = pickWhisperModel(override);
+    const target = pickWhisperModel(override);
+    const threads = pickThreads();
+    targetModelId = target.id;
     try {
-      getWorker().postMessage({ type: 'warmup', model: sel.id, numThreads: pickThreads() });
+      const w = getWorker();
+      const manual = override && override !== 'auto';
+      if (manual || target.id === TINY.id) {
+        // Khách chọn tay, hoặc máy yếu chỉ hợp tiny -> nạp đúng 1 model.
+        activeModelId = activeModelId || TINY.id; // tạm dùng tiny tới khi 'ready'
+        _pendingUpgrade = null;
+        w.postMessage({ type: 'warmup', model: target.id, numThreads: threads });
+      } else {
+        // AUTO: tiny trước, đích phù hợp máy nâng cấp ở nền.
+        _pendingUpgrade = { id: target.id, threads };
+        w.postMessage({ type: 'warmup', model: TINY.id, numThreads: threads });
+      }
       return true;
     } catch (_) { return false; }
+  }
+
+  // Thông tin model cho UI: máy, model đích, model đang dùng (đã sẵn sàng).
+  function whisperStatus(override) {
+    const hw = detectHardware();
+    const target = pickWhisperModel(override);
+    return {
+      hw,
+      target: target.short,
+      active: activeModelId ? shortFromId(activeModelId) : null,
+      upgrading: !!(activeModelId && targetModelId && activeModelId !== targetModelId),
+    };
   }
 
   // Whisper co san khong? (vendor/transformers.min.js da duoc nhung qua build-release chua)
@@ -343,8 +390,17 @@
       r.fallback = true;
       return r;
     }
-    const sel = pickWhisperModel(opts.whisperModel);   // model theo cấu hình máy (hoặc override)
+    // Chọn tay -> đúng model đó. AUTO -> dùng model ĐÃ sẵn sàng (tiny lúc đầu,
+    // tự lên model phù hợp máy khi nạp xong ở nền) để khách không phải chờ.
     const threads = pickThreads();
+    let modelId;
+    if (opts.whisperModel && opts.whisperModel !== 'auto') {
+      modelId = pickWhisperModel(opts.whisperModel).id;
+    } else {
+      // Nếu chưa warmup (activeModelId null) -> khởi động progressive ngay rồi dùng tiny.
+      if (!activeModelId) { try { warmupWhisper('auto'); } catch (_) {} }
+      modelId = activeModelId || TINY.id;
+    }
     const data = await recordRaw(opts.maxMs || 7000, opts.abortSignal, opts.vad), id = crypto.randomUUID();
     try {
       const result = await new Promise((resolve, reject) => {
@@ -357,11 +413,12 @@
         };
         w.addEventListener('message', listener);
         w.postMessage(
-          { type: 'transcribe', id, audio: data.audio16k, sampleRate: 16000, model: sel.id, numThreads: threads, language: opts.language || 'german' },
+          { type: 'transcribe', id, audio: data.audio16k, sampleRate: 16000, model: modelId, numThreads: threads, language: opts.language || 'german' },
           [data.audio16k.buffer]
         );
       });
-      return { transcript: (result.text || '').trim(), words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + sel.short };
+      activeModelId = result.model || modelId; // worker báo model thực tế đã dùng
+      return { transcript: (result.text || '').trim(), words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + shortFromId(result.model || modelId) };
     } catch (err) {
       // Whisper lỗi lúc chạy (hiếm) → hạ xuống Web Speech (phương án cuối) để không kẹt.
       const r = await webSpeech(Object.assign({}, opts, { engineLabel: 'webspeech (Whisper lỗi)' }));
@@ -412,7 +469,7 @@
         }
         if (msg.action === 'recognize') { reply({ ok: true, result: await recognize(msg.opts || {}) }); return; }
         if (msg.action === 'warmup') { const ok = await warmupWhisper((msg.opts || {}).whisperModel); reply({ ok: true, started: ok }); return; }
-        if (msg.action === 'hardware') { reply({ ok: true, hw: detectHardware(), model: pickWhisperModel((msg.opts || {}).whisperModel) }); return; }
+        if (msg.action === 'hardware') { reply({ ok: true, hw: detectHardware(), model: pickWhisperModel((msg.opts || {}).whisperModel), status: whisperStatus((msg.opts || {}).whisperModel) }); return; }
         if (msg.action === 'abort') { abortRecording(); reply({ ok: true }); return; }
         if (msg.action === 'finalize') { finalizeRecording(); reply({ ok: true }); return; }
         reply({ ok: false, error: 'unknown-action' });
@@ -421,5 +478,5 @@
     return true;
   });
 
-  root.ShadowMic = { ensureMic, recognize, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper };
+  root.ShadowMic = { ensureMic, recognize, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper, whisperStatus };
 })(window);

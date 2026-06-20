@@ -1353,13 +1353,18 @@
     if (!window.ShadowMic || !window.ShadowMic.detectHardware) { el.textContent = ''; return; }
     try {
       const avail = await window.ShadowMic.isWhisperAvailable();
-      const hw = window.ShadowMic.detectHardware();
+      const st = window.ShadowMic.whisperStatus ? window.ShadowMic.whisperStatus(settings.whisperModel) : null;
+      const hw = (st && st.hw) || window.ShadowMic.detectHardware();
       const sel = window.ShadowMic.pickWhisperModel(settings.whisperModel);
       const memTxt = hw.mem >= 8 ? '8GB+' : hw.mem + 'GB';
       if (settings.engine !== 'whisper') {
         el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân CPU';
       } else if (!avail) {
         el.textContent = '⚠️ Thiếu thư viện Whisper (vendor/) — đang dùng Web Speech tạm. Xem README.';
+      } else if (st && st.upgrading && st.active) {
+        // Đang dùng model nhỏ, nâng lên model phù hợp máy ở nền.
+        el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân → Whisper ' + st.active.toUpperCase() +
+          ' (đang nâng lên ' + sel.short.toUpperCase() + '…)';
       } else {
         el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân → Whisper ' + sel.short.toUpperCase() + ' (' + sel.label + ')';
       }
@@ -1373,9 +1378,11 @@
       const meter = $('#micLevel'); if (meter) meter.style.transform = 'scaleY(' + Math.max(.08, level).toFixed(2) + ')';
     });
     window.ShadowMic.setProgressListener((status, pct) => onProgress({ status, pct }));
-    // Nạp sẵn model Whisper khi mở panel (nếu đang dùng Whisper) để lần đầu nhanh
+    // Nạp sẵn model Whisper khi mở panel: tiny trước (dùng ngay) -> nâng lên model
+    // phù hợp máy ở nền. Refresh UI vài lần để hiện trạng thái khi nâng cấp xong.
     if (settings.engine === 'whisper' && window.ShadowMic.warmupWhisper) {
       window.ShadowMic.warmupWhisper(settings.whisperModel);
+      let n = 0; const hwTimer = setInterval(() => { updateHwInfo(); if (++n >= 20) clearInterval(hwTimer); }, 1500);
     }
     updateHwInfo();
   }

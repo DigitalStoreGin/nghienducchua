@@ -24,6 +24,14 @@ describe('parseSentryDsn — phân tích DSN Sentry', () => {
     const p = parseSentryDsn('https://abc123@o456.ingest.sentry.io/789');
     expect(p).toEqual({ key: 'abc123', host: 'o456.ingest.sentry.io', projectId: '789' });
   });
+  it('DSN vùng EU (.de.sentry.io) → tách đúng host EU + projectId dài', () => {
+    const p = parseSentryDsn('https://7ce8e9c570992e240a66ca58c89cf45a@o4511599189491712.ingest.de.sentry.io/4511599213150288');
+    expect(p).toEqual({
+      key: '7ce8e9c570992e240a66ca58c89cf45a',
+      host: 'o4511599189491712.ingest.de.sentry.io',
+      projectId: '4511599213150288',
+    });
+  });
   it('DSN sai/thiếu → null (không gửi)', () => {
     expect(parseSentryDsn('')).toBeNull();
     expect(parseSentryDsn(undefined)).toBeNull();
