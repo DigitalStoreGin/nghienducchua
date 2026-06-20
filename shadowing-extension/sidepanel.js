@@ -9,7 +9,8 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const esc = (t) => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, engine: 'webspeech', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000', deeplKey: '', openrouterKey: '' };
+  const WORKER_URL = 'https://nghienducchua-proxy.thoatran21012.workers.dev';
+  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, engine: 'webspeech', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000', licenseKey: '', deeplKey: '', openrouterKey: '' };
   let sentences = [], favorites = [], current = 0;
   let recState = ''; // trang thai engine hien tai (de phim Space biet nen ghi hay finalize)
   let port = null;
@@ -143,16 +144,20 @@
   function setStatus(t, kind) { const s = $('#status'); s.textContent = t; s.className = 'status' + (kind ? ' ' + kind : ''); }
   function onState(st) {
     const map = {
-      playing: '▶️ Đang phát…',
-      paused: '⏸ Đã dừng',
-      recording: '🎤 Đang nghe bạn nói… (nói xong sẽ tự chấm)',
-      scoring: '🧮 Đang chấm…',
-      ad: '📺 Đang chờ quảng cáo kết thúc…',
+      playing: '▶️ Playing…',
+      paused: '⏸ Paused',
+      recording: '🎤 Listening… (speak then it will score)',
+      scoring: '🧮 Scoring…',
+      ad: '📺 Waiting for ad to end…',
     };
     recState = st.state || '';
-    // Nut "Toi noi xong" chi hien khi dang ghi am
     const fb = $('#finalizeBtn'); if (fb) fb.hidden = st.state !== 'recording';
-    if (st.state && map[st.state]) setStatus(map[st.state] + (st.rep != null ? ' (lần ' + (st.rep + 1) + ')' : ''));
+    if (st.state && map[st.state]) setStatus(map[st.state] + (st.rep != null ? ' (rep ' + (st.rep + 1) + ')' : ''));
+    // Show record panel when recording starts
+    if (st.state === 'recording') {
+      const el = $('#you-said-text'); if (el) el.textContent = 'Listening…';
+      showRecordPanel(true);
+    }
   }
   function onProgress(p) {
     const el = $('#prog'); el.hidden = false;
@@ -167,10 +172,15 @@
     $('#nowTr').textContent = s.trans || '';
     $('#count').textContent = (c.idx + 1) + '/' + (c.total || sentences.length);
     wireWordLookup($('#nowDe'), s.text);
-    // Phụ đề kép: nếu chưa có bản dịch & đã nhập key -> tự dịch câu hiện tại
-    if (!s.trans && ((settings.deeplKey || '').trim() || (settings.openrouterKey || '').trim())) {
+    // Update practice view elements
+    const curEl = $('#current-text'); if (curEl) { curEl.textContent = s.text; wireWordLookup(curEl, s.text); }
+    const nextEl = $('#next-text'); const nextS = sentences[c.idx + 1]; if (nextEl) nextEl.textContent = nextS ? nextS.text : '';
+    const trEl = $('#trans-text'); if (trEl) trEl.textContent = s.trans || '';
+    updateSourceInfo(c.idx);
+    // Phụ đề kép: nếu chưa có bản dịch & đã nhập license key -> tự dịch câu hiện tại
+    if (!s.trans && (settings.licenseKey || '').trim()) {
       translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi').then((t) => {
-        if (t) { s.trans = t; if ($('#nowDe').textContent === s.text) $('#nowTr').textContent = t; }
+        if (t) { s.trans = t; if ($('#nowDe').textContent === s.text) { $('#nowTr').textContent = t; if (trEl) trEl.textContent = t; } }
       });
     }
   }
@@ -179,19 +189,30 @@
   function isFav(t) { return favorites.some((f) => f.text === t); }
   function renderList() {
     const c = $('#list'); c.innerHTML = '';
-    if (!sentences.length) { c.innerHTML = '<div class="empty">Chưa có câu nào. Lấy phụ đề ở trên.</div>'; return; }
+    if (!sentences.length) { c.innerHTML = '<div class="empty">No subtitles loaded. Click Auto / Live / File above.</div>'; return; }
     sentences.forEach((s, i) => {
-      const row = document.createElement('div'); row.className = 'row'; row.dataset.i = i;
-      row.onclick = () => cmd('select', { i });
+      const row = document.createElement('div'); row.className = 'row' + (i === current ? ' cur' : ''); row.dataset.i = i;
+      // Play button
+      const playBtn = document.createElement('button'); playBtn.className = 'row-play-btn'; playBtn.textContent = '▶';
+      playBtn.onclick = (e) => { e.stopPropagation(); cmd('select', { i }); openPractice(i); };
+      row.appendChild(playBtn);
+      // Text body
+      const body = document.createElement('div'); body.className = 'row-body';
       const de = document.createElement('div'); de.className = 'de'; de.textContent = s.text;
-      row.appendChild(de);
-      if (s.trans) { const tr = document.createElement('div'); tr.className = 'tr'; tr.textContent = s.trans; row.appendChild(tr); }
-      const act = document.createElement('div'); act.className = 'act';
-      const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
-      const fav = mk('mini fav' + (isFav(s.text) ? ' on' : ''), isFav(s.text) ? '★' : '☆', stop(async () => { const r = await cmd('fav', { text: s.text }); if (r) { favorites = r.favorites; fav.textContent = isFav(s.text) ? '★' : '☆'; fav.classList.toggle('on', isFav(s.text)); } }));
-      const listen = mk('mini', '🔊', stop(() => speakText(s.text)));
-      const sh = mk('mini sh', 'Luyện câu', stop(() => startShadow(i)));
-      act.append(fav, listen, sh); row.appendChild(act); c.appendChild(row);
+      body.appendChild(de);
+      if (s.trans) { const tr = document.createElement('div'); tr.className = 'tr'; tr.textContent = s.trans; body.appendChild(tr); }
+      row.appendChild(body);
+      // Action buttons (shown for current row)
+      if (i === current) {
+        const act = document.createElement('div'); act.className = 'act';
+        const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+        const fav = mk('mini fav' + (isFav(s.text) ? ' on' : ''), isFav(s.text) ? '★' : '☆', stop(async () => { const r = await cmd('fav', { text: s.text }); if (r) { favorites = r.favorites; fav.textContent = isFav(s.text) ? '★' : '☆'; fav.classList.toggle('on', isFav(s.text)); } }));
+        const listen = mk('mini', '🔊', stop(() => speakText(s.text)));
+        const sh = mk('mini sh', 'Practice', stop(() => { cmd('select', { i }); openPractice(i); }));
+        act.append(fav, listen, sh); row.appendChild(act);
+      }
+      row.onclick = () => { cmd('select', { i }); openPractice(i); };
+      c.appendChild(row);
     });
   }
   function mk(cls, txt, on) { const b = document.createElement('button'); b.className = cls; b.textContent = txt; b.onclick = on; return b; }
@@ -200,18 +221,30 @@
     const box = $('#fb'); box.hidden = false;
     if (f.error) {
       let m = f.error, micFix = false;
-      if (/server-unavailable/.test(f.error)) m = 'Không gọi được Server STT (' + f.error.replace('server-unavailable:', '') + '). Kiểm tra server đang chạy & URL, hoặc đổi Engine sang Web Speech.';
-      else if (/whisper-unavailable/.test(f.error)) m = 'Whisper chưa sẵn sàng — chạy build-release để nhúng, hoặc đổi Engine sang Web Speech.';
-      else if (/^mic|not-allowed/.test(f.error)) { m = 'Không truy cập được micro.'; micFix = true; }
-      else if (/empty-transcript/.test(f.error)) { m = '🤔 Không nghe được gì. Hãy nói to hơn hoặc kiểm tra micro.'; }
-      box.innerHTML = '<div class="err">⚠️ ' + m + (micFix ? ' <button class="mini sh" id="micfix">🎤 Bật mic</button>' : '') + '</div>';
+      if (/server-unavailable/.test(f.error)) m = 'Cannot reach STT Server (' + f.error.replace('server-unavailable:', '') + '). Check server URL or switch Engine to Web Speech.';
+      else if (/whisper-unavailable/.test(f.error)) m = 'Whisper not ready — run build-release to embed it, or switch Engine to Web Speech.';
+      else if (/^mic|not-allowed/.test(f.error)) { m = 'Cannot access microphone.'; micFix = true; }
+      else if (/empty-transcript/.test(f.error)) { m = '🤔 Nothing heard. Try speaking louder or check your mic.'; }
+      box.innerHTML = '<div class="err">⚠️ ' + m + (micFix ? ' <button class="mini sh" id="micfix">🎤 Enable mic</button>' : '') + '</div>';
       if (micFix) $('#micfix').onclick = () => enableMic();
       return;
     }
-    const sc = f.score, g = (l, v) => { const cls = v === '—' ? '' : (v >= 80 ? 'hi' : v >= 55 ? 'mid' : 'lo'); return '<div class="gauge ' + cls + '"><b>' + v + '</b><span>' + l + '</span></div>'; };
-    const words = sc.words.map((w) => '<span class="fw ' + w.status + '" title="nghe: ' + esc(w.heard || '—') + '">' + esc(w.text) + '</span>').join(' ');
-    box.innerHTML = '<div class="scores">' + g('Phát âm', sc.pronunciation) + g('Trôi chảy', sc.fluency) + g('Ngữ điệu', sc.intonation == null ? '—' : sc.intonation) + g('Tổng', sc.overall) + '</div>' +
-      '<div class="words">' + words + '</div><div class="heard">Bạn nói: <i>' + esc(sc.transcript || '(không nghe được)') + '</i> · ' + esc(sc.engine || '') + '</div>';
+    const sc = f.score;
+    const g = (l, v) => { const cls = v === '—' ? '' : (v >= 80 ? 'hi' : v >= 55 ? 'mid' : 'lo'); return '<div class="gauge ' + cls + '"><b>' + v + '</b><span>' + l + '</span></div>'; };
+    const words = sc.words.map((w) => '<span class="fw ' + w.status + '" title="heard: ' + esc(w.heard || '—') + '">' + esc(w.text) + '</span>').join(' ');
+    box.innerHTML = '<div class="scores">' + g('Pronunc.', sc.pronunciation) + g('Fluency', sc.fluency) + g('Intonation', sc.intonation == null ? '—' : sc.intonation) + g('Overall', sc.overall) + '</div>' +
+      '<div class="words">' + words + '</div><div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>';
+    // Update record panel
+    const ys = $('#you-said-text'); if (ys) ys.textContent = sc.transcript || '–';
+    const mp = $('#match-pct'); if (mp) mp.textContent = sc.overall != null ? 'Match ' + sc.overall + '%' : 'Match –';
+    showRecordPanel(true);
+    // Update score gauges in practice view
+    const so = $('#score-overall'); if (so) so.textContent = sc.overall ?? '–';
+    const sp = $('#score-pron'); if (sp) sp.textContent = sc.pronunciation ?? '–';
+    const sf = $('#score-flu'); if (sf) sf.textContent = sc.fluency ?? '–';
+    const si = $('#score-into'); if (si) si.textContent = sc.intonation ?? '–';
+    const wr = $('#word-row'); if (wr) wr.innerHTML = words;
+    const fbx = $('#feedback-box'); if (fbx) fbx.hidden = false;
   }
 
   function wireWordLookup(container, text) {
@@ -296,7 +329,7 @@
   bindSetting('autorec', 'autoRecord', 'bool'); bindSetting('engine', 'engine', 'str'); bindSetting('offset', 'offsetMs', 'num');
   bindSetting('silerovad', 'useSileroVad', 'bool');
   bindSetting('target', 'targetLang', 'str'); bindSetting('native', 'nativeLang', 'str'); bindSetting('serverurl', 'serverUrl', 'str');
-  bindSetting('deeplkey', 'deeplKey', 'str'); bindSetting('orkey', 'openrouterKey', 'str');
+  bindSetting('license-key-input', 'licenseKey', 'str');
   $('#vsubs').onchange = (e) => { settings.videoSubs = e.target.checked; cmd('settings', settings); cmd('vsubs', { on: e.target.checked }); };
   $('#uilang').onchange = (e) => { settings.uiLang = e.target.value; cmd('settings', settings); applyI18n(settings.uiLang); };
   function applySettings() {
@@ -304,8 +337,9 @@
     $('#autorec').checked = settings.autoRecord; $('#engine').value = settings.engine; $('#offset').value = settings.offsetMs;
     if ($('#silerovad')) $('#silerovad').checked = !!settings.useSileroVad;
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
-    $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false; if ($('#serverurl')) $('#serverurl').value = settings.serverUrl || 'http://localhost:8000';
-    if ($('#deeplkey')) $('#deeplkey').value = settings.deeplKey || ''; if ($('#orkey')) $('#orkey').value = settings.openrouterKey || '';
+    $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;
+    if ($('#serverurl')) $('#serverurl').value = settings.serverUrl || 'http://localhost:8000';
+    if ($('#license-key-input')) $('#license-key-input').value = settings.licenseKey || '';
     applyBlur(!!settings.hideText);
     applyI18n(settings.uiLang || 'vi');
   }
@@ -420,40 +454,36 @@
     if (btn) { btn.disabled = false; btn.textContent = '→ Anki (live)'; }
   }
 
-  // ===== Dịch thuật đa nguồn: DeepL → OpenRouter (LLM) → MyMemory =====
-  // Key do người dùng nhập trong Cài đặt, lưu cục bộ (chrome.storage). KHÔNG nhúng vào mã nguồn.
+  // ===== Dịch thuật qua Cloudflare Worker (API keys lưu phía server, mã hóa an toàn) =====
+  // Khách hàng chỉ cần nhập License Key — không thấy DeepL/OpenRouter keys.
   const transCache = {};
-  // Thứ tự ưu tiên model OpenRouter (sửa được). Cân bằng độ chính xác/độ ổn định.
   const OR_MODELS = [
-    'meta-llama/llama-3.3-70b-instruct:free',
     'openai/gpt-oss-120b:free',
-    'nvidia/nemotron-3-ultra-550b-a55b:free',
-    'google/gemma-4-31b-it:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
   ];
   const DEEPL_TGT = { vi: 'VI', en: 'EN-US', de: 'DE', fr: 'FR', es: 'ES', it: 'IT', ja: 'JA', zh: 'ZH', ko: 'KO' };
   const LANG_NAME = { vi: 'Vietnamese', en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean' };
 
+  function licenseHeader() {
+    return { 'Content-Type': 'application/json', 'X-License-Key': (settings.licenseKey || '').trim() };
+  }
+
   async function deeplTranslate(text, from, to) {
-    const key = (settings.deeplKey || '').trim(); if (!key) return '';
-    const tgt = DEEPL_TGT[to]; if (!tgt) return ''; // DeepL không hỗ trợ ngôn ngữ đích này
-    const body = new URLSearchParams();
-    body.append('text', text); body.append('target_lang', tgt);
-    if (DEEPL_TGT[from]) body.append('source_lang', DEEPL_TGT[from].split('-')[0]);
-    const r = await fetch('https://api-free.deepl.com/v2/translate', {
-      method: 'POST',
-      headers: { 'Authorization': 'DeepL-Auth-Key ' + key, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    if (!r.ok) throw new Error('deepl-' + r.status);
+    const key = (settings.licenseKey || '').trim(); if (!key) return '';
+    const tgt = DEEPL_TGT[to]; if (!tgt) return '';
+    const body = { text, target_lang: tgt };
+    if (DEEPL_TGT[from]) body.source_lang = DEEPL_TGT[from].split('-')[0];
+    const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: licenseHeader(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('worker-deepl-' + r.status);
     const j = await r.json();
     return (j.translations && j.translations[0] && j.translations[0].text) || '';
   }
 
   async function openrouterTranslate(text, from, to, model) {
-    const key = (settings.openrouterKey || '').trim(); if (!key) return '';
-    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const key = (settings.licenseKey || '').trim(); if (!key) return '';
+    const r = await fetch(WORKER_URL + '/ai-translate', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+      headers: licenseHeader(),
       body: JSON.stringify({
         model, temperature: 0, max_tokens: 500,
         messages: [
@@ -462,7 +492,7 @@
         ],
       }),
     });
-    if (!r.ok) throw new Error('or-' + r.status);
+    if (!r.ok) throw new Error('worker-or-' + r.status);
     const j = await r.json();
     return ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
   }
@@ -473,19 +503,29 @@
     return (j && j.responseData && j.responseData.translatedText) || '';
   }
 
-  // Thử lần lượt theo thứ tự ưu tiên, trả về kết quả tốt đầu tiên.
   async function translateText(text, from, to) {
     if (!text) return '';
     const ck = from + '|' + to + '|' + text;
     if (transCache[ck]) return transCache[ck];
     try { const d = await deeplTranslate(text, from, to); if (d) { transCache[ck] = d; return d; } } catch (e) {}
-    if ((settings.openrouterKey || '').trim()) {
-      for (const m of OR_MODELS) {
-        try { const t = await openrouterTranslate(text, from, to, m); if (t) { transCache[ck] = t; return t; } } catch (e) {}
-      }
+    for (const m of OR_MODELS) {
+      try { const t = await openrouterTranslate(text, from, to, m); if (t) { transCache[ck] = t; return t; } } catch (e) {}
     }
     try { const t = await myMemoryTranslate(text, from, to); if (t) { transCache[ck] = t; return t; } } catch (e) {}
     return '';
+  }
+
+  // Validate license key against Worker
+  async function validateLicenseKey(key) {
+    if (!key || key.length < 8) return false;
+    try {
+      const r = await fetch(WORKER_URL + '/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-License-Key': key },
+        body: JSON.stringify({ text: 'ok', target_lang: 'VI' }),
+      });
+      return r.status !== 401;
+    } catch (e) { return false; }
   }
 
   const glossCache = {};
@@ -634,6 +674,99 @@
       $('#czres').innerHTML = '<b>' + ok + '/' + tot + '</b> đúng.';
     };
   }
+
+  // ===== ShadowEcho-style UI wiring =====
+
+  // View switching
+  function showView(name) {
+    const vl = $('#view-list'), vp = $('#view-practice');
+    if (vl) vl.hidden = name !== 'list';
+    if (vp) vp.hidden = name !== 'practice';
+  }
+
+  // Source info update
+  function updateSourceInfo(idx) {
+    const el = $('#source-info-label'); if (!el) return;
+    const total = sentences.length;
+    const i = (idx != null ? idx : current);
+    el.textContent = total ? ('Line ' + (i + 1) + ' of ' + total) : '';
+  }
+
+  // Practice view: switch to sentence and show practice pane
+  function openPractice(i) {
+    showView('practice');
+    updateSourceInfo(i);
+    // Update next sentence preview
+    const next = sentences[i + 1];
+    const nextEl = $('#next-text'); if (nextEl) nextEl.textContent = next ? next.text : '';
+  }
+
+
+  // Slide-in menu
+  function openMenu() { const m = $('#slide-menu'), o = $('#menu-overlay'); if (m) m.hidden = false; if (o) o.hidden = false; }
+  function closeMenu() { const m = $('#slide-menu'), o = $('#menu-overlay'); if (m) m.hidden = true; if (o) o.hidden = true; }
+  { const b = $('#btn-open-menu'); if (b) b.onclick = openMenu; }
+  { const b = $('#btn-menu'); if (b) b.onclick = openMenu; }
+  { const b = $('#btn-menu-close'); if (b) b.onclick = closeMenu; }
+  { const o = $('#menu-overlay'); if (o) o.onclick = closeMenu; }
+
+  // Back button
+  { const b = $('#btn-back-to-list'); if (b) b.onclick = () => showView('list'); }
+
+  // Toolbar buttons wiring
+  { const b = $('#btn-play-pause'); if (b) b.onclick = () => cmd('togglePlay', { target: settings.targetLang, native: settings.nativeLang }); }
+  { const b = $('#btn-shadow'); if (b) b.onclick = () => { showRecordPanel(true); startShadow(current); }; }
+  { const b = $('#btn-prev'); if (b) b.onclick = () => cmd('prev'); }
+  { const b = $('#btn-next'); if (b) b.onclick = () => { cmd('next'); if (sentences[current + 1]) openPractice(current + 1); }; }
+  { const b = $('#btn-dictation'); if (b) b.onclick = () => startDictation(); }
+  { const b = $('#btn-cloze'); if (b) b.onclick = () => startCloze(); }
+  { const b = $('#btn-hint'); if (b) b.onclick = () => { const s = sentences[current]; if (s && s.trans) setStatus(s.trans, 'ok'); else if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => { if (t) { s.trans = t; setStatus(t, 'ok'); } }); }; }
+  { const b = $('#btn-shadow-fav'); if (b) b.onclick = async () => { if (!settings.autoRecord || await enableMic({ silent: true })) cmd('shadowFav', { target: settings.targetLang, native: settings.nativeLang }); }; }
+  { const b = $('#btn-blur'); if (b) b.onclick = toggleBlur; }
+  { const b = $('#btn-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) speakText(s.text); }; }
+  { const b = $('#btn-load-auto'); if (b) b.onclick = () => cmd('loadAuto', { target: settings.targetLang, native: settings.nativeLang }); }
+  { const b = $('#btn-load-live'); if (b) b.onclick = async () => { const r = await cmd('live'); if (r) b.classList.toggle('on', !!r.running); }; }
+
+  // Record panel
+  function showRecordPanel(show) { const p = $('#record-panel'); if (p) p.hidden = !show; }
+  { const b = $('#btn-record-close'); if (b) b.onclick = () => showRecordPanel(false); }
+  { const b = $('#btn-how-to-improve'); if (b) b.onclick = () => { const s = sentences[current]; if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => setStatus(t || 'No translation', 'ok')); }; }
+
+  // Queue Complete modal
+  { const b = $('#modal-close'); if (b) b.onclick = () => { const m = $('#modal-backdrop'); if (m) m.hidden = true; }; }
+  { const b = $('#modal-practice-again'); if (b) b.onclick = () => { const m = $('#modal-backdrop'); if (m) m.hidden = true; showView('list'); cmd('loadAuto', { target: settings.targetLang, native: settings.nativeLang }); }; }
+
+  // Info banner dismiss
+  { const b = $('#info-banner-dismiss'); if (b) b.onclick = () => { const el = $('#info-banner'); if (el) el.hidden = true; try { localStorage.setItem('se_banner_dismissed', '1'); } catch (e) {} }; }
+  { const b = $('#info-banner-close'); if (b) b.onclick = () => { const el = $('#info-banner'); if (el) el.hidden = true; }; }
+  try { if (localStorage.getItem('se_banner_dismissed')) { const el = $('#info-banner'); if (el) el.hidden = true; } } catch (e) {}
+
+  // License key validation button
+  { const b = $('#btn-validate-license'); if (b) b.onclick = async () => {
+    const inp = $('#license-key-input'); if (!inp) return;
+    const key = inp.value.trim(); if (!key) return;
+    const st = $('#license-status'); if (st) { st.textContent = 'Validating…'; st.className = 'license-status'; }
+    b.disabled = true;
+    const ok = await validateLicenseKey(key);
+    if (ok) {
+      settings.licenseKey = key; cmd('settings', settings);
+      if (st) { st.textContent = '✓ License valid — translation enabled'; st.className = 'license-status ok'; }
+    } else {
+      if (st) { st.textContent = '✗ Invalid key. Contact seller to get a valid key.'; st.className = 'license-status err'; }
+    }
+    b.disabled = false;
+  }; }
+
+  // Vocab/flashcard sections in slide menu
+  { const s = document.getElementById('section-vocab'); if (s) s.addEventListener('toggle', () => { if (s.open) loadVocab('vocab'); }); }
+  { const s = document.getElementById('section-flash'); if (s) s.addEventListener('toggle', () => { if (s.open) renderFlash(); }); }
+  { const s = document.getElementById('section-progress'); if (s) s.addEventListener('toggle', () => { if (s.open) loadVocab('progress'); }); }
+  // Anki buttons in menu
+  { const b = $('#anki-export'); if (b) b.onclick = exportAnki; }
+  { const b = $('#anki-sync'); if (b) b.onclick = exportAnkiConnect; }
+
+  // Initial view: list
+  showView('list');
 
   // ===== Init =====
   if (window.ShadowMic) {

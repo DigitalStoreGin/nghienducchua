@@ -1,107 +1,588 @@
-<!doctype html><html lang="vi"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="sidepanel.css"><title>Shadow</title></head>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="sidepanel.css">
+  <title>ShadowEcho</title>
+</head>
 <body>
-  <header class="hd">
-    <img src="icons/icon32.png" class="logo" alt="Shadow Deutsch">
-    <div class="brand">Shadow <span>Deutsch</span></div>
-    <div class="conn" id="conn" title="Kết nối">
-      <span class="conn-dot"></span>
-    </div>
-    <nav class="tabs">
-      <button class="tab on" data-tab="practice" data-i18n="tab_practice">Luyện</button>
-      <button class="tab" data-tab="vocab" data-i18n="tab_vocab">Từ vựng</button>
-      <button class="tab" data-tab="flash" data-i18n="tab_flash">Thẻ</button>
-      <button class="tab" data-tab="progress" data-i18n="tab_progress">Tiến độ</button>
-    </nav>
-  </header>
 
-  <div id="nohost" class="hint" hidden data-i18n="nohost">Mở một video YouTube hoặc Netflix rồi quay lại đây.</div>
+  <!-- ===== NO HOST NOTICE ===== -->
+  <div id="nohost" class="nohost-banner" hidden data-i18n="nohost">
+    Open a YouTube video then come back here.
+  </div>
 
-  <section class="pane" id="practice">
-    <div class="hero">
-      <div><span class="eyebrow">SHADOWING STUDIO</span><h1>Luyện từng câu.<br>Nói tự nhiên hơn.</h1></div>
-      <div class="mic-orb" aria-hidden="true"><i id="micLevel"></i><span>🎙</span></div>
-    </div>
-    <div id="onboard" class="onboard" hidden>
-      <b data-i18n="ob_title">Bắt đầu nhanh</b>
-      <ol><li data-i18n="ob1">Mở video tiếng Đức trên YouTube.</li>
-      <li data-i18n="ob2">Bấm "Phụ đề tự động" (hoặc nạp file SRT/VTT).</li>
-      <li data-i18n="ob3">Bấm "Bật mic", cho phép micro cho extension.</li>
-      <li data-i18n="ob4">Bấm một câu → nói lại → xem điểm.</li></ol>
-      <button class="btn" id="obclose" data-i18n="ob_close">Đã hiểu</button>
-    </div>
-    <div class="src cardbox">
-      <div class="group-title">Nguồn phụ đề</div>
-      <div class="src-row">
-        <button class="btn src-btn" data-cmd="loadAuto"><span class="btn-icon">⬇️</span> <span data-i18n="src_auto">Phụ đề tự động</span></button>
-        <button class="btn src-btn" id="live" data-cmd="live"><span class="btn-icon">🔴</span> <span data-i18n="src_live">Live (bật CC)</span></button>
-        <label class="btn src-btn file"><span class="btn-icon">📂</span> <span data-i18n="src_file">File SRT/VTT</span><input type="file" id="file" accept=".srt,.vtt,.json,.xml,.ttml,.dfxp" hidden></label>
+  <!-- ===== LIST VIEW (default) ===== -->
+  <div id="view-list" class="view">
+
+    <!-- Minimal top bar -->
+    <div class="list-topbar">
+      <div class="list-brand">
+        <img src="icons/icon32.png" class="brand-icon" alt="">
+        <span class="brand-name">ShadowEcho</span>
       </div>
-      <div class="src-row">
-        <button class="btn mic" id="micButton" data-cmd="mic"><span class="mic-dot"></span><span data-i18n="src_mic">Bật mic</span></button>
-        <button class="btn icon" data-cmd="diag" data-i18n-title="src_diag" title="Kiểm tra">⋯</button>
+      <div class="list-topbar-right">
+        <!-- conn-dot: JS does $('#conn').classList.toggle('on', ...) — we keep a wrapper with id="conn" -->
+        <div id="conn" class="conn-wrap">
+          <span class="conn-dot" id="conn-dot" title="Connection"></span>
+        </div>
+        <button class="icon-btn" id="btn-open-menu" title="Menu" aria-label="Open menu">&#9776;</button>
       </div>
     </div>
-    <div id="status" class="status" data-i18n="status_init">Mở video tiếng Đức, lấy phụ đề để bắt đầu.</div>
+
+    <!-- Source buttons — shown when no subtitles loaded -->
+    <div id="source-bar" class="source-bar">
+      <button class="src-btn" id="btn-load-auto" data-cmd="loadAuto">
+        <span class="src-btn-icon">&#128225;</span> Auto
+      </button>
+      <button class="src-btn" id="btn-load-live" data-cmd="live">
+        <span class="src-btn-icon">&#128308;</span> Live
+      </button>
+      <label class="src-btn file-label">
+        <span class="src-btn-icon">&#128193;</span> File
+        <!-- id="file" is used by sidepanel.js -->
+        <input type="file" id="file" accept=".srt,.vtt,.json,.xml,.ttml,.dfxp" hidden>
+      </label>
+      <!-- id="micButton" is used by sidepanel.js -->
+      <button class="src-btn src-btn--mic" id="micButton" data-cmd="mic">
+        <span class="src-btn-icon">&#127908;</span> Mic
+        <span class="mic-dot"></span>
+      </button>
+    </div>
+
+    <!-- Status line — id="status" used by sidepanel.js -->
+    <div id="status" class="status-bar" data-i18n="status_init">Open a video and load subtitles to begin.</div>
+
+    <!-- Diagnose button -->
+    <button class="diagnose-btn" id="btn-diagnose" data-cmd="diag" hidden>Diagnose</button>
+
+    <!-- Diag output — id="diagbox" used by sidepanel.js -->
     <div id="diagbox" class="diagbox" hidden></div>
-    <div id="prog" class="prog" hidden><div class="bar"><i></i></div><span></span></div>
 
-    <details class="advanced">
-      <summary>Cài đặt luyện tập</summary>
-      <div class="settings">
-      <label data-i18n="set_speed">Tốc độ<select id="rate"><option>0.5</option><option>0.75</option><option selected>1</option></select></label>
-      <label data-i18n="set_rep">Lặp<input id="rep" type="number" min="1" max="10" value="3"></label>
-      <label><input id="autonext" type="checkbox" checked> <span data-i18n="set_autonext">Auto next</span></label>
-      <label><input id="autorec" type="checkbox" checked> <span data-i18n="set_autorec">Auto ghi âm</span></label>
-      <label><input id="vsubs" type="checkbox" checked> <span data-i18n="set_vsubs">Phụ đề trên video</span></label>
-      <label data-i18n="set_engine">Engine<select id="engine"><option value="webspeech">Web Speech</option><option value="server">Server</option><option value="whisper">Whisper</option></select></label>
-      <label title="Cần tải model: chạy vendor/download-vendor"><input id="silerovad" type="checkbox"> <span data-i18n="set_silero">Silero VAD</span></label>
-      <label data-i18n="set_offset">Offset<input id="offset" type="number" step="100" value="0">ms</label>
-      <label data-i18n="set_server">Server<input id="serverurl" type="text" value="http://localhost:8000" style="width:150px"></label>
-      <label data-i18n="set_deepl" title="Dán key DeepL của bạn (lưu cục bộ)">DeepL key<input id="deeplkey" type="password" autocomplete="off" placeholder="xxxx:fx" style="width:150px"></label>
-      <label data-i18n="set_orkey" title="Dán key OpenRouter của bạn (lưu cục bộ)">OpenRouter key<input id="orkey" type="password" autocomplete="off" placeholder="sk-or-..." style="width:150px"></label>
-      <label data-i18n="set_target">Học<select id="target"><option value="de" selected>Đức</option><option value="en">Anh</option><option value="fr">Pháp</option><option value="es">Tây Ban Nha</option><option value="it">Ý</option><option value="ja">Nhật</option><option value="ko">Hàn</option><option value="zh">Trung</option></select></label>
-      <label data-i18n="set_native">Dịch sang<select id="native"><option value="vi" selected>Việt</option><option value="en">Anh</option></select></label>
-      <label data-i18n="set_uilang">Ngôn ngữ<select id="uilang"><option value="vi" selected>Tiếng Việt</option><option value="en">English</option></select></label>
+    <!-- Progress bar — id="prog" used by sidepanel.js -->
+    <div id="prog" class="prog-bar" hidden>
+      <div class="prog-track"><i></i></div>
+      <span class="prog-label"></span>
+    </div>
+
+    <!-- Onboard panel — id="onboard", id="obclose" used by sidepanel.js -->
+    <div id="onboard" class="onboard" hidden>
+      <b data-i18n="ob_title">Quick start</b>
+      <ol>
+        <li data-i18n="ob1">Open a target-language video on YouTube.</li>
+        <li data-i18n="ob2">Click "Auto" to load auto captions (or load an SRT/VTT file).</li>
+        <li data-i18n="ob3">Click "Mic", allow microphone access for the extension.</li>
+        <li data-i18n="ob4">Click a sentence → speak it → see your score.</li>
+      </ol>
+      <button class="btn" id="obclose" data-i18n="ob_close">Got it</button>
+    </div>
+
+    <!-- Sentence list — id="list" used by sidepanel.js -->
+    <div id="sentence-list" class="sentence-list">
+      <!-- JS renders rows here via renderList(); also proxied from #list below -->
+    </div>
+    <!-- Legacy alias: JS calls $('#list') — we make it point to the same element via adapter -->
+    <div id="list" hidden></div>
+
+    <!-- Blur overlay -->
+    <div id="blur-overlay" class="blur-overlay" hidden></div>
+
+  </div><!-- /#view-list -->
+
+
+  <!-- ===== PRACTICE VIEW ===== -->
+  <div id="view-practice" class="view" hidden>
+
+    <!-- Top bar -->
+    <div class="practice-topbar">
+      <button class="back-btn" id="btn-back-to-list">&#8592; Back</button>
+      <div class="practice-tabs">
+        <span class="practice-tab practice-tab--active">Practice</span>
+      </div>
+    </div>
+
+    <!-- Info banner -->
+    <div class="info-banner" id="info-banner">
+      <span class="info-banner-text">Drag the side panel wider for immersive layout.</span>
+      <button class="info-banner-dismiss" id="info-banner-dismiss">Don&rsquo;t show again</button>
+      <button class="info-banner-close" id="info-banner-close" aria-label="Close">&#10005;</button>
+    </div>
+
+    <!-- Source info line -->
+    <div class="source-info" id="source-info">
+      <span id="source-info-label">1/5 in this video &middot; 1/5 total</span>
+    </div>
+
+    <!-- Current sentence — id="current-text" used by new IDs spec
+         JS uses #nowDe (old); adapter proxies it -->
+    <div class="current-sentence-wrap" id="current-sentence-wrap">
+      <div class="blue-bar"></div>
+      <div class="current-sentence-body">
+        <!-- id="nowDe" is queried by sidepanel.js for renderNow(), wireWordLookup() -->
+        <div class="current-text" id="nowDe">—</div>
+      </div>
+    </div>
+    <!-- New-spec alias (CSS/other JS may use this) -->
+    <div id="current-text" hidden></div>
+
+    <!-- Next sentence -->
+    <div class="next-sentence-wrap" id="next-sentence-wrap">
+      <span class="next-label">Next</span>
+      <span class="next-text" id="next-text"></span>
+    </div>
+
+    <!-- Translation — id="nowTr" used by sidepanel.js; "trans-text" by new spec -->
+    <div class="trans-text" id="nowTr"></div>
+    <div id="trans-text" hidden></div>
+
+    <!-- Sentence counter (hidden — used by sidepanel.js) -->
+    <span id="count" class="sentence-count" hidden>0/0</span>
+
+    <!-- Feedback box — id="fb" used by sidepanel.js; "feedback-box" by new spec -->
+    <div class="feedback-box" id="fb" hidden>
+      <div class="scores">
+        <!-- gauges injected by JS via renderFeedback() -->
+      </div>
+      <div class="word-row" id="word-row"></div>
+    </div>
+    <!-- New-spec aliases for score labels (referenced by new spec but JS writes via innerHTML) -->
+    <span id="feedback-box" hidden></span>
+    <span id="score-overall" hidden></span>
+    <span id="score-pron" hidden></span>
+    <span id="score-flu" hidden></span>
+    <span id="score-into" hidden></span>
+
+    <!-- RECORD PANEL (slides up when recording active) -->
+    <div class="record-panel" id="record-panel" hidden>
+      <div class="record-panel-header">
+        <div>
+          <div class="record-panel-title">Record</div>
+          <div class="record-panel-subtitle">Speak and get Match %</div>
+        </div>
+        <button class="record-close-btn" id="btn-record-close" aria-label="Close record panel">&#10005;</button>
+      </div>
+      <div class="you-said-label">YOU SAID</div>
+      <div class="you-said-text" id="you-said-text"></div>
+      <div class="record-panel-footer">
+        <span class="match-pct" id="match-pct">Match &ndash;</span>
+        <button class="record-action-btn" id="btn-listen">&#128266; Listen</button>
+        <button class="record-action-btn" id="btn-how-to-improve">&#128172; How to improve</button>
+      </div>
+    </div>
+
+  </div><!-- /#view-practice -->
+
+
+  <!-- ===== BOTTOM TOOLBAR (always visible) ===== -->
+  <div class="bottom-toolbar" id="bottom-toolbar">
+    <!-- id="btn-play-pause" new spec; legacy JS uses .cbtn.play or data-cmd="togglePlay" -->
+    <button class="toolbar-play-btn" id="btn-play-pause" data-cmd="togglePlay" title="Play / Pause">&#9654;</button>
+    <!-- id="btn-shadow" new spec; legacy data-cmd="shadowCur" -->
+    <button class="toolbar-btn" id="btn-shadow" data-cmd="shadowCur" title="Shadow / Mic">&#127908;</button>
+    <!-- hint/bulb -->
+    <button class="toolbar-btn" id="btn-hint" title="Hint">&#128161;</button>
+    <!-- prev/next — id="btn-prev", id="btn-next" new spec; data-cmd used by legacy JS -->
+    <button class="toolbar-btn toolbar-btn--prev" id="btn-prev" data-cmd="prev" title="Previous">&#8249;</button>
+    <button class="toolbar-btn toolbar-btn--next" id="btn-next" data-cmd="next" title="Next">&#8250;</button>
+    <!-- loop — id="btn-loop" new spec; legacy JS also uses id="loop" -->
+    <button class="toolbar-btn toolbar-btn--loop" id="btn-loop" data-cmd="loop" title="Loop">&#8635;</button>
+    <!-- blur — id="btn-blur" new spec; legacy uses id="blurBtn" -->
+    <button class="toolbar-btn toolbar-btn--blur" id="btn-blur" title="Blur text">&#128065;</button>
+    <!-- finish — acts as finalizeBtn -->
+    <button class="toolbar-text-btn" id="btn-finish" title="Finish">Finish</button>
+    <!-- dictation — id="btn-dictation" new spec; legacy data-cmd="dictate" -->
+    <button class="toolbar-btn toolbar-btn--dictation" id="btn-dictation" data-cmd="dictate" title="Dictation">&#9997;&#65039;</button>
+    <!-- cloze — id="btn-cloze" new spec; legacy data-cmd="cloze" -->
+    <button class="toolbar-btn toolbar-btn--cloze" id="btn-cloze" data-cmd="cloze" title="Cloze">&#129513;</button>
+    <!-- shadow fav — id="btn-shadow-fav" new spec; legacy data-cmd="shadowFav" -->
+    <button class="toolbar-icon-btn" id="btn-shadow-fav" data-cmd="shadowFav" title="Shadow Favorites">&#9733;</button>
+    <!-- menu -->
+    <button class="toolbar-menu-btn" id="btn-menu" title="Menu">&#9776;</button>
+  </div>
+
+  <!-- Mic level meter (hidden, driven by ShadowMic level listener) -->
+  <i id="micLevel" hidden></i>
+  <!-- btn-mic-toggle alias: same element as #micButton -->
+  <span id="btn-mic-toggle" hidden></span>
+
+  <!-- Legacy loop/blurBtn/finalizeBtn — visible toolbar buttons delegate to these -->
+  <button id="loop" hidden data-cmd="loop"></button>
+  <button id="blurBtn" hidden></button>
+  <button id="finalizeBtn" hidden></button>
+
+
+  <!-- ===== DICTATION / CLOZE POPUP ===== -->
+  <!-- id="dictbox" used by sidepanel.js -->
+  <div id="dictbox" class="dictbox" hidden></div>
+
+
+  <!-- ===== SLIDE-IN MENU (from right) ===== -->
+  <div class="menu-overlay" id="menu-overlay" hidden></div>
+  <div class="slide-menu" id="slide-menu" hidden>
+
+    <div class="slide-menu-header">
+      <span class="slide-menu-title">Menu</span>
+      <button class="slide-menu-close" id="btn-menu-close" aria-label="Close menu">&#10005;</button>
+    </div>
+
+    <!-- SETTINGS SECTION -->
+    <details class="menu-section" id="section-settings" open>
+      <summary class="menu-section-title">Settings</summary>
+      <div class="menu-section-body">
+
+        <!-- License Key (new spec: #license-key-input, #btn-validate-license, #license-status) -->
+        <div class="setting-row">
+          <label class="setting-label" for="license-key-input">License Key</label>
+          <div class="setting-input-group">
+            <input type="password" id="license-key-input" class="setting-input setting-input--wide"
+              autocomplete="off" placeholder="NDC-XXXX-XXXX-XXXX">
+            <button class="setting-btn" id="btn-validate-license">Validate</button>
+          </div>
+          <div class="license-status" id="license-status"></div>
+        </div>
+
+        <!-- Speed — id="rate", id="rate-val" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="rate">Speed</label>
+          <div class="setting-input-group setting-input-group--inline">
+            <input type="range" id="rate" min="0.5" max="1.5" step="0.25" value="1" class="setting-slider">
+            <span class="setting-slider-val" id="rate-val">1x</span>
+          </div>
+        </div>
+
+        <!-- Repeat — id="rep" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="rep">Repeat</label>
+          <input type="number" id="rep" min="1" max="5" value="3" class="setting-input setting-input--num">
+        </div>
+        <!-- New-spec alias -->
+        <span id="repeat" hidden></span>
+
+        <!-- Auto Next — id="autonext" used by sidepanel.js -->
+        <div class="setting-row setting-row--toggle">
+          <label class="setting-label" for="autonext">Auto Next</label>
+          <input type="checkbox" id="autonext" class="setting-toggle" checked>
+        </div>
+        <!-- New-spec alias -->
+        <span id="autoNext" hidden></span>
+
+        <!-- Auto Record — id="autorec" used by sidepanel.js -->
+        <div class="setting-row setting-row--toggle">
+          <label class="setting-label" for="autorec">Auto Record</label>
+          <input type="checkbox" id="autorec" class="setting-toggle" checked>
+        </div>
+        <!-- New-spec alias -->
+        <span id="autoRecord" hidden></span>
+
+        <!-- Speech Engine — id="engine" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="engine">Speech Engine</label>
+          <select id="engine" class="setting-select">
+            <option value="webspeech">Web Speech</option>
+            <option value="server">Server</option>
+            <option value="whisper">Browser Whisper</option>
+          </select>
+        </div>
+
+        <!-- Silero VAD — id="silerovad" used by sidepanel.js -->
+        <div class="setting-row setting-row--toggle">
+          <label class="setting-label" for="silerovad">Silero VAD</label>
+          <input type="checkbox" id="silerovad" class="setting-toggle">
+        </div>
+        <!-- New-spec alias -->
+        <span id="useSileroVad" hidden></span>
+
+        <!-- Offset ms — id="offset" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="offset">Offset ms</label>
+          <input type="number" id="offset" step="100" value="0" class="setting-input setting-input--num">
+        </div>
+        <!-- New-spec alias -->
+        <span id="offsetMs" hidden></span>
+
+        <!-- Server URL — id="serverurl" used by sidepanel.js (shown when engine=server) -->
+        <div class="setting-row" id="serverurl-row">
+          <label class="setting-label" for="serverurl">Server URL</label>
+          <input type="text" id="serverurl" value="http://localhost:8000" class="setting-input setting-input--wide">
+        </div>
+        <!-- New-spec alias -->
+        <span id="serverUrl" hidden></span>
+
+        <!-- Target Language — id="target" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="target">Target Language</label>
+          <select id="target" class="setting-select">
+            <option value="de" selected>German (de)</option>
+            <option value="en">English (en)</option>
+            <option value="fr">French (fr)</option>
+            <option value="es">Spanish (es)</option>
+            <option value="ja">Japanese (ja)</option>
+            <option value="ko">Korean (ko)</option>
+          </select>
+        </div>
+        <!-- New-spec alias -->
+        <span id="targetLang" hidden></span>
+
+        <!-- Native Language — id="native" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="native">Native Language</label>
+          <select id="native" class="setting-select">
+            <option value="vi" selected>Vietnamese (vi)</option>
+            <option value="en">English (en)</option>
+            <option value="zh">Chinese (zh)</option>
+            <option value="ja">Japanese (ja)</option>
+            <option value="ko">Korean (ko)</option>
+            <option value="id">Indonesian (id)</option>
+            <option value="th">Thai (th)</option>
+          </select>
+        </div>
+        <!-- New-spec alias -->
+        <span id="nativeLang" hidden></span>
+
+        <!-- Video Subtitles — id="vsubs" used by sidepanel.js -->
+        <div class="setting-row setting-row--toggle">
+          <label class="setting-label" for="vsubs">Subtitles on Video</label>
+          <input type="checkbox" id="vsubs" class="setting-toggle" checked>
+        </div>
+
+        <!-- UI Language — id="uilang" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="uilang">UI Language</label>
+          <select id="uilang" class="setting-select">
+            <option value="vi" selected>Tiếng Việt</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+
+        <!-- DeepL / OpenRouter keys — id="deeplkey", id="orkey" used by sidepanel.js -->
+        <div class="setting-row">
+          <label class="setting-label" for="deeplkey">DeepL Key</label>
+          <input type="password" id="deeplkey" autocomplete="off" placeholder="xxxx:fx"
+            class="setting-input setting-input--wide">
+        </div>
+        <div class="setting-row">
+          <label class="setting-label" for="orkey">OpenRouter Key</label>
+          <input type="password" id="orkey" autocomplete="off" placeholder="sk-or-..."
+            class="setting-input setting-input--wide">
+        </div>
+
+      </div>
+    </details><!-- /#section-settings -->
+
+    <!-- VOCABULARY SECTION -->
+    <details class="menu-section" id="section-vocab">
+      <!-- id="tab-vocab" used by new spec as tab trigger -->
+      <summary class="menu-section-title" id="tab-vocab">Vocabulary</summary>
+      <div class="menu-section-body">
+        <div class="vocab-actions">
+          <!-- id="anki-export", id="anki-sync" used by new spec -->
+          <button class="setting-btn" id="anki-export">&#11015;&#65039; Export Anki</button>
+          <button class="setting-btn" id="anki-sync">&#8594; Anki Sync</button>
+        </div>
+        <!-- id="vocab-list" used by new spec -->
+        <div id="vocab-list" class="vocab-list"></div>
       </div>
     </details>
 
-    <div class="now">
-      <div class="now-de" id="nowDe">—</div>
-      <div class="now-tr" id="nowTr"></div>
-      <div class="now-ctrl">
-        <button class="cbtn" data-cmd="prev" data-i18n-title="t_prev" title="Câu trước">⏮</button>
-        <button class="cbtn play" data-cmd="togglePlay" data-i18n-title="t_play" title="Phát/Dừng">▶</button>
-        <button class="cbtn" id="loop" data-cmd="loop" data-i18n-title="t_loop" title="Lặp 1 câu">🔁</button>
-        <button class="cbtn" data-cmd="next" data-i18n-title="t_next" title="Câu sau">⏭</button>
-        <span class="count" id="count">0/0</span>
-        <button class="cbtn shadow" data-cmd="shadowCur" data-i18n-title="t_shadow" title="Luyện">🎤</button>
-        <button class="cbtn" data-cmd="speakCur" data-i18n-title="t_listen" title="Nghe mẫu">🔊</button>
-        <button class="cbtn" data-cmd="dictate" data-i18n-title="t_dict" title="Chép chính tả">✍️</button>
-        <button class="cbtn" data-cmd="cloze" data-i18n-title="t_cloze" title="Điền chỗ trống">🧩</button>
-        <button class="cbtn" id="blurBtn" data-i18n-title="t_blur" title="Ẩn chữ (tự kiểm tra)">🙈</button>
+    <!-- FLASHCARDS SECTION -->
+    <details class="menu-section" id="section-flash">
+      <!-- id="tab-flash" used by new spec as tab trigger -->
+      <summary class="menu-section-title" id="tab-flash">Flashcards</summary>
+      <div class="menu-section-body">
+        <!-- id="flash-info", id="flash-front", id="flash-back" used by new spec -->
+        <div class="flash-info" id="flash-info"></div>
+        <div class="flash-card">
+          <div class="flash-front" id="flash-front"></div>
+          <div class="flash-back" id="flash-back" hidden></div>
+        </div>
+        <!-- id="btn-hard", id="btn-good", id="btn-skip" used by new spec -->
+        <div class="flash-actions">
+          <button class="flash-grade-btn flash-grade-btn--hard" id="btn-hard">Hard</button>
+          <button class="flash-grade-btn flash-grade-btn--good" id="btn-good">Good</button>
+          <button class="flash-grade-btn flash-grade-btn--skip" id="btn-skip">Skip</button>
+        </div>
       </div>
-      <div class="kbd-hint" data-i18n="kbd_hint">⌨ Space: nói · ◀ ▶: câu · ▲ ▼: tốc độ · R: nghe · L: lặp · B: ẩn chữ</div>
+    </details>
+
+    <!-- PROGRESS SECTION -->
+    <details class="menu-section" id="section-progress">
+      <!-- id="tab-progress" used by new spec as tab trigger -->
+      <summary class="menu-section-title" id="tab-progress">Progress</summary>
+      <div class="menu-section-body">
+        <!-- id="progress-chart-area" used by new spec -->
+        <div id="progress-chart-area" class="progress-chart-area"></div>
+      </div>
+    </details>
+
+  </div><!-- /#slide-menu -->
+
+
+  <!-- ===== QUEUE COMPLETE MODAL ===== -->
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">Queue Complete</span>
+        <button class="modal-close" id="modal-close" aria-label="Close">&#10005;</button>
+      </div>
+      <p class="modal-body-text">
+        All phrases in your queue practiced. Add more from the video to keep going.
+      </p>
+      <p class="modal-stat" id="modal-stat">Today: 0 phrases</p>
+      <p class="modal-tagline">Every phrase counts!</p>
+      <button class="modal-cta" id="modal-practice-again">Practice this video again</button>
     </div>
+  </div>
 
-    <div class="favbar">
-      <button class="btn fav" data-cmd="shadowFav" data-i18n="fav_run">▶️ Tự luyện dòng ⭐</button>
-      <button class="btn finalize" id="finalizeBtn" data-i18n="finalize" hidden>✅ Tôi nói xong → chấm</button>
-      <button class="btn" data-cmd="stop" data-i18n="stop">⏹ Dừng</button>
-    </div>
 
-    <div id="fb" class="fb" hidden></div>
-    <div id="list" class="list"></div>
-  </section>
-
+  <!-- ===== LEGACY TAB PANES (hidden; sidepanel.js references these IDs) ===== -->
+  <!-- sidepanel.js shows/hides these by tab; we keep them hidden and the menu
+       sections above serve as the real UI. JS still needs to not error on them. -->
+  <section class="pane" id="practice" hidden></section>
   <section class="pane" id="vocab" hidden></section>
   <section class="pane" id="flash" hidden></section>
   <section class="pane" id="progress" hidden></section>
-  <div id="dictbox" class="dictbox" hidden></div>
+
 
   <script src="content/freq-de.js"></script>
   <script src="vendor/vad-silero.js"></script>
   <script src="mic-service.js"></script>
   <script src="sidepanel.js"></script>
-</body></html>
+
+  <!-- UI interaction script: menus, toolbar, panel transitions -->
+  <script>
+  (function () {
+    var $ = function(s) { return document.querySelector(s); };
+
+    // ---- Adapter: proxy #list reads/writes to #sentence-list ----
+    // sidepanel.js calls $('#list').innerHTML = '' and appendChild etc.
+    // We redirect by making #list a live mirror via MutationObserver.
+    var sentenceList = document.getElementById('sentence-list');
+    var listProxy    = document.getElementById('list');
+    if (sentenceList && listProxy) {
+      // Override getElementById so '#list' returns sentence-list
+      // Simpler: just swap the IDs (sidepanel.js runs after this script)
+      sentenceList.id = 'list';
+      listProxy.id    = 'sentence-list-legacy';
+    }
+
+    // ---- Wire hidden legacy buttons to toolbar buttons ----
+    function wire(legacyId, toolbarId) {
+      var legacy  = document.getElementById(legacyId);
+      var toolbar = document.getElementById(toolbarId);
+      if (!legacy || !toolbar) return;
+      // toolbar click → legacy click (JS listeners are on legacy)
+      toolbar.addEventListener('click', function(e) {
+        // Don't re-fire if legacy itself triggered this
+        if (e._fromLegacy) return;
+        var ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+        ev._fromLegacy = true;
+        legacy.dispatchEvent(ev);
+      });
+      // Sync 'on' class for visual feedback
+      new MutationObserver(function() {
+        toolbar.classList.toggle('active', legacy.classList.contains('on'));
+      }).observe(legacy, { attributes: true, attributeFilter: ['class'] });
+    }
+    wire('loop',        'btn-loop');
+    wire('blurBtn',     'btn-blur');
+    wire('finalizeBtn', 'btn-finish');
+
+    // ---- Show/hide record panel ----
+    var recordPanel = document.getElementById('record-panel');
+    var btnRecordClose = document.getElementById('btn-record-close');
+    if (btnRecordClose && recordPanel) {
+      btnRecordClose.addEventListener('click', function() {
+        recordPanel.hidden = true;
+      });
+    }
+
+    // ---- Slide-in menu ----
+    var slideMenu    = document.getElementById('slide-menu');
+    var menuOverlay  = document.getElementById('menu-overlay');
+    function openMenu() {
+      if (!slideMenu || !menuOverlay) return;
+      slideMenu.hidden   = false;
+      menuOverlay.hidden = false;
+    }
+    function closeMenu() {
+      if (!slideMenu || !menuOverlay) return;
+      slideMenu.hidden   = true;
+      menuOverlay.hidden = true;
+    }
+    var btnMenu      = document.getElementById('btn-menu');
+    var btnOpenMenu  = document.getElementById('btn-open-menu');
+    var btnMenuClose = document.getElementById('btn-menu-close');
+    if (btnMenu)      btnMenu.addEventListener('click', openMenu);
+    if (btnOpenMenu)  btnOpenMenu.addEventListener('click', openMenu);
+    if (btnMenuClose) btnMenuClose.addEventListener('click', closeMenu);
+    if (menuOverlay)  menuOverlay.addEventListener('click', closeMenu);
+
+    // ---- Info banner ----
+    var infoBanner  = document.getElementById('info-banner');
+    var bannerClose = document.getElementById('info-banner-close');
+    var bannerDismiss = document.getElementById('info-banner-dismiss');
+    if (bannerClose) bannerClose.addEventListener('click', function() {
+      if (infoBanner) infoBanner.hidden = true;
+    });
+    if (bannerDismiss) bannerDismiss.addEventListener('click', function() {
+      if (infoBanner) infoBanner.hidden = true;
+      try { localStorage.setItem('se_banner_dismissed', '1'); } catch(e) {}
+    });
+    try { if (localStorage.getItem('se_banner_dismissed')) { if (infoBanner) infoBanner.hidden = true; } } catch(e) {}
+
+    // ---- Queue complete modal ----
+    var modalBackdrop = document.getElementById('modal-backdrop');
+    var modalClose    = document.getElementById('modal-close');
+    if (modalClose) modalClose.addEventListener('click', function() {
+      if (modalBackdrop) modalBackdrop.hidden = true;
+    });
+
+    // ---- Back button (practice → list) ----
+    var btnBack = document.getElementById('btn-back-to-list');
+    var viewList = document.getElementById('view-list');
+    var viewPractice = document.getElementById('view-practice');
+    if (btnBack) btnBack.addEventListener('click', function() {
+      if (viewList)     viewList.hidden = false;
+      if (viewPractice) viewPractice.hidden = true;
+    });
+
+    // ---- Speed slider live label ----
+    var rateSlider = document.getElementById('rate');
+    var rateVal    = document.getElementById('rate-val');
+    if (rateSlider && rateVal) {
+      rateSlider.addEventListener('input', function() {
+        rateVal.textContent = rateSlider.value + 'x';
+      });
+    }
+
+    // ---- Show server URL row only when engine=server ----
+    var engineSel  = document.getElementById('engine');
+    var serverRow  = document.getElementById('serverurl-row');
+    function toggleServerRow() {
+      if (!engineSel || !serverRow) return;
+      serverRow.style.display = (engineSel.value === 'server') ? '' : 'none';
+    }
+    if (engineSel) engineSel.addEventListener('change', toggleServerRow);
+    toggleServerRow();
+
+    // ---- micButton visual state sync ----
+    // sidepanel.js adds/removes .pending/.ready on #micButton
+    // We just let it work directly since the element has the right id.
+
+    // ---- Toolbar play button text sync ----
+    // sidepanel.js targets '.cbtn.play' for toggling ▶/⏸
+    // We make #btn-play-pause also have class cbtn play so JS finds it
+    var playBtn = document.getElementById('btn-play-pause');
+    if (playBtn) playBtn.classList.add('cbtn', 'play');
+
+    // ---- Wire data-cmd buttons (sidepanel.js also does this, but
+    //      our toolbar buttons need it for the ones not already wired) ----
+    // sidepanel.js already wires [data-cmd] elements on DOMContentLoaded;
+    // since this script runs after, existing bindings are fine.
+
+  })();
+  </script>
+
+</body>
+</html>
