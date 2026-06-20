@@ -327,7 +327,7 @@
     document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === b));
     ['practice', 'vocab', 'progress', 'flash'].forEach((t) => $('#' + t).hidden = t !== b.dataset.tab);
     if (b.dataset.tab === 'vocab' || b.dataset.tab === 'progress') loadVocab(b.dataset.tab);
-    if (b.dataset.tab === 'flash') renderFlash();
+    if (b.dataset.tab === 'flash') loadFlashCards();
   });
   async function loadVocab(tab) {
     const r = await cmd('vocab'); if (!r) return;
@@ -542,7 +542,10 @@
         ],
       }),
     });
-    if (!r.ok) throw new Error('worker-or-' + r.status);
+    if (!r.ok) {
+      if (r.status === 429) { showUpgradeModal('Đã hết hạn mức AI hôm nay. Nâng cấp để tiếp tục.'); return ''; }
+      throw new Error('worker-or-' + r.status);
+    }
     const j = await r.json();
     return ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
   }
@@ -682,10 +685,11 @@
       const targetEl = document.getElementById('target');
       if (targetEl) targetEl.value = selectedLang;
       settings.targetLang = selectedLang;
-      await chrome.storage.local.set({ se_settings: settings });
+      cmd('settings', settings); // push to content script
     }
     await chrome.storage.local.set({ [ONBOARD_KEY]: true });
     showView('list');
+    refresh(); // load subtitle list for the active tab
   }
 
   function initOnboardingUI() {
@@ -764,6 +768,7 @@
   // ===== 🎵 WAVEFORM VISUALIZER =====
   let waveAnimFrame = null;
   let waveActive = false;
+  let waveMicLevel = 0; // updated by ShadowMic level listener
   const waveHistory = new Float32Array(70).fill(0);
 
   function startWaveform() {
@@ -778,7 +783,9 @@
       ctx.clearRect(0, 0, W, H);
       // Shift history
       for (let i = 0; i < waveHistory.length - 1; i++) waveHistory[i] = waveHistory[i + 1];
-      waveHistory[waveHistory.length - 1] = Math.random() * 0.7 + 0.1; // simulated amplitude
+      // Use real mic level + subtle animation when silent
+      const live = waveMicLevel > 0.05 ? waveMicLevel : 0.04 + Math.sin(Date.now() / 400) * 0.03;
+      waveHistory[waveHistory.length - 1] = Math.min(1, live + Math.random() * 0.05);
 
       const grad = ctx.createLinearGradient(0, 0, W, 0);
       grad.addColorStop(0, '#1a73e8');
@@ -802,6 +809,7 @@
 
   function stopWaveform() {
     waveActive = false;
+    waveMicLevel = 0;
     if (waveAnimFrame) { cancelAnimationFrame(waveAnimFrame); waveAnimFrame = null; }
     const canvas = document.getElementById('waveform-canvas');
     if (!canvas) return;
@@ -823,9 +831,14 @@
   let flashRevealed = false;
 
   async function loadFlashCards() {
-    const r = await chrome.storage.local.get([FLASH_KEY, 'se_favorites']);
+    // Get favorites from content script (source of truth), fall back to cache
+    let favs = favorites; // `favorites` is updated from content script via getState()
+    if (!favs || !favs.length) {
+      const r2 = await cmd('vocab');
+      favs = (r2 && r2.savedWords) ? r2.savedWords.map(w => ({ text: w.word, trans: w.context || '' })) : [];
+    }
+    const r = await chrome.storage.local.get(FLASH_KEY);
     const srsData = r[FLASH_KEY] || {};
-    const favs = r.se_favorites || [];
 
     flashCards = favs.map((fav) => {
       const srs = srsData[fav.text] || { interval: 1, ease: 2.5, due: 0, reviews: 0 };
@@ -1323,7 +1336,10 @@
 
   // ===== Init =====
   if (window.ShadowMic) {
-    window.ShadowMic.setLevelListener((level) => { const meter = $('#micLevel'); if (meter) meter.style.transform = 'scaleY(' + Math.max(.08, level).toFixed(2) + ')'; });
+    window.ShadowMic.setLevelListener((level) => {
+      waveMicLevel = level; // feed real level into waveform
+      const meter = $('#micLevel'); if (meter) meter.style.transform = 'scaleY(' + Math.max(.08, level).toFixed(2) + ')';
+    });
     window.ShadowMic.setProgressListener((status, pct) => onProgress({ status, pct }));
   }
   // Nut "Toi noi xong -> cham ngay": dung ghi am tuc thi nhung van cham diem
