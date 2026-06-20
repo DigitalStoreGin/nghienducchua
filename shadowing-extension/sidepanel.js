@@ -36,8 +36,13 @@
     } catch (_) {}
   }
 
+  function isMicBlocked(error) {
+    return (error && error.name === 'NotAllowedError') || /not-allowed|permission|denied/i.test((error && error.message) || '');
+  }
+
   async function enableMic(options) {
     const button = $('#micButton');
+    const silent = options && options.silent;
     try {
       if (button) { button.disabled = true; button.classList.add('pending'); }
       await window.ShadowMic.ensureMic();
@@ -46,8 +51,17 @@
       return true;
     } catch (error) {
       if (button) button.classList.remove('pending', 'ready');
-      setStatus(micErrorMessage(error), 'warn');
-      if (!options || !options.silent) renderFeedback({ error: 'mic:' + ((error && error.message) || error) });
+      // Bị chặn quyền: Side Panel KHÔNG hiện được hộp thoại -> mở thẳng tab cấp quyền.
+      if (isMicBlocked(error)) {
+        if (!silent) {
+          openMicPermissionPage();
+          setStatus('🎤 Đã mở tab "Cấp quyền micro". Bấm Allow trong tab đó rồi quay lại bấm Bật mic.', 'warn');
+          renderFeedback({ error: 'mic:blocked' });
+        }
+      } else if (!silent) {
+        setStatus(micErrorMessage(error), 'warn');
+        renderFeedback({ error: 'mic:' + ((error && error.message) || error) });
+      }
       return false;
     } finally { if (button) button.disabled = false; }
   }

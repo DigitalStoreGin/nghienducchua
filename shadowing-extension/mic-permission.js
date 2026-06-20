@@ -32,4 +32,8 @@
   }
 
   btn.addEventListener('click', request);
+
+  // Tự xin quyền ngay khi mở tab (mở từ Side Panel = có user gesture). Nếu trình duyệt
+  // đòi gesture riêng thì người dùng bấm nút "Cho phép micro".
+  window.addEventListener('load', () => { request().catch(() => {}); });
 })();
