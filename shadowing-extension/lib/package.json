@@ -1,0 +1,4 @@
+{
+  "//": "Đánh dấu thư mục lib/ là CommonJS cho Node/Vitest (UMD module.exports). Trình duyệt bỏ qua file này khi load extension.",
+  "type": "commonjs"
+}

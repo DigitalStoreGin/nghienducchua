@@ -1,6 +1,6 @@
 name = "nghienducchua-proxy"
 main = "index.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 # Secrets (set via: npx wrangler secret put <NAME>)
@@ -9,3 +9,10 @@ compatibility_flags = ["nodejs_compat"]
 # DEEPL_API_KEY
 # OPENROUTER_API_KEY
 # ADMIN_KEY
+# SENTRY_DSN          (tuỳ chọn — bật giám sát lỗi qua /log; chưa set thì ghi console)
+
+# Burst rate limit theo user (Cloudflare native, GA). 30 lần / 60 giây.
+[[ratelimit]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }

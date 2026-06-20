@@ -576,6 +576,8 @@
     }
     try { const d = await deeplTranslate(text, from, to); if (d) { transCache[ck] = d; return d; } } catch (e) {}
     try { const t = await myMemoryTranslate(text, from, to); if (t) { transCache[ck] = t; return t; } } catch (e) {}
+    // Tất cả nguồn dịch đều thất bại — báo về Worker /log để theo dõi
+    try { if (self.ShadowReport) self.ShadowReport.error('all-translate-failed', { from, to, len: text.length }, 'translateText'); } catch (_) {}
     return '';
   }
 

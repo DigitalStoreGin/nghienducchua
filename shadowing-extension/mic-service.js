@@ -292,43 +292,18 @@
   }
 
   // ── Phát hiện cấu hình máy & chọn model Whisper phù hợp ───────────────
-  //  Mục tiêu: chạy mượt trên máy 4GB–8GB. transformers.js v2 chạy WASM (CPU).
-  //  Chọn model MẠNH NHẤT mà máy vẫn chạy được; Web Speech chỉ là phương án CUỐI.
-  let _hwCache = null;
-  function detectHardware() {
-    if (_hwCache) return _hwCache;
-    const mem = navigator.deviceMemory || 4;          // GB (Chrome giới hạn tối đa 8)
-    const cores = navigator.hardwareConcurrency || 2; // số luồng CPU
-    const gpu = !!(navigator.gpu);                     // WebGPU (dự phòng nâng cấp v3)
-    const coi = !!self.crossOriginIsolated;            // cho phép WASM đa luồng?
-    _hwCache = { mem, cores, gpu, coi };
-    return _hwCache;
-  }
-
-  // Bảng model: tiny(~75MB) < base(~145MB) < small(~480MB). Bản quantized (int8).
-  const WHISPER_MODELS = {
-    tiny:  { id: 'Xenova/whisper-tiny',  label: 'Tiny (nhẹ, máy yếu)',  short: 'tiny' },
-    base:  { id: 'Xenova/whisper-base',  label: 'Base (cân bằng)',       short: 'base' },
-    small: { id: 'Xenova/whisper-small', label: 'Small (mạnh nhất)',     short: 'small' },
+  //  Logic chọn model nằm ở lib/whisper-select.js (nguồn chân lý duy nhất, có test).
+  //  Web Speech chỉ là phương án CUỐI khi Whisper không khả dụng.
+  const WS = root.WhisperSelect || {
+    // Dự phòng nếu lib chưa nạp (không nên xảy ra) — mặc định an toàn 'base'.
+    detectHardware: () => ({ mem: navigator.deviceMemory || 4, cores: navigator.hardwareConcurrency || 2, gpu: !!navigator.gpu, coi: !!self.crossOriginIsolated }),
+    pickWhisperModel: (_hw, ov) => ({ id: 'Xenova/whisper-' + (ov && ov !== 'auto' ? ov : 'base'), label: 'Base', short: (ov && ov !== 'auto' ? ov : 'base') }),
+    pickThreads: () => 1,
   };
-
-  // Tự chọn theo RAM + số nhân CPU. Có thể ép bằng override ('tiny'|'base'|'small').
-  function pickWhisperModel(override) {
-    if (override && override !== 'auto' && WHISPER_MODELS[override]) return WHISPER_MODELS[override];
-    const { mem, cores } = detectHardware();
-    if (mem >= 8 && cores >= 8) return WHISPER_MODELS.small; // máy mạnh: model mạnh nhất
-    if (mem >= 6 && cores >= 4) return WHISPER_MODELS.base;  // 6–8GB phổ thông
-    if (mem >= 4 && cores >= 4) return WHISPER_MODELS.base;  // 4GB nhiều nhân: vẫn chạy base tốt
-    if (mem >= 4)               return WHISPER_MODELS.tiny;  // 4GB ít nhân: nhẹ cho mượt
-    return WHISPER_MODELS.tiny;                              // máy yếu hơn
-  }
-
-  // Số luồng WASM: chỉ >1 khi crossOriginIsolated (có SharedArrayBuffer).
-  function pickThreads() {
-    const hw = detectHardware();
-    if (!hw.coi) return 1;
-    return Math.max(1, Math.min(4, hw.cores - 1));
-  }
+  let _hwCache = null;
+  function detectHardware() { return (_hwCache = _hwCache || WS.detectHardware()); }
+  function pickWhisperModel(override) { return WS.pickWhisperModel(detectHardware(), override); }
+  function pickThreads() { return WS.pickThreads(detectHardware()); }
 
   function getWorker() {
     if (worker) return worker;

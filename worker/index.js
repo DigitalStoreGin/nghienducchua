@@ -18,12 +18,24 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Key',
 };
 
-const OR_MODELS = [
+export const OR_MODELS = [
   'openai/gpt-oss-120b:free',
   'nvidia/nemotron-3-ultra-550b-a55b:free',
   'google/gemma-4-31b-it:free',
   'google/gemma-4-26b-a4b-it:free',
 ];
+
+// Chỉ cho phép model trong whitelist (chống client gọi model tốn tiền).
+export function allowedModel(model) {
+  return OR_MODELS.includes(model) ? model : OR_MODELS[0];
+}
+
+// Parse Sentry DSN -> {key, host, projectId} hoặc null. (tách ra để test được)
+export function parseSentryDsn(dsn) {
+  const m = /^https:\/\/([^@]+)@([^/]+)\/(.+)$/.exec(dsn || '');
+  if (!m) return null;
+  return { key: m[1], host: m[2], projectId: m[3] };
+}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -43,7 +55,12 @@ export default {
 
     // Public health check
     if (url.pathname === '/health') {
-      return json({ ok: true, version: '2.0.0', arch: 'supabase-jwt' });
+      return json({ ok: true, version: '2.1.0', arch: 'supabase-jwt', features: ['ratelimit', 'error-log'] });
+    }
+
+    // Public error/telemetry sink (no auth — but capped & rate-limited)
+    if (url.pathname === '/log') {
+      return handleLog(request, env);
     }
 
     // Admin endpoints (internal use only)
@@ -62,6 +79,17 @@ export default {
     const user = await verifyToken(token, env);
     if (!user) {
       return json({ error: 'invalid_token', message: 'Session expired. Please log in again.' }, 401);
+    }
+
+    // Per-user burst rate limit (Cloudflare native, GA). Chống spam theo giây.
+    // Quota theo NGÀY vẫn do Supabase RPC xử lý riêng.
+    if (env.RATE_LIMITER && (url.pathname === '/translate' || url.pathname === '/ai-translate')) {
+      try {
+        const { success } = await env.RATE_LIMITER.limit({ key: user.id });
+        if (!success) {
+          return json({ error: 'rate_limited', message: 'Bạn thao tác quá nhanh. Vui lòng chờ vài giây rồi thử lại.' }, 429);
+        }
+      } catch (_) { /* binding lỗi -> không chặn (fail-open chỉ cho burst limit) */ }
     }
 
     if (url.pathname === '/translate') {
@@ -224,7 +252,7 @@ async function handleOpenRouter(request, env, userId) {
   try {
     const body = await request.json();
     // Ensure only allowed models
-    const model = OR_MODELS.includes(body.model) ? body.model : OR_MODELS[0];
+    const model = allowedModel(body.model);
 
     const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -295,6 +323,63 @@ async function handleAdmin(request, pathname, env) {
   }
 
   return json({ error: 'unknown admin action' }, 400);
+}
+
+// ── /log  — error & telemetry sink ───────────────────────────
+// Nhận lỗi từ extension. Nếu có SENTRY_DSN -> chuyển tiếp lên Sentry.
+// Nếu chưa cấu hình Sentry -> ghi console (xem qua `wrangler tail`).
+async function handleLog(request, env) {
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  let body;
+  try {
+    const raw = await request.text();
+    if (raw.length > 16000) return json({ error: 'payload_too_large' }, 413); // chặn lạm dụng
+    body = JSON.parse(raw);
+  } catch (_) {
+    return json({ error: 'bad_json' }, 400);
+  }
+
+  const event = {
+    level: body.level || 'error',
+    message: String(body.message || '').slice(0, 2000),
+    stack: String(body.stack || '').slice(0, 4000),
+    context: body.context || {},
+    where: String(body.where || 'unknown').slice(0, 100),
+    version: String(body.version || ''),
+    ts: new Date().toISOString(),
+  };
+
+  // Luôn ghi console (đủ để debug khi chưa gắn Sentry)
+  console.error('[client-error]', event.where, event.message, event.stack);
+
+  if (env.SENTRY_DSN) {
+    try { await forwardToSentry(env.SENTRY_DSN, event); } catch (e) { console.error('sentry-forward-failed', e.message); }
+  }
+  return json({ ok: true });
+}
+
+// Đẩy 1 event lên Sentry qua HTTP store API (không cần SDK).
+async function forwardToSentry(dsn, event) {
+  // DSN dạng: https://<publicKey>@<host>/<projectId>
+  const parsed = parseSentryDsn(dsn);
+  if (!parsed) return;
+  const { key, host, projectId } = parsed;
+  const endpoint = `https://${host}/api/${projectId}/store/?sentry_key=${key}&sentry_version=7`;
+  const payload = {
+    platform: 'javascript',
+    level: event.level,
+    timestamp: event.ts,
+    release: event.version || undefined,
+    tags: { where: event.where },
+    extra: event.context,
+    exception: { values: [{ type: 'ClientError', value: event.message, stacktrace: { frames: [] } }] },
+    message: event.message + (event.stack ? '\n' + event.stack : ''),
+  };
+  await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 function today() {
