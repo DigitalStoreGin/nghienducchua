@@ -1,0 +1,107 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="sidepanel.css"><title>Shadow</title></head>
+<body>
+  <header class="hd">
+    <img src="icons/icon32.png" class="logo" alt="Shadow Deutsch">
+    <div class="brand">Shadow <span>Deutsch</span></div>
+    <div class="conn" id="conn" title="Kết nối">
+      <span class="conn-dot"></span>
+    </div>
+    <nav class="tabs">
+      <button class="tab on" data-tab="practice" data-i18n="tab_practice">Luyện</button>
+      <button class="tab" data-tab="vocab" data-i18n="tab_vocab">Từ vựng</button>
+      <button class="tab" data-tab="flash" data-i18n="tab_flash">Thẻ</button>
+      <button class="tab" data-tab="progress" data-i18n="tab_progress">Tiến độ</button>
+    </nav>
+  </header>
+
+  <div id="nohost" class="hint" hidden data-i18n="nohost">Mở một video YouTube hoặc Netflix rồi quay lại đây.</div>
+
+  <section class="pane" id="practice">
+    <div class="hero">
+      <div><span class="eyebrow">SHADOWING STUDIO</span><h1>Luyện từng câu.<br>Nói tự nhiên hơn.</h1></div>
+      <div class="mic-orb" aria-hidden="true"><i id="micLevel"></i><span>🎙</span></div>
+    </div>
+    <div id="onboard" class="onboard" hidden>
+      <b data-i18n="ob_title">Bắt đầu nhanh</b>
+      <ol><li data-i18n="ob1">Mở video tiếng Đức trên YouTube.</li>
+      <li data-i18n="ob2">Bấm "Phụ đề tự động" (hoặc nạp file SRT/VTT).</li>
+      <li data-i18n="ob3">Bấm "Bật mic", cho phép micro cho extension.</li>
+      <li data-i18n="ob4">Bấm một câu → nói lại → xem điểm.</li></ol>
+      <button class="btn" id="obclose" data-i18n="ob_close">Đã hiểu</button>
+    </div>
+    <div class="src cardbox">
+      <div class="group-title">Nguồn phụ đề</div>
+      <div class="src-row">
+        <button class="btn src-btn" data-cmd="loadAuto"><span class="btn-icon">⬇️</span> <span data-i18n="src_auto">Phụ đề tự động</span></button>
+        <button class="btn src-btn" id="live" data-cmd="live"><span class="btn-icon">🔴</span> <span data-i18n="src_live">Live (bật CC)</span></button>
+        <label class="btn src-btn file"><span class="btn-icon">📂</span> <span data-i18n="src_file">File SRT/VTT</span><input type="file" id="file" accept=".srt,.vtt,.json,.xml,.ttml,.dfxp" hidden></label>
+      </div>
+      <div class="src-row">
+        <button class="btn mic" id="micButton" data-cmd="mic"><span class="mic-dot"></span><span data-i18n="src_mic">Bật mic</span></button>
+        <button class="btn icon" data-cmd="diag" data-i18n-title="src_diag" title="Kiểm tra">⋯</button>
+      </div>
+    </div>
+    <div id="status" class="status" data-i18n="status_init">Mở video tiếng Đức, lấy phụ đề để bắt đầu.</div>
+    <div id="diagbox" class="diagbox" hidden></div>
+    <div id="prog" class="prog" hidden><div class="bar"><i></i></div><span></span></div>
+
+    <details class="advanced">
+      <summary>Cài đặt luyện tập</summary>
+      <div class="settings">
+      <label data-i18n="set_speed">Tốc độ<select id="rate"><option>0.5</option><option>0.75</option><option selected>1</option></select></label>
+      <label data-i18n="set_rep">Lặp<input id="rep" type="number" min="1" max="10" value="3"></label>
+      <label><input id="autonext" type="checkbox" checked> <span data-i18n="set_autonext">Auto next</span></label>
+      <label><input id="autorec" type="checkbox" checked> <span data-i18n="set_autorec">Auto ghi âm</span></label>
+      <label><input id="vsubs" type="checkbox" checked> <span data-i18n="set_vsubs">Phụ đề trên video</span></label>
+      <label data-i18n="set_engine">Engine<select id="engine"><option value="webspeech">Web Speech</option><option value="server">Server</option><option value="whisper">Whisper</option></select></label>
+      <label title="Cần tải model: chạy vendor/download-vendor"><input id="silerovad" type="checkbox"> <span data-i18n="set_silero">Silero VAD</span></label>
+      <label data-i18n="set_offset">Offset<input id="offset" type="number" step="100" value="0">ms</label>
+      <label data-i18n="set_server">Server<input id="serverurl" type="text" value="http://localhost:8000" style="width:150px"></label>
+      <label data-i18n="set_deepl" title="Dán key DeepL của bạn (lưu cục bộ)">DeepL key<input id="deeplkey" type="password" autocomplete="off" placeholder="xxxx:fx" style="width:150px"></label>
+      <label data-i18n="set_orkey" title="Dán key OpenRouter của bạn (lưu cục bộ)">OpenRouter key<input id="orkey" type="password" autocomplete="off" placeholder="sk-or-..." style="width:150px"></label>
+      <label data-i18n="set_target">Học<select id="target"><option value="de" selected>Đức</option><option value="en">Anh</option><option value="fr">Pháp</option><option value="es">Tây Ban Nha</option><option value="it">Ý</option><option value="ja">Nhật</option><option value="ko">Hàn</option><option value="zh">Trung</option></select></label>
+      <label data-i18n="set_native">Dịch sang<select id="native"><option value="vi" selected>Việt</option><option value="en">Anh</option></select></label>
+      <label data-i18n="set_uilang">Ngôn ngữ<select id="uilang"><option value="vi" selected>Tiếng Việt</option><option value="en">English</option></select></label>
+      </div>
+    </details>
+
+    <div class="now">
+      <div class="now-de" id="nowDe">—</div>
+      <div class="now-tr" id="nowTr"></div>
+      <div class="now-ctrl">
+        <button class="cbtn" data-cmd="prev" data-i18n-title="t_prev" title="Câu trước">⏮</button>
+        <button class="cbtn play" data-cmd="togglePlay" data-i18n-title="t_play" title="Phát/Dừng">▶</button>
+        <button class="cbtn" id="loop" data-cmd="loop" data-i18n-title="t_loop" title="Lặp 1 câu">🔁</button>
+        <button class="cbtn" data-cmd="next" data-i18n-title="t_next" title="Câu sau">⏭</button>
+        <span class="count" id="count">0/0</span>
+        <button class="cbtn shadow" data-cmd="shadowCur" data-i18n-title="t_shadow" title="Luyện">🎤</button>
+        <button class="cbtn" data-cmd="speakCur" data-i18n-title="t_listen" title="Nghe mẫu">🔊</button>
+        <button class="cbtn" data-cmd="dictate" data-i18n-title="t_dict" title="Chép chính tả">✍️</button>
+        <button class="cbtn" data-cmd="cloze" data-i18n-title="t_cloze" title="Điền chỗ trống">🧩</button>
+        <button class="cbtn" id="blurBtn" data-i18n-title="t_blur" title="Ẩn chữ (tự kiểm tra)">🙈</button>
+      </div>
+      <div class="kbd-hint" data-i18n="kbd_hint">⌨ Space: nói · ◀ ▶: câu · ▲ ▼: tốc độ · R: nghe · L: lặp · B: ẩn chữ</div>
+    </div>
+
+    <div class="favbar">
+      <button class="btn fav" data-cmd="shadowFav" data-i18n="fav_run">▶️ Tự luyện dòng ⭐</button>
+      <button class="btn finalize" id="finalizeBtn" data-i18n="finalize" hidden>✅ Tôi nói xong → chấm</button>
+      <button class="btn" data-cmd="stop" data-i18n="stop">⏹ Dừng</button>
+    </div>
+
+    <div id="fb" class="fb" hidden></div>
+    <div id="list" class="list"></div>
+  </section>
+
+  <section class="pane" id="vocab" hidden></section>
+  <section class="pane" id="flash" hidden></section>
+  <section class="pane" id="progress" hidden></section>
+  <div id="dictbox" class="dictbox" hidden></div>
+
+  <script src="content/freq-de.js"></script>
+  <script src="vendor/vad-silero.js"></script>
+  <script src="mic-service.js"></script>
+  <script src="sidepanel.js"></script>
+</body></html>

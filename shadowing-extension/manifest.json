@@ -1,0 +1,109 @@
+{
+  "manifest_version": 3,
+  "name": "Shadow — Luyện Shadowing tiếng Đức (YouTube & Netflix)",
+  "version": "0.18.0",
+  "description": "Luyen shadowing tieng Duc kieu ELSA: phu de, click cau, tu dung, ghi am, cham diem ngu am (Kolner Phonetik) bang Whisper cuc bo. Chay tren YouTube & Netflix.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "sidePanel",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "https://*.huggingface.co/*",
+    "https://api-free.deepl.com/*",
+    "https://api.deepl.com/*",
+    "https://api.mymemory.translated.net/*",
+    "https://huggingface.co/*",
+    "https://m.youtube.com/*",
+    "https://openrouter.ai/*",
+    "https://www.netflix.com/*",
+    "https://www.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Shadowing Deutsch",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "64": "icons/icon64.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "64": "icons/icon64.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*"
+      ],
+      "js": [
+        "inject/intercept-youtube.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.netflix.com/*"
+      ],
+      "js": [
+        "inject/intercept-netflix.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*",
+        "https://www.netflix.com/*"
+      ],
+      "js": [
+        "content/parsers.js",
+        "content/phonetic.js",
+        "content/storage.js",
+        "content/video-controller.js",
+        "content/speech.js",
+        "content/bridge.js",
+        "content/shadow-engine.js",
+        "content/video-subs.js",
+        "content/cs-api.js",
+        "content/main.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vendor/*",
+        "whisper-worker.js"
+      ],
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://www.netflix.com/*"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://api.mymemory.translated.net https://huggingface.co https://*.huggingface.co https://cdn.jsdelivr.net https://openrouter.ai https://api-free.deepl.com https://api.deepl.com;"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}

@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+faster-whisper
+youtube-transcript-api
+# --- Cham phat am theo am vi (endpoint /score). Bo qua neu khong dung. ---
+# Can cai espeak-ng tren he thong: Windows: choco install espeak-ng | mac: brew install espeak-ng | linux: apt install espeak-ng
+torch
+transformers
+soundfile
+phonemizer
