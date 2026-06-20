@@ -4,3 +4,7 @@ npm-debug.log*
 *.zip
 coverage/
 .vitest/
+
+# Python
+__pycache__/
+*.pyc
