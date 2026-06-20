@@ -5,8 +5,16 @@
   'use strict';
   const btn = document.getElementById('grant');
   const status = document.getElementById('status');
+  const settingsBtn = document.getElementById('openSettings');
 
   function show(kind, html) { status.className = 'status ' + kind; status.innerHTML = html; }
+
+  // Mở thẳng trang cài đặt micro của Chrome (cho trường hợp đã chặn cứng).
+  if (settingsBtn) settingsBtn.addEventListener('click', () => {
+    try {
+      if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: 'chrome://settings/content/microphone' });
+    } catch (_) {}
+  });
 
   async function request() {
     btn.disabled = true;
@@ -19,7 +27,8 @@
     } catch (e) {
       const name = (e && e.name) || '';
       if (name === 'NotAllowedError') {
-        show('err', '❌ Quyền micro đang bị chặn. Bấm biểu tượng <b>🔒 / 🎤</b> cạnh thanh địa chỉ ở trên → <b>Microphone → Allow</b> → tải lại trang rồi bấm lại.');
+        show('err', '❌ Quyền micro đang bị <b>chặn cứng</b>. Cách sửa:<br>• Bấm biểu tượng <b>🔒 / 🎤</b> cạnh thanh địa chỉ ở trên → <b>Microphone → Allow</b> → tải lại trang này.<br>• Hoặc bấm <b>Mở cài đặt micro Chrome</b> bên dưới → tìm dòng extension này → chuyển sang <b>Allow</b>.');
+        if (settingsBtn) settingsBtn.style.display = 'inline-block';
       } else if (name === 'NotFoundError') {
         show('err', '❌ Không tìm thấy micro nào trên thiết bị. Kiểm tra micro rồi thử lại.');
       } else if (name === 'NotReadableError') {
