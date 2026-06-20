@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line no-unused-vars
 const CONFIG = Object.freeze({
-  SUPABASE_URL:      'https://YOUR_PROJECT_ID.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR_ANON_PUBLIC_KEY',
+  SUPABASE_URL:      'https://tlmkuthhaybfkjbpvunc.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_aIACBNpTEF8b5wghZC9nXg_7yBVYAvn',
   WORKER_URL:        'https://nghienducchua-proxy.thoatran21012.workers.dev',
 });
