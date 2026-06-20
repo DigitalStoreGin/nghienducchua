@@ -19,8 +19,8 @@ const CORS = {
 };
 
 const OR_MODELS = [
-  'openai/gpt-oss-120b:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'google/gemma-4-31b-it:free',
 ];
 
 function json(data, status = 200) {
