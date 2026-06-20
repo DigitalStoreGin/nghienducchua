@@ -1,4 +1,20 @@
 
+## 🆕 v0.20.0 — Web Speech chạy song song + sẵn sàng WebGPU + E2E Playwright
+
+- **🎤 Web Speech chạy SONG SONG khi ghi âm (fallback không phải nói lại):** trong lúc
+  thu âm cho Whisper, extension đồng thời bật Web Speech bắt CÙNG câu nói. Nếu Whisper trả
+  rỗng hoặc "ảo giác" → dùng ngay kết quả Web Speech đã bắt được, **không bắt khách nói lại**.
+  Ô engine hiển thị `webspeech↔whisper` khi dùng bản dự phòng song song.
+- **⚡ Sẵn sàng WebGPU cho máy mạnh:** `lib/whisper-select.js` thêm `pickDevice()` tự nhận
+  WebGPU (`navigator.gpu`). *Hiện vendor là transformers.js v2 (chỉ WASM)* nên worker vẫn ép
+  WASM để ổn định; muốn bật WebGPU (nhanh hơn nhiều) chỉ cần nâng vendor lên transformers.js
+  v3 rồi truyền `device:'webgpu'`. Logic phát hiện đã có sẵn + có test.
+- **🧪 E2E Playwright (mô phỏng YouTube):** `tests/e2e/` chạy Chromium thật, nạp dữ liệu phụ đề
+  YouTube giả (json3 + bản dịch) → parse → gộp câu → gán bản dịch → render DOM, và khẳng định
+  **không lỗi console, bản dịch không bị lặp**. Chạy `npm run test:e2e`. CI chạy cả unit + E2E.
+- **🔧 Sửa nhiều bug (review 3 lớp):** chống tải lại/đua model Whisper, timeout chống treo,
+  Google/Microsoft free dịch ổn định hơn, siết bảo mật Worker (encode query, validate UUID).
+
 ## 🆕 v0.19.0 — Whisper tự chọn theo máy + nâng cấp dần + dịch ưu tiên YouTube
 
 - **🎙️ Chấm phát âm bằng Whisper, tự thích nghi máy khách:** mặc định engine là **Whisper**

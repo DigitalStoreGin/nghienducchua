@@ -48,6 +48,15 @@ describe('pickWhisperModel — chọn model theo cấu hình máy', () => {
   });
 });
 
+describe('pickDevice — chọn thiết bị suy luận (sẵn cho nâng cấp WebGPU)', () => {
+  it('máy có WebGPU → webgpu', () => {
+    expect(WS.pickDevice({ mem: 8, cores: 8, gpu: true })).toBe('webgpu');
+  });
+  it('máy không có WebGPU → wasm', () => {
+    expect(WS.pickDevice({ mem: 8, cores: 8, gpu: false })).toBe('wasm');
+  });
+});
+
 describe('pickThreads — số luồng WASM', () => {
   it('không crossOriginIsolated → luôn 1 luồng', () => {
     expect(WS.pickThreads({ mem: 8, cores: 8, coi: false })).toBe(1);

@@ -264,6 +264,32 @@
     });
   }
 
+  // Web Speech chạy SONG SONG lúc ghi âm: bắt cùng câu nói để DỰ PHÒNG cho Whisper.
+  // Nếu Whisper rỗng/ảo giác -> dùng ngay kết quả này, KHÔNG bắt khách nói lại.
+  function startParallelWebSpeech(opts) {
+    const Recognition = root.SpeechRecognition || root.webkitSpeechRecognition;
+    if (!Recognition) return null;
+    let transcript = '', rec;
+    try {
+      rec = new Recognition();
+      rec.lang = opts.lang || 'de-DE';
+      rec.interimResults = true;
+      rec.continuous = true;
+      rec.maxAlternatives = 1;
+      rec.onresult = (event) => {
+        let t = '';
+        for (let i = 0; i < event.results.length; i++) t += (event.results[i][0] && event.results[i][0].transcript || '') + ' ';
+        transcript = t.replace(/\s+/g, ' ').trim();
+      };
+      rec.onerror = () => {}; // chỉ là dự phòng -> nuốt lỗi (no-speech/aborted…)
+      rec.start();
+    } catch (_) { return null; }
+    return {
+      getTranscript: () => transcript.trim(),
+      stop: () => { try { rec.stop(); } catch (_) {} try { rec.abort(); } catch (_) {} },
+    };
+  }
+
   function encodeWav(f32, sampleRate) {
     const buffer = new ArrayBuffer(44 + f32.length * 2), view = new DataView(buffer);
     const write = (offset, text) => { for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i)); };
@@ -401,7 +427,14 @@
     if (manual) transcribeModel = pickWhisperModel(opts.whisperModel).id;
     else if (!activeModelId && !_warmupStarted) { try { warmupWhisper('auto'); } catch (_) {} }
     const labelModel = transcribeModel || activeModelId || TINY.id;
+    // Bắt Web Speech SONG SONG (dự phòng không cần nói lại). Lấy kết quả sau khi ghi xong.
+    const parallel = startParallelWebSpeech(opts);
+    let webspeechBackup = '';
     const data = await recordRaw(opts.maxMs || 7000, opts.abortSignal, opts.vad), id = crypto.randomUUID();
+    if (parallel) {
+      try { await new Promise((r) => setTimeout(r, 250)); webspeechBackup = parallel.getTranscript(); } catch (_) {}
+      parallel.stop();
+    }
     try {
       const result = await new Promise((resolve, reject) => {
         const w = getWorker();
@@ -429,14 +462,21 @@
       });
       activeModelId = result.model || activeModelId; // worker báo model thực tế đã dùng
       const txt = (result.text || '').trim();
-      // KIỂM TRA kết quả: nếu CÓ chữ nhưng là "ảo giác"/lặp vô nghĩa -> vẫn trả TEXT THẬT
-      // của audio (Web Speech KHÔNG ghi lại được tiếng đã nói) nhưng gắn cờ lowConfidence
-      // để UI nhắc nói lại thay vì chấm điểm thấp oan. Rỗng = khách chưa nói.
       const V = root.ShadowValidate;
       const bad = !!(txt && V && V.classifyTranscript && V.classifyTranscript(txt) === 'bad');
+      // Whisper rỗng (mà khách CÓ nói) hoặc "ảo giác" -> dùng Web Speech bắt SONG SONG,
+      // KHÔNG bắt khách nói lại. Rỗng + backup rỗng = khách chưa nói -> trả rỗng.
+      if ((!txt || bad) && webspeechBackup) {
+        return { transcript: webspeechBackup, words: [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'webspeech↔whisper', fallback: true, whisperRejected: txt.slice(0, 80) };
+      }
       return { transcript: txt, words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'whisper:' + shortFromId(result.model || labelModel), lowConfidence: bad };
     } catch (err) {
-      // Whisper lỗi lúc chạy (hiếm) → hạ xuống Web Speech (phương án cuối) để không kẹt.
+      if (err && /recording-aborted/.test(String(err.message || err))) throw err; // user bấm Dừng -> tôn trọng
+      // Whisper lỗi lúc chạy (hiếm). Có Web Speech bắt song song -> dùng luôn (không nói lại).
+      if (webspeechBackup) {
+        return { transcript: webspeechBackup, words: [], pitch: data.pitch, spokenMs: data.spokenMs, engine: 'webspeech (Whisper lỗi)', fallback: true, whisperError: String(err.message || err) };
+      }
+      // Không có backup -> phương án cuối: ghi âm lại bằng Web Speech để không kẹt.
       const r = await webSpeech(Object.assign({}, opts, { engineLabel: 'webspeech (Whisper lỗi)' }));
       r.fallback = true; r.whisperError = String(err.message || err);
       return r;

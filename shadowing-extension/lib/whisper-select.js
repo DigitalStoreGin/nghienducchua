@@ -51,5 +51,14 @@
     return Math.max(1, Math.min(4, hw.cores - 1));
   }
 
-  return { WHISPER_MODELS, detectHardware, pickWhisperModel, pickThreads };
+  // Thiết bị suy luận: 'webgpu' nếu máy mạnh có WebGPU (nhanh hơn nhiều), ngược lại 'wasm'.
+  // LƯU Ý: transformers.js v2 (bản ĐANG nhúng) CHỈ chạy WASM. Bật WebGPU cần nâng
+  // vendor lên transformers.js v3 (device:'webgpu', dtype:'q4'/'fp16'). Hàm này để
+  // sẵn (đã test) cho lần nâng cấp đó — hiện worker vẫn ép 'wasm' để chạy ổn định.
+  function pickDevice(hw) {
+    hw = hw || detectHardware();
+    return hw.gpu ? 'webgpu' : 'wasm';
+  }
+
+  return { WHISPER_MODELS, detectHardware, pickWhisperModel, pickThreads, pickDevice };
 });

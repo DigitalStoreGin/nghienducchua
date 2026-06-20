@@ -1,14 +1,17 @@
 {
   "name": "shadowecho",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "description": "ShadowEcho — luyện shadowing tiếng Đức (Chrome extension + Cloudflare Worker)",
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "vitest": "^2.1.9"
   }
 }

@@ -1,0 +1,4 @@
+{
+  "//": "Đánh dấu content/ là CommonJS cho Node/Vitest (UMD module.exports). Trình duyệt/extension bỏ qua file này.",
+  "type": "commonjs"
+}

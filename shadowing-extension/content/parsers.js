@@ -182,7 +182,23 @@
     return expanded.map((s, i) => ({ id: i, startMs: s.startMs, endMs: s.endMs, text: s.text }));
   }
 
-  const API = { tcToMs, stripTags, parseSRT, parseVTT, parseJson3, parseTTML, parseAuto, mergeIntoSentences };
+  // --- Gán bản dịch (cue) vào câu theo ĐIỂM GIỮA -----------------------------
+  // Mỗi cue dịch thuộc đúng 1 câu -> KHÔNG lặp bản dịch khi câu dài bị tách
+  // (splitLongSentence). Dùng cho phụ đề tự động YouTube (data + tlang).
+  function attachTranslations(sentences, tcues) {
+    if (!sentences || !tcues || !tcues.length) return sentences;
+    for (const s of sentences) {
+      const parts = [];
+      for (const c of tcues) {
+        const mid = (c.startMs + c.endMs) / 2;
+        if (mid >= s.startMs && mid < s.endMs) parts.push(c.text);
+      }
+      if (parts.length) s.trans = parts.join(' ').replace(/\s+/g, ' ').trim();
+    }
+    return sentences;
+  }
+
+  const API = { tcToMs, stripTags, parseSRT, parseVTT, parseJson3, parseTTML, parseAuto, mergeIntoSentences, attachTranslations };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (root) { root.SD = root.SD || {}; root.SD.parsers = API; }
 })(typeof window !== 'undefined' ? window : null);

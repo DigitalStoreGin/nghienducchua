@@ -5,6 +5,12 @@ npm-debug.log*
 coverage/
 .vitest/
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/
+
 # Python
 __pycache__/
 *.pyc
