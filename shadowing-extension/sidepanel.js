@@ -166,6 +166,9 @@
     if (st.state === 'recording') {
       const el = $('#you-said-text'); if (el) el.textContent = 'Listening…';
       showRecordPanel(true);
+      startWaveform();
+    } else {
+      stopWaveform();
     }
   }
   function onProgress(p) {
@@ -519,7 +522,7 @@
     if (DEEPL_TGT[from]) body.source_lang = DEEPL_TGT[from].split('-')[0];
     const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: workerHeaders(), body: JSON.stringify(body) });
     if (!r.ok) {
-      if (r.status === 429) { const j = await r.json(); setStatus('⚠️ ' + (j.message || 'Đã hết hạn mức dịch hôm nay'), 'warn'); return ''; }
+      if (r.status === 429) { const j = await r.json(); showUpgradeModal('Đã hết hạn mức dịch hôm nay. Nâng cấp để tiếp tục.'); return ''; }
       throw new Error('worker-deepl-' + r.status);
     }
     const j = await r.json();
@@ -932,33 +935,62 @@
     };
   }
 
-  // ===== GĐ2: Flashcard SRS (lưu chrome.storage 'sd_srs_v1') =====
+  // ===== GĐ2: Flashcard SRS (legacy pane — kept for tab compatibility) =====
   const SRS_KEY = 'sd_srs_v1';
   function srsGet() { return new Promise((res) => { try { chrome.storage.local.get(SRS_KEY, (r) => res((r && r[SRS_KEY]) || {})); } catch (e) { res({}); } }); }
   function srsSet(d) { return new Promise((res) => { try { chrome.storage.local.set({ [SRS_KEY]: d }, res); } catch (e) { res(); } }); }
   const DAY = 86400000;
-  async function renderFlash() {
-    const pane = $('#flash');
-    const r = await cmd('vocab'); const words = (r && r.savedWords) || [];
-    if (!words.length) { pane.innerHTML = '<div class="empty">Chưa có từ. Click một từ trong câu → ⭐ Lưu để tạo thẻ.</div>'; return; }
-    const srs = await srsGet(); const now = Date.now();
-    const due = words.filter((w) => { const st = srs[w.word]; return !st || st.due <= now; });
-    if (!due.length) { pane.innerHTML = '<div class="empty">🎉 Hết thẻ đến hạn! Quay lại sau. (' + words.length + ' từ đã lưu)</div>'; return; }
-    const w = due[0];
-    pane.innerHTML = '<div class="flashinfo">Đến hạn: ' + due.length + ' / Tổng: ' + words.length + '</div>' +
-      '<div class="card"><div class="front">' + w.word + '</div><div class="back" id="cback" style="visibility:hidden">' +
-      '… <i>' + (w.context || '') + '</i></div>' +
-      '<div class="grades" id="cgrades" style="visibility:hidden">' +
-      '<button class="g again" data-g="0">Lại</button><button class="g hard" data-g="1">Khó</button><button class="g good" data-g="2">Tốt</button></div>' +
-      '<button class="btn" id="creveal" style="margin-top:12px">Lật thẻ / Nghe</button></div>';
-    fetchGloss(w.word).then((g) => { const b = $('#cback'); if (b) b.innerHTML = (g || '') + ' <br><i>' + (w.context || '') + '</i>'; });
-    $('#creveal').onclick = () => { $('#cback').style.visibility = 'visible'; $('#cgrades').style.visibility = 'visible'; speakText(w.word); };
-    pane.querySelectorAll('.g').forEach((b) => b.onclick = async () => {
-      const g = +b.dataset.g; const st = srs[w.word] || { interval: 0 };
-      let iv = g === 0 ? 0 : g === 1 ? Math.max(1, (st.interval || 1)) : Math.max(1, (st.interval || 1) * 2 || 1);
-      srs[w.word] = { interval: iv, due: now + (g === 0 ? 60000 : iv * DAY) };
-      await srsSet(srs); renderFlash();
-    });
+
+  function renderFlash() {
+    const info = document.getElementById('flash-info');
+    const front = document.getElementById('flash-front');
+    const back = document.getElementById('flash-back');
+    const hardBtn = document.getElementById('btn-hard');
+    const goodBtn = document.getElementById('btn-good');
+    const skipBtn = document.getElementById('btn-skip');
+
+    if (!front) return;
+
+    if (!flashCards.length) {
+      if (info) info.innerHTML = '<div class="flash-empty">⭐ Thêm câu yêu thích để bắt đầu luyện flashcard!</div>';
+      front.textContent = '';
+      if (back) back.hidden = true;
+      if (hardBtn) hardBtn.disabled = true;
+      if (goodBtn) goodBtn.disabled = true;
+      return;
+    }
+
+    const card = flashCards[currentFlashIdx];
+    const now = Date.now();
+    const isDue = card.srs.due <= now;
+    const dueInDays = Math.max(0, Math.round((card.srs.due - now) / 86400000));
+
+    if (info) {
+      const badge = isDue
+        ? '<span class="flash-srs-badge flash-srs-badge--due">Due now</span>'
+        : card.srs.reviews === 0
+          ? '<span class="flash-srs-badge flash-srs-badge--new">New</span>'
+          : '<span class="flash-srs-badge flash-srs-badge--ok">Due in ' + dueInDays + 'd</span>';
+      info.innerHTML = (currentFlashIdx + 1) + ' / ' + flashCards.length + badge;
+    }
+
+    front.textContent = card.text;
+    if (back) {
+      back.textContent = card.trans || '(no translation)';
+      back.hidden = !flashRevealed;
+    }
+
+    if (hardBtn) hardBtn.disabled = false;
+    if (goodBtn) goodBtn.disabled = false;
+
+    // Tap to reveal
+    const flashCardEl = document.querySelector('.flash-card');
+    if (flashCardEl) {
+      flashCardEl.onclick = () => {
+        flashRevealed = true;
+        if (back) back.hidden = false;
+      };
+    }
   }
 
 
@@ -1052,12 +1084,13 @@
 
   // ===== ShadowEcho-style UI wiring =====
 
-  // View switching (auth | list | practice)
+  // View switching (auth | list | practice | onboard)
   function showView(name) {
-    const va = $('#view-auth'), vl = $('#view-list'), vp = $('#view-practice');
+    const va = $('#view-auth'), vl = $('#view-list'), vp = $('#view-practice'), vo = $('#view-onboard');
     if (va) va.hidden = name !== 'auth';
     if (vl) vl.hidden = name !== 'list';
     if (vp) vp.hidden = name !== 'practice';
+    if (vo) vo.hidden = name !== 'onboard';
   }
 
   // Source info update
@@ -1209,7 +1242,10 @@
 
   // Vocab/flashcard sections in slide menu
   { const s = document.getElementById('section-vocab'); if (s) s.addEventListener('toggle', () => { if (s.open) loadVocab('vocab'); }); }
-  { const s = document.getElementById('section-flash'); if (s) s.addEventListener('toggle', () => { if (s.open) renderFlash(); }); }
+  { const s = document.getElementById('section-flash'); if (s) s.addEventListener('toggle', () => { if (s.open) loadFlashCards(); }); }
+  { const h = document.getElementById('btn-hard'); if (h) h.onclick = () => gradeFlash(0); }
+  { const g = document.getElementById('btn-good'); if (g) g.onclick = () => gradeFlash(3); }
+  { const sk = document.getElementById('btn-skip'); if (sk) sk.onclick = () => gradeFlash(5); }
   { const s = document.getElementById('section-progress'); if (s) s.addEventListener('toggle', () => { if (s.open) loadVocab('progress'); }); }
   // Anki buttons in menu
   { const b = $('#anki-export'); if (b) b.onclick = exportAnki; }
@@ -1255,8 +1291,13 @@
   if (typeof ShadowAuth !== 'undefined') {
     ShadowAuth.onAuthStateChange(async (user) => {
       if (user) {
-        // Logged in → show app
-        showView('list');
+        // Logged in → check if first-time user → show onboarding
+        const onboarded = await checkOnboarding();
+        if (!onboarded) {
+          showView('onboard');
+        } else {
+          showView('list');
+        }
         updateAccountUI(user, null);
         // Fetch full profile in background
         fetchMe().then((profile) => {
@@ -1326,6 +1367,8 @@
   loadStreak();
   loadSentStatus();
   loadDarkMode();
+  initOnboardingUI();
+  initUpgradeUI();
 
   maybeOnboard();
   connectPort();
