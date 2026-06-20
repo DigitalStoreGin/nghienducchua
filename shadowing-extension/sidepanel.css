@@ -218,15 +218,36 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   padding: 7px 10px;
 }
 
-/* Play triangle for each row */
-.sentence-list .row::before {
+/* Row play button (rendered by JS) */
+.row-play-btn {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #bdc1c6;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+  margin-top: 1px;
+}
+.row-play-btn:hover { background: #e8f0fe; color: #1a73e8; }
+.row.cur .row-play-btn { color: #1a73e8; }
+
+/* Row body (text container) */
+.row-body { flex: 1; min-width: 0; }
+
+/* Play triangle for rows WITHOUT .row-play-btn (legacy fallback) */
+.sentence-list .row:not(:has(.row-play-btn))::before {
   content: "▷";
   color: #bdc1c6;
   font-size: 12px;
   flex-shrink: 0;
   margin-top: 1px;
 }
-.sentence-list .row.cur::before {
+.sentence-list .row.cur:not(:has(.row-play-btn))::before {
   content: "▶";
   color: #1a73e8;
 }
@@ -1374,6 +1395,9 @@ body.dark .row { background: var(--bg); border-color: var(--border); color: var(
 body.dark .row:hover, body.dark .row.cur { background: var(--accent-light); }
 body.dark .de { color: var(--text); }
 body.dark .tr { color: var(--text2); }
+body.dark .row-play-btn { color: #5f6368; }
+body.dark .row-play-btn:hover { background: var(--accent-light); color: var(--accent); }
+body.dark .row.cur .row-play-btn { color: var(--accent); }
 body.dark .status-bar { background: var(--bg2); color: var(--text2); }
 body.dark .icon-btn { color: var(--text2); }
 body.dark .icon-btn:hover { background: var(--bg3); }
@@ -1481,7 +1505,18 @@ body.dark .xp-chip { background: #3d2e00; color: #fbbf24; }
   border-color: #34a853;
   color: #137333;
 }
+.mic-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #dadce0;
+  margin-left: 3px;
+  vertical-align: middle;
+  transition: background .2s;
+}
 .src-btn--mic.ready .mic-dot { background: #34a853; }
+.src-btn--mic.pending .mic-dot { background: #fbbc04; animation: mic-pulse .8s infinite; }
+@keyframes mic-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
 
 /* ===== SCORE RING (animated) ===== */
 .score-ring-wrap {

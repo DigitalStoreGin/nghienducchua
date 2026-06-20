@@ -106,10 +106,14 @@ async function checkQuota(userId, type, env) {
       },
       body: JSON.stringify({ p_user_id: userId, p_type: type }),
     });
-    if (!res.ok) return { allowed: true }; // fail-open if Supabase is unreachable
+    if (!res.ok) {
+      console.error('checkQuota RPC error', res.status);
+      return { allowed: false, error: 'quota_service_unavailable' };
+    }
     return await res.json();
-  } catch {
-    return { allowed: true };
+  } catch (e) {
+    console.error('checkQuota network error', e.message);
+    return { allowed: false, error: 'quota_service_unavailable' };
   }
 }
 

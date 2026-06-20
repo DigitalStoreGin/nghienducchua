@@ -133,6 +133,15 @@
       case 'feedback': renderFeedback(p); break;
       case 'progress': onProgress(p); break;
       case 'status': setStatus(p.text, p.kind); break;
+      case 'done': {
+        // Queue complete — show session stats modal if has data, else generic modal
+        if (streakData.sessionSentences > 0) {
+          showSessionStats();
+        } else {
+          const m = $('#modal-backdrop'); if (m) m.hidden = false;
+        }
+        break;
+      }
     }
   }
 
