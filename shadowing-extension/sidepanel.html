@@ -13,6 +13,77 @@
     Open a YouTube video then come back here.
   </div>
 
+  <!-- ===== AUTH VIEW (shown when not logged in) ===== -->
+  <div id="view-auth" class="view view-auth" hidden>
+    <div class="auth-wrap">
+      <div class="auth-logo">
+        <img src="icons/icon48.png" class="auth-logo-img" alt="">
+        <h1 class="auth-logo-name">ShadowEcho</h1>
+        <p class="auth-logo-tagline">Luyện shadowing chuyên nghiệp</p>
+      </div>
+
+      <!-- Login form -->
+      <div id="auth-form-login" class="auth-form">
+        <h2 class="auth-form-title">Đăng nhập</h2>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-email">Email</label>
+          <input type="email" id="auth-email" class="auth-input" placeholder="name@example.com" autocomplete="email">
+        </div>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-password">Mật khẩu</label>
+          <input type="password" id="auth-password" class="auth-input" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div id="auth-login-error" class="auth-message auth-message--error" hidden></div>
+        <button id="btn-login" class="auth-btn-primary">Đăng nhập</button>
+        <div class="auth-links">
+          <a id="btn-show-register" class="auth-link" href="#">Tạo tài khoản mới</a>
+          <a id="btn-show-forgot" class="auth-link" href="#">Quên mật khẩu?</a>
+        </div>
+      </div>
+
+      <!-- Register form -->
+      <div id="auth-form-register" class="auth-form" hidden>
+        <h2 class="auth-form-title">Tạo tài khoản</h2>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-reg-email">Email</label>
+          <input type="email" id="auth-reg-email" class="auth-input" placeholder="name@example.com" autocomplete="email">
+        </div>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-reg-password">Mật khẩu</label>
+          <input type="password" id="auth-reg-password" class="auth-input" placeholder="Tối thiểu 6 ký tự" autocomplete="new-password">
+        </div>
+        <div id="auth-reg-error"   class="auth-message auth-message--error"   hidden></div>
+        <div id="auth-reg-success" class="auth-message auth-message--success" hidden></div>
+        <button id="btn-register" class="auth-btn-primary">Tạo tài khoản</button>
+        <div class="auth-links">
+          <a id="btn-show-login" class="auth-link" href="#">Đã có tài khoản? Đăng nhập</a>
+        </div>
+      </div>
+
+      <!-- Forgot password form -->
+      <div id="auth-form-forgot" class="auth-form" hidden>
+        <h2 class="auth-form-title">Quên mật khẩu</h2>
+        <p class="auth-form-desc">Nhập email của bạn, chúng tôi sẽ gửi link đặt lại mật khẩu.</p>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-forgot-email">Email</label>
+          <input type="email" id="auth-forgot-email" class="auth-input" placeholder="name@example.com">
+        </div>
+        <div id="auth-forgot-error"   class="auth-message auth-message--error"   hidden></div>
+        <div id="auth-forgot-success" class="auth-message auth-message--success" hidden></div>
+        <button id="btn-forgot-send" class="auth-btn-primary">Gửi email đặt lại</button>
+        <div class="auth-links">
+          <a id="btn-back-to-login" class="auth-link" href="#">&#8592; Quay lại đăng nhập</a>
+        </div>
+      </div>
+
+      <div class="auth-plans">
+        <div class="auth-plan-chip">Free: 20 dịch/ngày</div>
+        <div class="auth-plan-chip auth-plan-chip--pro">Pro: Không giới hạn</div>
+      </div>
+    </div>
+  </div>
+
+
   <!-- ===== LIST VIEW (default) ===== -->
   <div id="view-list" class="view">
 
@@ -226,21 +297,35 @@
       <button class="slide-menu-close" id="btn-menu-close" aria-label="Close menu">&#10005;</button>
     </div>
 
+    <!-- ACCOUNT SECTION -->
+    <div class="menu-account" id="menu-account">
+      <div class="account-avatar" id="account-avatar">👤</div>
+      <div class="account-info">
+        <div class="account-email" id="account-email">—</div>
+        <div class="account-plan-badge" id="account-plan-badge">Free</div>
+      </div>
+      <button class="btn-logout" id="btn-logout" title="Đăng xuất">&#8594;</button>
+    </div>
+
+    <!-- USAGE METER -->
+    <div class="usage-meter" id="usage-meter">
+      <div class="usage-row">
+        <span class="usage-label">Dịch hôm nay</span>
+        <span class="usage-count" id="usage-trans-count">0 / 20</span>
+      </div>
+      <div class="usage-bar-wrap"><div class="usage-bar-fill" id="usage-trans-bar" style="width:0%"></div></div>
+      <div class="usage-row">
+        <span class="usage-label">AI hôm nay</span>
+        <span class="usage-count" id="usage-ai-count">0 / 10</span>
+      </div>
+      <div class="usage-bar-wrap"><div class="usage-bar-fill usage-bar-fill--ai" id="usage-ai-bar" style="width:0%"></div></div>
+      <button class="btn-upgrade" id="btn-upgrade">&#9889; Nâng cấp Pro</button>
+    </div>
+
     <!-- SETTINGS SECTION -->
     <details class="menu-section" id="section-settings" open>
       <summary class="menu-section-title">Settings</summary>
       <div class="menu-section-body">
-
-        <!-- License Key (new spec: #license-key-input, #btn-validate-license, #license-status) -->
-        <div class="setting-row">
-          <label class="setting-label" for="license-key-input">License Key</label>
-          <div class="setting-input-group">
-            <input type="password" id="license-key-input" class="setting-input setting-input--wide"
-              autocomplete="off" placeholder="NDC-XXXX-XXXX-XXXX">
-            <button class="setting-btn" id="btn-validate-license">Validate</button>
-          </div>
-          <div class="license-status" id="license-status"></div>
-        </div>
 
         <!-- Speed — id="rate", id="rate-val" used by sidepanel.js -->
         <div class="setting-row">
@@ -355,18 +440,6 @@
           </select>
         </div>
 
-        <!-- DeepL / OpenRouter keys — id="deeplkey", id="orkey" used by sidepanel.js -->
-        <div class="setting-row">
-          <label class="setting-label" for="deeplkey">DeepL Key</label>
-          <input type="password" id="deeplkey" autocomplete="off" placeholder="xxxx:fx"
-            class="setting-input setting-input--wide">
-        </div>
-        <div class="setting-row">
-          <label class="setting-label" for="orkey">OpenRouter Key</label>
-          <input type="password" id="orkey" autocomplete="off" placeholder="sk-or-..."
-            class="setting-input setting-input--wide">
-        </div>
-
       </div>
     </details><!-- /#section-settings -->
 
@@ -447,6 +520,8 @@
   <script src="content/freq-de.js"></script>
   <script src="vendor/vad-silero.js"></script>
   <script src="mic-service.js"></script>
+  <script src="config.js"></script>
+  <script src="supabase-client.js"></script>
   <script src="sidepanel.js"></script>
 
   <!-- UI interaction script: menus, toolbar, panel transitions -->

@@ -1,14 +1,27 @@
 /**
- * Cloudflare Worker - NghienDucChua API Proxy
- * API keys stored as encrypted Worker Secrets (never exposed to client)
- * License key validation via KV store
+ * ShadowEcho — Cloudflare Worker v2
+ *
+ * Architecture:
+ *   Chrome Extension → Bearer JWT (Supabase) → this Worker → DeepL / OpenRouter
+ *
+ * Worker Secrets (wrangler secret put):
+ *   SUPABASE_URL          https://xxxx.supabase.co
+ *   SUPABASE_SERVICE_KEY  service_role key (sb_secret_...)
+ *   DEEPL_API_KEY         DeepL auth key
+ *   OPENROUTER_API_KEY    OpenRouter key
+ *   ADMIN_KEY             admin API key for management endpoints
  */
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-License-Key, X-Admin-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Key',
 };
+
+const OR_MODELS = [
+  'openai/gpt-oss-120b:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+];
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -17,6 +30,7 @@ function json(data, status = 200) {
   });
 }
 
+// ── Main dispatcher ──────────────────────────────────────────
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -25,46 +39,147 @@ export default {
 
     const url = new URL(request.url);
 
+    // Public health check
     if (url.pathname === '/health') {
-      return json({ ok: true, version: '1.0.0' });
+      return json({ ok: true, version: '2.0.0', arch: 'supabase-jwt' });
     }
 
-    if (url.pathname === '/admin/license') {
-      return handleAdminLicense(request, env);
+    // Admin endpoints (internal use only)
+    if (url.pathname.startsWith('/admin/')) {
+      return handleAdmin(request, url.pathname, env);
     }
 
-    // All other routes require license key
-    const licenseKey = request.headers.get('X-License-Key') || '';
-    const valid = await validateLicense(licenseKey, env);
-    if (!valid) {
-      return json({ error: 'Invalid or inactive license key. Contact seller.' }, 401);
+    // All other routes require Supabase JWT
+    const authHeader = request.headers.get('Authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+
+    if (!token) {
+      return json({ error: 'missing_token', message: 'Please log in to use this service.' }, 401);
+    }
+
+    const user = await verifyToken(token, env);
+    if (!user) {
+      return json({ error: 'invalid_token', message: 'Session expired. Please log in again.' }, 401);
     }
 
     if (url.pathname === '/translate') {
-      return handleDeepL(request, env);
+      return handleDeepL(request, env, user.id);
     }
 
     if (url.pathname === '/ai-translate') {
-      return handleOpenRouter(request, env);
+      return handleOpenRouter(request, env, user.id);
     }
 
-    return json({ error: 'Not found' }, 404);
+    if (url.pathname === '/me') {
+      return handleMe(env, user);
+    }
+
+    return json({ error: 'not_found' }, 404);
   },
 };
 
-async function validateLicense(key, env) {
-  if (!key || key.length < 8) return false;
+// ── Supabase JWT verification ────────────────────────────────
+async function verifyToken(token, env) {
   try {
-    const value = await env.LICENSES.get(key);
-    if (!value) return false;
-    const data = JSON.parse(value);
-    return data.active === true;
+    const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'apikey': env.SUPABASE_SERVICE_KEY,
+      },
+    });
+    if (!res.ok) return null;
+    return await res.json(); // { id, email, ... }
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function handleDeepL(request, env) {
+// ── Quota check + atomic increment via Supabase RPC ──────────
+async function checkQuota(userId, type, env) {
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/check_and_increment_usage`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        'apikey': env.SUPABASE_SERVICE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_user_id: userId, p_type: type }),
+    });
+    if (!res.ok) return { allowed: true }; // fail-open if Supabase is unreachable
+    return await res.json();
+  } catch {
+    return { allowed: true };
+  }
+}
+
+// ── /me  — return user profile + today's usage ───────────────
+async function handleMe(env, user) {
+  try {
+    const [profileRes, usageRes] = await Promise.all([
+      fetch(
+        `${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=plan,email,full_name`,
+        {
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+          },
+        }
+      ),
+      fetch(
+        `${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${user.id}&date=eq.${today()}&select=translation_count,ai_count`,
+        {
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+          },
+        }
+      ),
+    ]);
+
+    const profiles = profileRes.ok ? await profileRes.json() : [];
+    const usages   = usageRes.ok   ? await usageRes.json()   : [];
+    const profile  = profiles[0] || { plan: 'free', email: user.email };
+    const usage    = usages[0]   || { translation_count: 0, ai_count: 0 };
+
+    // Get plan quotas
+    const planRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/plans?name=eq.${profile.plan}&select=daily_translations,daily_ai_calls,display_name`,
+      {
+        headers: {
+          'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+          'apikey': env.SUPABASE_SERVICE_KEY,
+        },
+      }
+    );
+    const plans = planRes.ok ? await planRes.json() : [];
+    const plan  = plans[0] || { daily_translations: 20, daily_ai_calls: 10, display_name: 'Free' };
+
+    return json({
+      email: profile.email || user.email,
+      plan: profile.plan,
+      planName: plan.display_name,
+      usage: {
+        translations: { used: usage.translation_count, limit: plan.daily_translations },
+        ai:           { used: usage.ai_count,          limit: plan.daily_ai_calls },
+      },
+    });
+  } catch (e) {
+    return json({ error: 'profile-error', message: e.message }, 500);
+  }
+}
+
+// ── /translate  — DeepL proxy ────────────────────────────────
+async function handleDeepL(request, env, userId) {
+  const quota = await checkQuota(userId, 'translation', env);
+  if (!quota.allowed) {
+    return json({
+      error: 'quota_exceeded',
+      message: `Daily translation limit reached (${quota.used}/${quota.limit}). Upgrade your plan at shadowecho.app`,
+      plan: quota.plan, used: quota.used, limit: quota.limit,
+    }, 429);
+  }
+
   try {
     const body = await request.json();
     const params = new URLSearchParams();
@@ -75,84 +190,107 @@ async function handleDeepL(request, env) {
     const resp = await fetch('https://api-free.deepl.com/v2/translate', {
       method: 'POST',
       headers: {
-        'Authorization': 'DeepL-Auth-Key ' + env.DEEPL_API_KEY,
+        'Authorization': `DeepL-Auth-Key ${env.DEEPL_API_KEY}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: params.toString(),
     });
 
     const data = await resp.json();
-    if (!resp.ok) return json({ error: 'deepl-' + resp.status, details: data }, resp.status);
+    if (!resp.ok) return json({ error: `deepl-${resp.status}`, details: data }, resp.status);
     return json(data);
   } catch (e) {
     return json({ error: 'deepl-error', message: e.message }, 500);
   }
 }
 
-async function handleOpenRouter(request, env) {
+// ── /ai-translate  — OpenRouter proxy ───────────────────────
+async function handleOpenRouter(request, env, userId) {
+  const quota = await checkQuota(userId, 'ai', env);
+  if (!quota.allowed) {
+    return json({
+      error: 'quota_exceeded',
+      message: `Daily AI limit reached (${quota.used}/${quota.limit}). Upgrade your plan at shadowecho.app`,
+      plan: quota.plan, used: quota.used, limit: quota.limit,
+    }, 429);
+  }
+
   try {
     const body = await request.json();
+    // Ensure only allowed models
+    const model = OR_MODELS.includes(body.model) ? body.model : OR_MODELS[0];
+
     const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer ' + env.OPENROUTER_API_KEY,
+        'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://nghienducchua.app',
-        'X-Title': 'NghienDucChua Language Learning',
+        'HTTP-Referer': 'https://shadowecho.app',
+        'X-Title': 'ShadowEcho Language Learning',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, model }),
     });
 
     const data = await resp.json();
-    if (!resp.ok) return json({ error: 'openrouter-' + resp.status, details: data }, resp.status);
+    if (!resp.ok) return json({ error: `openrouter-${resp.status}`, details: data }, resp.status);
     return json(data);
   } catch (e) {
     return json({ error: 'openrouter-error', message: e.message }, 500);
   }
 }
 
-async function handleAdminLicense(request, env) {
+// ── /admin/*  — Management API ────────────────────────────────
+async function handleAdmin(request, pathname, env) {
   const adminKey = request.headers.get('X-Admin-Key') || '';
   if (adminKey !== env.ADMIN_KEY) {
-    return json({ error: 'Unauthorized' }, 403);
+    return json({ error: 'unauthorized' }, 403);
   }
 
-  if (request.method === 'POST') {
-    const body = await request.json();
-    const { action, key, email, tier } = body;
-
-    if (action === 'create') {
-      const licenseKey = key || generateKey();
-      await env.LICENSES.put(licenseKey, JSON.stringify({
-        active: true,
-        email: email || '',
-        tier: tier || 'standard',
-        createdAt: new Date().toISOString(),
-      }));
-      return json({ success: true, key: licenseKey });
-    }
-
-    if (action === 'revoke') {
-      const existing = await env.LICENSES.get(key);
-      if (!existing) return json({ error: 'Key not found' }, 404);
-      const data = JSON.parse(existing);
-      data.active = false;
-      await env.LICENSES.put(key, JSON.stringify(data));
-      return json({ success: true });
-    }
-
-    if (action === 'list') {
-      const list = await env.LICENSES.list();
-      const keys = list.keys.map(k => k.name);
-      return json({ keys });
-    }
+  if (request.method !== 'POST') {
+    return json({ error: 'method_not_allowed' }, 405);
   }
 
-  return json({ error: 'Method not allowed' }, 405);
+  const body = await request.json();
+
+  // POST /admin/upgrade  — upgrade a user's plan
+  if (pathname === '/admin/upgrade') {
+    const { user_id, plan, months } = body;
+    if (!user_id || !plan) return json({ error: 'missing user_id or plan' }, 400);
+
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/admin_set_plan`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        'apikey': env.SUPABASE_SERVICE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_user_id: user_id, p_plan: plan, p_months: months || 12 }),
+    });
+
+    return res.ok ? json({ success: true }) : json({ error: 'supabase-error' }, 500);
+  }
+
+  // POST /admin/usage  — get a user's usage stats
+  if (pathname === '/admin/usage') {
+    const { user_id } = body;
+    if (!user_id) return json({ error: 'missing user_id' }, 400);
+
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${user_id}&order=date.desc&limit=30`,
+      {
+        headers: {
+          'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+          'apikey': env.SUPABASE_SERVICE_KEY,
+        },
+      }
+    );
+    const data = res.ok ? await res.json() : [];
+    return json({ usage: data });
+  }
+
+  return json({ error: 'unknown admin action' }, 400);
 }
 
-function generateKey() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  return `NDC-${seg()}-${seg()}-${seg()}`;
+function today() {
+  return new Date().toISOString().split('T')[0];
 }

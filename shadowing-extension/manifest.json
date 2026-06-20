@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Shadow — Luyện Shadowing tiếng Đức (YouTube & Netflix)",
-  "version": "0.18.0",
-  "description": "Luyen shadowing tieng Duc kieu ELSA: phu de, click cau, tu dung, ghi am, cham diem ngu am (Kolner Phonetik) bang Whisper cuc bo. Chay tren YouTube & Netflix.",
+  "name": "ShadowEcho — Luyện Shadowing tiếng Đức (YouTube & Netflix)",
+  "version": "2.0.0",
+  "description": "Luyện shadowing chuyên nghiệp: phụ đề, ghi âm, chấm điểm ngữ âm, dịch AI, phân tích từ vựng. Chạy trên YouTube & Netflix.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -19,6 +19,7 @@
     "https://api.mymemory.translated.net/*",
     "https://huggingface.co/*",
     "https://m.youtube.com/*",
+    "https://*.supabase.co/*",
     "https://nghienducchua-proxy.thoatran21012.workers.dev/*",
     "https://openrouter.ai/*",
     "https://www.netflix.com/*",
@@ -102,7 +103,7 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://nghienducchua-proxy.thoatran21012.workers.dev https://api.mymemory.translated.net https://huggingface.co https://*.huggingface.co https://cdn.jsdelivr.net https://openrouter.ai https://api-free.deepl.com https://api.deepl.com;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*.supabase.co https://nghienducchua-proxy.thoatran21012.workers.dev https://api.mymemory.translated.net https://huggingface.co https://*.huggingface.co https://cdn.jsdelivr.net https://openrouter.ai https://api-free.deepl.com https://api.deepl.com;"
   },
   "side_panel": {
     "default_path": "sidepanel.html"

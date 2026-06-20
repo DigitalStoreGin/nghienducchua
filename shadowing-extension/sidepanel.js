@@ -9,8 +9,8 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const esc = (t) => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const WORKER_URL = 'https://nghienducchua-proxy.thoatran21012.workers.dev';
-  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, engine: 'webspeech', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000', licenseKey: '', deeplKey: '', openrouterKey: '' };
+  const WORKER_URL = (typeof CONFIG !== 'undefined' ? CONFIG.WORKER_URL : null) || 'https://nghienducchua-proxy.thoatran21012.workers.dev';
+  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, engine: 'webspeech', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
   let sentences = [], favorites = [], current = 0;
   let recState = ''; // trang thai engine hien tai (de phim Space biet nen ghi hay finalize)
   let port = null;
@@ -177,8 +177,8 @@
     const nextEl = $('#next-text'); const nextS = sentences[c.idx + 1]; if (nextEl) nextEl.textContent = nextS ? nextS.text : '';
     const trEl = $('#trans-text'); if (trEl) trEl.textContent = s.trans || '';
     updateSourceInfo(c.idx);
-    // Phụ đề kép: nếu chưa có bản dịch & đã nhập license key -> tự dịch câu hiện tại
-    if (!s.trans && (settings.licenseKey || '').trim()) {
+    // Phụ đề kép: nếu chưa có bản dịch & đã đăng nhập -> tự dịch câu hiện tại
+    if (!s.trans && (typeof ShadowAuth !== 'undefined' ? ShadowAuth.isLoggedIn() : false)) {
       translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi').then((t) => {
         if (t) { s.trans = t; if ($('#nowDe').textContent === s.text) { $('#nowTr').textContent = t; if (trEl) trEl.textContent = t; } }
       });
@@ -329,7 +329,6 @@
   bindSetting('autorec', 'autoRecord', 'bool'); bindSetting('engine', 'engine', 'str'); bindSetting('offset', 'offsetMs', 'num');
   bindSetting('silerovad', 'useSileroVad', 'bool');
   bindSetting('target', 'targetLang', 'str'); bindSetting('native', 'nativeLang', 'str'); bindSetting('serverurl', 'serverUrl', 'str');
-  bindSetting('license-key-input', 'licenseKey', 'str');
   $('#vsubs').onchange = (e) => { settings.videoSubs = e.target.checked; cmd('settings', settings); cmd('vsubs', { on: e.target.checked }); };
   $('#uilang').onchange = (e) => { settings.uiLang = e.target.value; cmd('settings', settings); applyI18n(settings.uiLang); };
   function applySettings() {
@@ -339,7 +338,6 @@
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
     $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;
     if ($('#serverurl')) $('#serverurl').value = settings.serverUrl || 'http://localhost:8000';
-    if ($('#license-key-input')) $('#license-key-input').value = settings.licenseKey || '';
     applyBlur(!!settings.hideText);
     applyI18n(settings.uiLang || 'vi');
   }
@@ -464,26 +462,29 @@
   const DEEPL_TGT = { vi: 'VI', en: 'EN-US', de: 'DE', fr: 'FR', es: 'ES', it: 'IT', ja: 'JA', zh: 'ZH', ko: 'KO' };
   const LANG_NAME = { vi: 'Vietnamese', en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean' };
 
-  function licenseHeader() {
-    return { 'Content-Type': 'application/json', 'X-License-Key': (settings.licenseKey || '').trim() };
+  function workerHeaders() {
+    return (typeof ShadowAuth !== 'undefined') ? ShadowAuth.workerHeaders() : { 'Content-Type': 'application/json' };
   }
 
   async function deeplTranslate(text, from, to) {
-    const key = (settings.licenseKey || '').trim(); if (!key) return '';
+    if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn()) return '';
     const tgt = DEEPL_TGT[to]; if (!tgt) return '';
     const body = { text, target_lang: tgt };
     if (DEEPL_TGT[from]) body.source_lang = DEEPL_TGT[from].split('-')[0];
-    const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: licenseHeader(), body: JSON.stringify(body) });
-    if (!r.ok) throw new Error('worker-deepl-' + r.status);
+    const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: workerHeaders(), body: JSON.stringify(body) });
+    if (!r.ok) {
+      if (r.status === 429) { const j = await r.json(); setStatus('⚠️ ' + (j.message || 'Đã hết hạn mức dịch hôm nay'), 'warn'); return ''; }
+      throw new Error('worker-deepl-' + r.status);
+    }
     const j = await r.json();
     return (j.translations && j.translations[0] && j.translations[0].text) || '';
   }
 
   async function openrouterTranslate(text, from, to, model) {
-    const key = (settings.licenseKey || '').trim(); if (!key) return '';
+    if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn()) return '';
     const r = await fetch(WORKER_URL + '/ai-translate', {
       method: 'POST',
-      headers: licenseHeader(),
+      headers: workerHeaders(),
       body: JSON.stringify({
         model, temperature: 0, max_tokens: 500,
         messages: [
@@ -515,17 +516,14 @@
     return '';
   }
 
-  // Validate license key against Worker
-  async function validateLicenseKey(key) {
-    if (!key || key.length < 8) return false;
+  // Fetch /me profile from Worker (usage stats)
+  async function fetchMe() {
+    if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn()) return null;
     try {
-      const r = await fetch(WORKER_URL + '/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-License-Key': key },
-        body: JSON.stringify({ text: 'ok', target_lang: 'VI' }),
-      });
-      return r.status !== 401;
-    } catch (e) { return false; }
+      const r = await fetch(WORKER_URL + '/me', { headers: workerHeaders() });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch { return null; }
   }
 
   const glossCache = {};
@@ -677,9 +675,10 @@
 
   // ===== ShadowEcho-style UI wiring =====
 
-  // View switching
+  // View switching (auth | list | practice)
   function showView(name) {
-    const vl = $('#view-list'), vp = $('#view-practice');
+    const va = $('#view-auth'), vl = $('#view-list'), vp = $('#view-practice');
+    if (va) va.hidden = name !== 'auth';
     if (vl) vl.hidden = name !== 'list';
     if (vp) vp.hidden = name !== 'practice';
   }
@@ -741,21 +740,95 @@
   { const b = $('#info-banner-close'); if (b) b.onclick = () => { const el = $('#info-banner'); if (el) el.hidden = true; }; }
   try { if (localStorage.getItem('se_banner_dismissed')) { const el = $('#info-banner'); if (el) el.hidden = true; } } catch (e) {}
 
-  // License key validation button
-  { const b = $('#btn-validate-license'); if (b) b.onclick = async () => {
-    const inp = $('#license-key-input'); if (!inp) return;
-    const key = inp.value.trim(); if (!key) return;
-    const st = $('#license-status'); if (st) { st.textContent = 'Validating…'; st.className = 'license-status'; }
-    b.disabled = true;
-    const ok = await validateLicenseKey(key);
-    if (ok) {
-      settings.licenseKey = key; cmd('settings', settings);
-      if (st) { st.textContent = '✓ License valid — translation enabled'; st.className = 'license-status ok'; }
-    } else {
-      if (st) { st.textContent = '✗ Invalid key. Contact seller to get a valid key.'; st.className = 'license-status err'; }
-    }
-    b.disabled = false;
+  // ===== Auth UI wiring =====
+  function showAuthForm(name) {
+    ['auth-form-login', 'auth-form-register', 'auth-form-forgot'].forEach((id) => {
+      const el = $('#' + id); if (el) el.hidden = id !== name;
+    });
+  }
+  function setAuthMsg(id, msg, type) {
+    const el = $('#' + id); if (!el) return;
+    el.textContent = msg;
+    el.className = 'auth-message auth-message--' + (type || 'error');
+    el.hidden = !msg;
+  }
+
+  // Switch forms
+  { const b = $('#btn-show-register'); if (b) b.onclick = (e) => { e.preventDefault(); showAuthForm('auth-form-register'); }; }
+  { const b = $('#btn-show-login');    if (b) b.onclick = (e) => { e.preventDefault(); showAuthForm('auth-form-login'); }; }
+  { const b = $('#btn-show-forgot');   if (b) b.onclick = (e) => { e.preventDefault(); showAuthForm('auth-form-forgot'); }; }
+  { const b = $('#btn-back-to-login'); if (b) b.onclick = (e) => { e.preventDefault(); showAuthForm('auth-form-login'); }; }
+
+  // Login
+  { const b = $('#btn-login'); if (b) b.onclick = async () => {
+    const email = ($('#auth-email') || {}).value || '';
+    const pw    = ($('#auth-password') || {}).value || '';
+    if (!email || !pw) { setAuthMsg('auth-login-error', 'Vui lòng nhập email và mật khẩu.'); return; }
+    b.disabled = true; b.textContent = 'Đang đăng nhập…';
+    try {
+      await ShadowAuth.signIn(email, pw);
+    } catch (e) {
+      setAuthMsg('auth-login-error', e.message || 'Đăng nhập thất bại.');
+    } finally { b.disabled = false; b.textContent = 'Đăng nhập'; }
   }; }
+
+  // Register
+  { const b = $('#btn-register'); if (b) b.onclick = async () => {
+    const email = ($('#auth-reg-email') || {}).value || '';
+    const pw    = ($('#auth-reg-password') || {}).value || '';
+    if (!email || !pw) { setAuthMsg('auth-reg-error', 'Vui lòng nhập đầy đủ thông tin.'); return; }
+    if (pw.length < 6) { setAuthMsg('auth-reg-error', 'Mật khẩu tối thiểu 6 ký tự.'); return; }
+    b.disabled = true; b.textContent = 'Đang tạo tài khoản…';
+    try {
+      await ShadowAuth.signUp(email, pw);
+      setAuthMsg('auth-reg-success', '✓ Tài khoản đã tạo! Kiểm tra email để xác nhận rồi đăng nhập.', 'success');
+      setAuthMsg('auth-reg-error', '');
+    } catch (e) {
+      setAuthMsg('auth-reg-error', e.message || 'Đăng ký thất bại.');
+    } finally { b.disabled = false; b.textContent = 'Tạo tài khoản'; }
+  }; }
+
+  // Forgot password
+  { const b = $('#btn-forgot-send'); if (b) b.onclick = async () => {
+    const email = ($('#auth-forgot-email') || {}).value || '';
+    if (!email) { setAuthMsg('auth-forgot-error', 'Nhập email của bạn.'); return; }
+    b.disabled = true; b.textContent = 'Đang gửi…';
+    try {
+      await ShadowAuth.resetPassword(email);
+      setAuthMsg('auth-forgot-success', '✓ Email đặt lại mật khẩu đã được gửi. Kiểm tra hộp thư của bạn.', 'success');
+      setAuthMsg('auth-forgot-error', '');
+    } catch (e) {
+      setAuthMsg('auth-forgot-error', e.message || 'Không thể gửi email.');
+    } finally { b.disabled = false; b.textContent = 'Gửi email đặt lại'; }
+  }; }
+
+  // Logout
+  { const b = $('#btn-logout'); if (b) b.onclick = async () => {
+    await ShadowAuth.signOut();
+  }; }
+
+  // Account UI updater
+  function updateAccountUI(user, profile) {
+    const emailEl = $('#account-email'); if (emailEl) emailEl.textContent = (user && user.email) || '—';
+    const planEl  = $('#account-plan-badge');
+    if (planEl) {
+      const plan = (profile && profile.plan) || 'free';
+      const names = { free: 'Free', basic: 'Basic', pro: 'Pro', lifetime: 'Lifetime' };
+      planEl.textContent = names[plan] || plan;
+      planEl.className = 'account-plan-badge plan-' + plan;
+    }
+  }
+
+  async function updateUsageUI(profile) {
+    if (!profile || !profile.usage) return;
+    const { translations, ai } = profile.usage;
+    const tPct = Math.min(100, Math.round((translations.used / (translations.limit || 1)) * 100));
+    const aPct = Math.min(100, Math.round((ai.used / (ai.limit || 1)) * 100));
+    const tc = $('#usage-trans-count'); if (tc) tc.textContent = translations.used + ' / ' + translations.limit;
+    const ac = $('#usage-ai-count');    if (ac) ac.textContent = ai.used + ' / ' + ai.limit;
+    const tb = $('#usage-trans-bar');   if (tb) tb.style.width = tPct + '%';
+    const ab = $('#usage-ai-bar');      if (ab) ab.style.width = aPct + '%';
+  }
 
   // Vocab/flashcard sections in slide menu
   { const s = document.getElementById('section-vocab'); if (s) s.addEventListener('toggle', () => { if (s.open) loadVocab('vocab'); }); }
@@ -765,8 +838,34 @@
   { const b = $('#anki-export'); if (b) b.onclick = exportAnki; }
   { const b = $('#anki-sync'); if (b) b.onclick = exportAnkiConnect; }
 
-  // Initial view: list
-  showView('list');
+  // ===== Auth state handler =====
+  if (typeof ShadowAuth !== 'undefined') {
+    ShadowAuth.onAuthStateChange(async (user) => {
+      if (user) {
+        // Logged in → show app
+        showView('list');
+        updateAccountUI(user, null);
+        // Fetch full profile in background
+        fetchMe().then((profile) => {
+          updateAccountUI(user, profile);
+          updateUsageUI(profile);
+        });
+        refresh();
+      } else {
+        // Not logged in → show auth
+        showView('auth');
+        showAuthForm('auth-form-login');
+      }
+    });
+
+    // Init: restore session
+    ShadowAuth.init().then((session) => {
+      if (!session) { showView('auth'); showAuthForm('auth-form-login'); }
+      // If session exists, onAuthStateChange fires automatically
+    });
+  } else {
+    showView('list');
+  }
 
   // ===== Init =====
   if (window.ShadowMic) {
@@ -810,5 +909,6 @@
   });
   maybeOnboard();
   connectPort();
-  refresh();
+  // refresh() is called by auth state handler after login; skip here to avoid duplicate
+  if (typeof ShadowAuth === 'undefined') refresh();
 })();
