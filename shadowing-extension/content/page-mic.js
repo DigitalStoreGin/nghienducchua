@@ -98,18 +98,25 @@
   function pageWebSpeech(opts) {
     const Recognition = root.SpeechRecognition || root.webkitSpeechRecognition;
     if (!Recognition) return null;
-    let transcript = '', rec, done = false;
+    let transcript = '', rec, done = false, errCode = null;
     try {
       rec = new Recognition();
       rec.lang = opts.lang || 'de-DE'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
       rec.onresult = (event) => { let t = ''; for (let i = 0; i < event.results.length; i++) t += ((event.results[i][0] && event.results[i][0].transcript) || '') + ' '; transcript = t.replace(/\s+/g, ' ').trim(); };
-      rec.onerror = () => { done = true; };
+      // Lưu mã lỗi: 'no-speech' = im lặng thật; 'not-allowed'/'service-not-allowed'/
+      // 'audio-capture'/'network' = trang chặn hoặc mic bận -> để Side Panel chấm thay.
+      rec.onerror = (e) => { errCode = (e && e.error) || 'unknown'; done = true; };
       // Người nói ngừng -> dừng để engine chốt kết quả cuối (nhanh).
       rec.onspeechend = () => { try { rec.stop(); } catch (e) {} };
       rec.onend = () => { done = true; };
       rec.start();
     } catch (e) { return null; }
-    return { get: () => transcript.trim(), isDone: () => done, stop: () => { try { rec.stop(); } catch (e) {} try { rec.abort(); } catch (e) {} } };
+    return {
+      get: () => transcript.trim(),
+      isDone: () => done,
+      err: () => errCode,
+      stop: () => { try { rec.stop(); } catch (e) {} try { rec.abort(); } catch (e) {} },
+    };
   }
 
   // Nhờ Side Panel chấm Whisper trên audio đã ghi (model + worker nằm ở Side Panel).
@@ -133,6 +140,9 @@
     // Web Speech thuần -> chạy thẳng trên trang. Trả kết quả NGAY khi người nói
     // ngừng (ps.isDone) -> chấm trong ~1-2s, không chờ hết maxMs.
     if (engine === 'webspeech') {
+      // QUAN TRỌNG: nếu đang giữ stream getUserMedia (từ lúc "Bật mic"), webkitSpeechRecognition
+      // thường KHÔNG nhận được audio (trả rỗng "Nothing heard"). Nhả stream trước khi nhận dạng.
+      release();
       const ps = pageWebSpeech(opts);
       if (!ps) throw new Error('no-webspeech');
       const started = Date.now();
@@ -140,11 +150,15 @@
         const t = setInterval(() => {
           if (root.SD.pageMic._abort || root.SD.pageMic._finalize) { clearInterval(t); resolve(); return; }
           if (ps.isDone() && ps.get()) { clearInterval(t); resolve(); return; } // nói xong -> chốt ngay
+          if (ps.isDone() && ps.err() && ps.err() !== 'no-speech') { clearInterval(t); resolve(); return; } // lỗi engine -> thoát sớm để fallback
           if (Date.now() - started > (opts.maxMs || 7000)) { clearInterval(t); resolve(); return; }
         }, 80);
       });
-      const txt = ps.get(); ps.stop();
+      const txt = ps.get(); const err = ps.err(); ps.stop();
       if (root.SD.pageMic._abort) throw new Error('recording-aborted');
+      // Trang chặn nhận dạng (Permissions-Policy) hoặc mic bận -> ném lỗi để speech.js
+      // tự chuyển sang chấm bằng mic của Side Panel (nơi đã có quyền & hoạt động ổn định).
+      if (!txt && err && err !== 'no-speech') throw new Error('page-webspeech-' + err);
       return { transcript: txt, words: [], pitch: [], spokenMs: Date.now() - started, engine: 'webspeech (trang)' };
     }
 
