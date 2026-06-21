@@ -10,7 +10,7 @@
   const $ = (s) => document.querySelector(s);
   const esc = (t) => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const WORKER_URL = (typeof CONFIG !== 'undefined' ? CONFIG.WORKER_URL : null) || 'https://nghienducchua-proxy.thoatran21012.workers.dev';
-  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, segPause: true, engine: 'whisper', whisperModel: 'auto', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
+  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, segPause: true, engine: 'webspeech', whisperModel: 'auto', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
   let sentences = [], favorites = [], current = 0;
   let recState = ''; // trang thai engine hien tai (de phim Space biet nen ghi hay finalize)
   let port = null;
@@ -250,11 +250,12 @@
     updateSourceInfo(c.idx);
     if (typeof current === 'number') { current = c.idx; }
     updateTryCard();
-    // Phụ đề kép: nếu chưa có bản dịch & đã đăng nhập -> tự dịch câu hiện tại
-    if (!s.trans && (typeof ShadowAuth !== 'undefined' ? ShadowAuth.isLoggedIn() : false)) {
+    // Phụ đề kép: chưa có bản dịch -> tự dịch NGAY (Google/Microsoft/MyMemory miễn phí,
+    // không cần đăng nhập). Đăng nhập chỉ giúp dùng DeepL/OpenRouter chất lượng hơn.
+    if (!s.trans && s.text) {
       translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi').then((t) => {
         if (t) { s.trans = t; if ($('#nowDe').textContent === s.text) { $('#nowTr').textContent = t; if (trEl) trEl.textContent = t; } }
-      });
+      }).catch(() => {});
     }
   }
   function markCur(i) { document.querySelectorAll('.row').forEach((r) => r.classList.toggle('cur', +r.dataset.i === i)); const r = document.querySelector('.row[data-i="' + i + '"]'); if (r) r.scrollIntoView({ block: 'nearest' }); }
@@ -529,6 +530,13 @@
     if (!r || !r.ok) { showNoHost(true); return; }
     showNoHost(false);
     settings = Object.assign(settings, r.settings || {}); favorites = r.favorites || []; sentences = r.sentences || []; current = r.current || 0;
+    // Di tản 1 lần: Whisper phải tải model nặng (~75MB) nên hay "Nothing heard"/chậm.
+    // Đưa về Web Speech (nhanh, có ngay, không tải model). Người dùng vẫn đổi lại được.
+    if (!settings.engineMigratedV2) {
+      settings.engineMigratedV2 = true;
+      if (settings.engine === 'whisper') settings.engine = 'webspeech';
+      cmd('settings', settings);
+    }
     applySettings(); renderList(); if (sentences[current]) renderNow({ idx: current, total: sentences.length, sentence: sentences[current] });
   }
 

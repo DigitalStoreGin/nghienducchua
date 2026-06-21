@@ -93,18 +93,23 @@
   }
 
   // Web Speech NGAY trên trang (origin youtube.com) — continuous để bắt cả câu.
+  //  done: true khi người nói ngừng (speechend) hoặc engine kết thúc -> cho phép
+  //  trả kết quả NGAY (trong ~1-2s), không phải chờ hết maxMs.
   function pageWebSpeech(opts) {
     const Recognition = root.SpeechRecognition || root.webkitSpeechRecognition;
     if (!Recognition) return null;
-    let transcript = '', rec;
+    let transcript = '', rec, done = false;
     try {
       rec = new Recognition();
       rec.lang = opts.lang || 'de-DE'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
       rec.onresult = (event) => { let t = ''; for (let i = 0; i < event.results.length; i++) t += ((event.results[i][0] && event.results[i][0].transcript) || '') + ' '; transcript = t.replace(/\s+/g, ' ').trim(); };
-      rec.onerror = () => {};
+      rec.onerror = () => { done = true; };
+      // Người nói ngừng -> dừng để engine chốt kết quả cuối (nhanh).
+      rec.onspeechend = () => { try { rec.stop(); } catch (e) {} };
+      rec.onend = () => { done = true; };
       rec.start();
     } catch (e) { return null; }
-    return { get: () => transcript.trim(), stop: () => { try { rec.stop(); } catch (e) {} try { rec.abort(); } catch (e) {} } };
+    return { get: () => transcript.trim(), isDone: () => done, stop: () => { try { rec.stop(); } catch (e) {} try { rec.abort(); } catch (e) {} } };
   }
 
   // Nhờ Side Panel chấm Whisper trên audio đã ghi (model + worker nằm ở Side Panel).
@@ -123,14 +128,21 @@
   async function recognize(opts) {
     opts = opts || {};
     root.SD.pageMic._abort = false; root.SD.pageMic._finalize = false;
-    const engine = opts.engine || 'whisper';
+    const engine = opts.engine || 'webspeech';
 
-    // Web Speech thuần -> chạy thẳng trên trang.
+    // Web Speech thuần -> chạy thẳng trên trang. Trả kết quả NGAY khi người nói
+    // ngừng (ps.isDone) -> chấm trong ~1-2s, không chờ hết maxMs.
     if (engine === 'webspeech') {
       const ps = pageWebSpeech(opts);
       if (!ps) throw new Error('no-webspeech');
       const started = Date.now();
-      await new Promise((resolve) => { const t = setInterval(() => { if (root.SD.pageMic._abort || root.SD.pageMic._finalize || Date.now() - started > (opts.maxMs || 7000)) { clearInterval(t); resolve(); } }, 80); });
+      await new Promise((resolve) => {
+        const t = setInterval(() => {
+          if (root.SD.pageMic._abort || root.SD.pageMic._finalize) { clearInterval(t); resolve(); return; }
+          if (ps.isDone() && ps.get()) { clearInterval(t); resolve(); return; } // nói xong -> chốt ngay
+          if (Date.now() - started > (opts.maxMs || 7000)) { clearInterval(t); resolve(); return; }
+        }, 80);
+      });
       const txt = ps.get(); ps.stop();
       if (root.SD.pageMic._abort) throw new Error('recording-aborted');
       return { transcript: txt, words: [], pitch: [], spokenMs: Date.now() - started, engine: 'webspeech (trang)' };
