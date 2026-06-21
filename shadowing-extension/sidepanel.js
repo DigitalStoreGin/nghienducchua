@@ -10,7 +10,7 @@
   const $ = (s) => document.querySelector(s);
   const esc = (t) => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const WORKER_URL = (typeof CONFIG !== 'undefined' ? CONFIG.WORKER_URL : null) || 'https://nghienducchua-proxy.thoatran21012.workers.dev';
-  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, engine: 'whisper', whisperModel: 'auto', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
+  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, segPause: true, engine: 'whisper', whisperModel: 'auto', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
   let sentences = [], favorites = [], current = 0;
   let recState = ''; // trang thai engine hien tai (de phim Space biet nen ghi hay finalize)
   let port = null;
@@ -256,9 +256,8 @@
   function renderList() {
     const c = $('#list'); c.innerHTML = '';
     const filtered = filterSentences();
-    // Show/hide filter + search bars
+    // Show/hide filter bar
     const filterBar = $('#status-filter'); if (filterBar) filterBar.hidden = !sentences.length;
-    const searchBar = $('#search-bar'); if (searchBar) searchBar.hidden = !sentences.length;
     if (!sentences.length) { c.innerHTML = '<div class="empty">No subtitles loaded. Click Auto / Live / File above.</div>'; return; }
     if (!filtered.length) { c.innerHTML = '<div class="empty">No sentences match the current filter.</div>'; return; }
     filtered.forEach((s) => {
@@ -430,7 +429,7 @@
     el.onchange = () => { settings[key] = type === 'bool' ? el.checked : (type === 'num' ? +el.value : el.value); cmd('settings', settings); };
   }
   bindSetting('rate', 'rate', 'num'); bindSetting('rep', 'repeat', 'num'); bindSetting('autonext', 'autoNext', 'bool');
-  bindSetting('autorec', 'autoRecord', 'bool'); bindSetting('engine', 'engine', 'str'); bindSetting('offset', 'offsetMs', 'num');
+  bindSetting('autorec', 'autoRecord', 'bool'); bindSetting('segpause', 'segPause', 'bool'); bindSetting('engine', 'engine', 'str'); bindSetting('offset', 'offsetMs', 'num');
   bindSetting('silerovad', 'useSileroVad', 'bool');
   if ($('#whisperModel')) $('#whisperModel').onchange = () => {
     settings.whisperModel = $('#whisperModel').value; cmd('settings', settings);
@@ -446,6 +445,7 @@
     $('#autorec').checked = settings.autoRecord; $('#engine').value = settings.engine; $('#offset').value = settings.offsetMs;
     if ($('#whisperModel')) $('#whisperModel').value = settings.whisperModel || 'auto';
     if ($('#silerovad')) $('#silerovad').checked = !!settings.useSileroVad;
+    if ($('#segpause')) $('#segpause').checked = settings.segPause !== false;
     updateHwInfo();
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
     $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;

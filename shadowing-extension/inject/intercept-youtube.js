@@ -100,15 +100,28 @@
   let lastVideoId = '';
   function exposeTracks() {
     const tracks = getTracks(); const vid = getVideoId();
-    if (tracks && tracks.length) { emit({ source: 'youtube', format: 'tracklist', data: tracks, videoId: vid }); lastVideoId = vid; }
+    if (tracks && tracks.length) {
+      // Extract any POT already embedded in track URLs — avoids needing CC button click
+      for (const t of tracks) {
+        if (t.baseUrl) extractPot(t.baseUrl + (t.baseUrl.indexOf('v=') < 0 ? '&v=' + vid : ''));
+      }
+      emit({ source: 'youtube', format: 'tracklist', data: tracks, videoId: vid });
+      lastVideoId = vid;
+    }
   }
   function exposeWithRetry() { [0, 300, 700, 1500, 3000, 5000].forEach((d) => setTimeout(exposeTracks, d)); }
   exposeWithRetry();
 
+  // ISOLATED world can ask for tracklist at any time (e.g. after bridge.js is ready)
+  document.addEventListener('SD_REQUEST_TRACKLIST', exposeWithRetry);
+
   // --- Ep YouTube tao mot request timedtext de bat POT ----------------------
   async function forceCaptionRequest() {
     try {
-      const btn = document.querySelector('.ytp-subtitles-button');
+      const btn = document.querySelector('.ytp-subtitles-button') ||
+                  document.querySelector('button[aria-label*="ubtitle"]') ||
+                  document.querySelector('button[aria-label*="aption"]') ||
+                  document.querySelector('.ytp-button[title*="ubtitle"]');
       if (btn) { btn.click(); await new Promise((r) => setTimeout(r, 220)); btn.click(); }
     } catch (e) {}
   }
@@ -136,7 +149,7 @@
     return (t && t.baseUrl) ? t : null;
   }
 
-  // --- Fetch phu de chinh thuc (co POT) khi user bam "Phu de tu dong" --------
+  // --- Fetch phu de chinh thuc khi user bam "Phu de tu dong" --------
   async function fetchCaptions(langPref, nativeLang) {
     const vid = getVideoId();
     let tracks = getTracks(); const t0 = Date.now();
@@ -147,27 +160,43 @@
     const track = pickTrack(tracks, langPref);
     if (!track) { emit({ source: 'youtube', format: 'yt-error', reason: 'no-track', videoId: vid }); return; }
 
-    // Bỏ luôn &lang= cũ trong baseUrl rồi thêm lại 1 lần (tránh trùng tham số lang).
-    const base = track.baseUrl
-      .replace(/&fmt=\w+/g, '').replace(/&pot=[^&]*/g, '').replace(/&tlang=[^&]*/g, '').replace(/&lang=[^&]*/g, '');
-    const pot = await ensurePot(vid);
+    // Reuse POT already embedded in baseUrl (YouTube 2025 puts it there).
+    // Only strip fmt/tlang/lang — keep pot= if present.
+    const baseWithMaybePot = track.baseUrl
+      .replace(/&fmt=\w+/g, '').replace(/&tlang=[^&]*/g, '').replace(/&lang=[^&]*/g, '');
+    const existingPot = baseWithMaybePot.match(/[?&]pot=([^&]+)/);
+    let pot = existingPot ? existingPot[1] : null;
+    if (pot && vid) potCache.set(vid, pot); // warm cache
+
+    const base = baseWithMaybePot.replace(/&pot=[^&]*/g, ''); // clean URL for adding pot back
+    if (!pot) pot = await ensurePot(vid); // fall back to CC-click approach
+
     const potParam = pot ? ('&pot=' + pot) : '';
     const url = base + '&fmt=json3' + potParam + '&c=WEB&lang=' + encodeURIComponent(track.languageCode || langPref || 'de');
-    try {
-      const r = await origFetch.call(window, url, { credentials: 'include' });
-      const data = await r.text();
-      let transData = null;
-      const nl = (nativeLang || '').slice(0, 2);
-      if (nl && nl !== (track.languageCode || '').slice(0, 2)) {
-        try {
-          const r2 = await origFetch.call(window, url + '&tlang=' + encodeURIComponent(nl), { credentials: 'include' });
-          transData = await r2.text();
-        } catch (e) {}
-      }
-      emit({ source: 'youtube', format: 'yt-captions', data, transData, langCode: track.languageCode, videoId: vid });
-    } catch (e) {
-      emit({ source: 'youtube', format: 'yt-error', reason: 'fetch-failed:' + (e && e.message), videoId: vid });
+
+    // Also try without pot as last resort (some videos/accounts may not need it)
+    const urlNoPot = base + '&fmt=json3&c=WEB&lang=' + encodeURIComponent(track.languageCode || langPref || 'de');
+
+    for (const fetchUrl of [url, urlNoPot]) {
+      if (fetchUrl === urlNoPot && pot) continue; // skip no-pot if we have pot (already tried that)
+      try {
+        const r = await origFetch.call(window, fetchUrl, { credentials: 'include' });
+        const data = await r.text();
+        if (!data) continue;
+        try { const parsed = JSON.parse(data); if (!parsed || !parsed.events || !parsed.events.length) continue; } catch(e) { continue; }
+        let transData = null;
+        const nl = (nativeLang || '').slice(0, 2);
+        if (nl && nl !== (track.languageCode || '').slice(0, 2)) {
+          try {
+            const r2 = await origFetch.call(window, fetchUrl + '&tlang=' + encodeURIComponent(nl), { credentials: 'include' });
+            transData = await r2.text();
+          } catch (e) {}
+        }
+        emit({ source: 'youtube', format: 'yt-captions', data, transData, langCode: track.languageCode, videoId: vid });
+        return;
+      } catch (e) {}
     }
+    emit({ source: 'youtube', format: 'yt-error', reason: 'fetch-failed', videoId: vid });
   }
 
   // Nhan yeu cau tu content script (ISOLATED)

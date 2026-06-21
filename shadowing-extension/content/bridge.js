@@ -191,5 +191,8 @@
     }
   }, 500);
 
+  // Ask MAIN world to expose tracklist now (handles case where early retries fired before ISOLATED world was ready)
+  try { document.dispatchEvent(new CustomEvent('SD_REQUEST_TRACKLIST')); } catch (e) {}
+
   root.SD.bridge = { onSubtitles, emitSentences, fetchYouTubeTrack, getAvailableTracks, hasTracklist: () => !!lastTracklist };
 })(window);

@@ -183,11 +183,6 @@
       </button>
     </div>
 
-    <!-- Search bar -->
-    <div class="search-bar" id="search-bar" hidden>
-      <input type="search" id="search-input" class="search-input" placeholder="🔍 Search subtitles…" autocomplete="off">
-    </div>
-
     <!-- Sentence status filter bar -->
     <div class="status-filter" id="status-filter" hidden>
       <button class="sf-btn sf-btn--active" data-sf="all">All</button>
@@ -462,6 +457,12 @@
         </div>
         <!-- New-spec alias -->
         <span id="autoRecord" hidden></span>
+
+        <!-- Auto Pause — tự dừng cuối mỗi câu để luyện -->
+        <div class="setting-row setting-row--toggle">
+          <label class="setting-label" for="segpause">Tự dừng câu</label>
+          <input type="checkbox" id="segpause" class="setting-toggle" checked>
+        </div>
 
         <!-- Speech Engine — id="engine" used by sidepanel.js -->
         <div class="setting-row">
