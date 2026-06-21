@@ -136,6 +136,12 @@
       // --- State: recording ---
       this.emit('state', { state: 'recording', idx: this.idx, rep: this.rep });
       const maxMs = Math.min(12000, Math.max(2500, Math.round(refSec * 1000 * 1.8 + 1200)));
+      // GIỮ video DỪNG suốt lúc ghi âm: chống tiếng video lẫn vào mic (echo) gây
+      // "Nothing heard"/chấm sai. Watchdog pause lại mỗi 150ms nếu YouTube tự phát.
+      try { V().pause(); } catch (e) {}
+      const keepPaused = setInterval(() => {
+        try { const v = V().el; if (v && !v.paused) v.pause(); } catch (e) {}
+      }, 150);
       let res;
       try {
         const LANG = { de: 'de-DE', en: 'en-US', fr: 'fr-FR', es: 'es-ES', it: 'it-IT', ja: 'ja-JP', ko: 'ko-KR', zh: 'zh-CN', ru: 'ru-RU', nl: 'nl-NL' };
@@ -148,14 +154,15 @@
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',
           vad: { silero: !!this.settings?.useSileroVad },
         });
-        // Guard: maxMs (ghi) + 15s (Groq timeout) + 15s (offline Whisper timeout) + 5s dư.
-        // transcribeViaSidePanel đã có timeout 15s riêng nên tổng luôn dưới guardMs.
-        const guardMs = maxMs + 35000;
+        // Guard: maxMs (ghi) + 10s (Groq) + 15s (offline Whisper, page-mic tự cắt) + dư.
+        // Mọi nhánh con đều có timeout riêng nên tổng luôn về trước guardMs.
+        const guardMs = maxMs + 28000;
         res = await Promise.race([
           recPromise,
           new Promise((_, rej) => setTimeout(() => rej(new Error('score-timeout')), guardMs)),
         ]);
       } catch (e) { res = { error: 'rec:' + (e.message || e) }; }
+      finally { clearInterval(keepPaused); }
       if (runId !== this.runId || !this.busy) return;
 
       // Error handling

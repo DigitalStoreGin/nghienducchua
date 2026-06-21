@@ -508,7 +508,9 @@
       let done = false;
       const cleanup = () => { try { w.removeEventListener('message', listener); } catch (_) {} clearTimeout(to); };
       const listener = (event) => { const m = event.data || {}; if (m.id !== id || done) return; done = true; cleanup(); if (m.type === 'result') resolve(m); else reject(new Error(m.error || 'whisper-error')); };
-      const to = setTimeout(() => { if (done) return; done = true; cleanup(); reject(new Error('whisper-timeout')); }, 120000);
+      // Fallback path (Groq là chính). Page-mic đã tự cắt ở 15s nên giới hạn 20s là đủ —
+      // tránh worker chạy lê thê 120s sau khi phía trang đã bỏ qua, gây tốn tài nguyên.
+      const to = setTimeout(() => { if (done) return; done = true; cleanup(); reject(new Error('whisper-timeout')); }, 20000);
       w.addEventListener('message', listener);
       w.postMessage({ type: 'transcribe', id, audio: audio16k, sampleRate: 16000, model: transcribeModel, numThreads: threads, language: opts.language || 'german' }, [audio16k.buffer]);
     });

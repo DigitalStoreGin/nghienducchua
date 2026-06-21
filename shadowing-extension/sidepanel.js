@@ -1423,6 +1423,8 @@
   function showRecordPanel(show) { const p = $('#record-panel'); if (p) p.hidden = !show; }
   { const b = $('#btn-record-close'); if (b) b.onclick = () => showRecordPanel(false); }
   { const b = $('#btn-how-to-improve'); if (b) b.onclick = () => { const s = sentences[current]; if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => setStatus(t || 'No translation', 'ok')); }; }
+  // Nút "Chấm điểm" trong panel Record — ghi âm lại + chấm câu đang luyện.
+  { const b = $('#btn-rescore'); if (b) b.onclick = () => { if (!sentences.length) return; const el = $('#you-said-text'); if (el) el.textContent = 'Listening…'; const mp = $('#match-pct'); if (mp) mp.textContent = 'Match –'; showRecordPanel(true); startShadow(current); }; }
 
   // Queue Complete modal
   { const b = $('#modal-close'); if (b) b.onclick = () => { const m = $('#modal-backdrop'); if (m) m.hidden = true; }; }

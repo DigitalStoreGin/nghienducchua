@@ -660,30 +660,50 @@ body.hide-text .current-text.revealed { filter: none; }
   margin-bottom: 12px;
   word-break: break-word;
 }
-.record-panel-footer {
+/* Match % nổi bật trên 1 hàng riêng */
+.record-panel-match {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 .match-pct {
-  font-size: 13px;
-  font-weight: 600;
-  color: #3c4043;
-  margin-right: auto;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a73e8;
+}
+/* 3 nút hành động: Listen / How to improve / Chấm điểm — chia đều, không bị cắt */
+.record-panel-footer {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 4px;
 }
 .record-action-btn {
-  padding: 6px 12px;
+  flex: 1 1 0;
+  min-width: 92px;
+  padding: 9px 10px;
   border: 1px solid #dadce0;
   border-radius: 20px;
   background: #fff;
   color: #1a73e8;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: background .12s;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, box-shadow .12s;
 }
 .record-action-btn:hover { background: #e8f0fe; }
+/* Nút chính "Chấm điểm" — tô đặc màu xanh để nổi bật */
+.record-action-btn--primary {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: #fff;
+}
+.record-action-btn--primary:hover { background: #1763c7; border-color: #1763c7; }
+body.dark .record-action-btn { background: var(--bg2); border-color: var(--border); color: var(--accent); }
+body.dark .record-action-btn:hover { background: var(--accent-light); }
+body.dark .record-action-btn--primary { background: var(--accent); color: #fff; }
 
 /* ===== BOTTOM TOOLBAR ===== */
 .bottom-toolbar {
