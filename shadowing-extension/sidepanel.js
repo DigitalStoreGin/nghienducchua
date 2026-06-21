@@ -1319,13 +1319,16 @@
 
   // ===== ShadowEcho-style UI wiring =====
 
-  // View switching (auth | list | practice | onboard)
+  // View switching (auth | list | practice | onboard) — fade-in active view
   function showView(name) {
     const va = $('#view-auth'), vl = $('#view-list'), vp = $('#view-practice'), vo = $('#view-onboard');
     if (va) va.hidden = name !== 'auth';
     if (vl) vl.hidden = name !== 'list';
-    if (vp) vp.hidden = name !== 'practice';
+    if (vp) { vp.hidden = name !== 'practice'; if (name === 'practice') vp.scrollTop = 0; }
     if (vo) vo.hidden = name !== 'onboard';
+    // Fade-in the visible view
+    const active = { auth: va, list: vl, practice: vp, onboard: vo }[name];
+    if (active) { active.classList.remove('view--in'); void active.offsetWidth; active.classList.add('view--in'); }
   }
 
   // Source info update

@@ -26,13 +26,19 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   flex-direction: column;
   min-height: 0;
 }
+/* Smooth fade-in when switching views */
+@keyframes viewFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.view--in { animation: viewFadeIn .18s ease both; }
 #view-list {
   padding-bottom: 96px; /* toolbar height (2 hàng có nhãn) */
   height: 100%;
   overflow: hidden;
 }
 #view-practice {
+  height: 100%;
+  overflow-y: auto;
   padding-bottom: 96px;
+  scroll-behavior: smooth;
 }
 
 /* ===== LIST VIEW — TOP BAR ===== */
@@ -204,6 +210,7 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   background: #eef4ff;
   border: 1.5px solid #cfe0ff;
   border-radius: 14px;
+  flex-shrink: 0; /* never squish the card — sentence-list gets flex:1 below */
 }
 .try-card-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -295,7 +302,9 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
 /* ===== SENTENCE LIST (card chứa danh sách câu, chữ to dễ đọc) ===== */
 .sentence-list {
   flex: 1;
+  min-height: 0; /* required: lets flexbox shrink below content height so overflow-y works */
   overflow-y: auto;
+  scroll-behavior: smooth;
   margin: 8px 12px 12px;
   padding: 4px;
   background: #fff;
@@ -788,6 +797,8 @@ body.hide-text .current-text.revealed { filter: none; }
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 -4px 24px rgba(0,0,0,.14);
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
 }
 .dictbox textarea {
   width: 100%;
