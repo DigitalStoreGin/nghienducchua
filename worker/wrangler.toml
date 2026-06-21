@@ -9,7 +9,13 @@ compatibility_flags = ["nodejs_compat"]
 # DEEPL_API_KEY
 # OPENROUTER_API_KEY
 # ADMIN_KEY
+# GROQ_API_KEY_1      Groq Whisper key 1 (round-robin cho /transcribe)
+# GROQ_API_KEY_2      Groq Whisper key 2
+# GROQ_API_KEY_3      Groq Whisper key 3
+# GROQ_API_KEY_4      Groq Whisper key 4
+# GROQ_API_KEY_5      Groq Whisper key 5
 # ANTHROPIC_API_KEY   (tuỳ chọn — fallback cho /score-ai nếu OpenRouter thất bại)
+# RESEND_API_KEY      (tuỳ chọn — gửi email cảnh báo khi tất cả Groq keys hết quota)
 # SENTRY_DSN          (tuỳ chọn — bật giám sát lỗi qua /log; chưa set thì ghi console)
 
 # Burst rate limit theo user (Cloudflare native, GA). 30 lần / 60 giây.

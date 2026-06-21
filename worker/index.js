@@ -2,7 +2,7 @@
  * ShadowEcho — Cloudflare Worker v2
  *
  * Architecture:
- *   Chrome Extension → Bearer JWT (Supabase) → this Worker → DeepL / OpenRouter
+ *   Chrome Extension → Bearer JWT (Supabase) → this Worker → DeepL / OpenRouter / Groq
  *
  * Worker Secrets (wrangler secret put):
  *   SUPABASE_URL          https://xxxx.supabase.co
@@ -10,6 +10,8 @@
  *   DEEPL_API_KEY         DeepL auth key
  *   OPENROUTER_API_KEY    OpenRouter key
  *   ADMIN_KEY             admin API key for management endpoints
+ *   GROQ_API_KEY_1..5     Groq Whisper keys (round-robin, fallback on 429)
+ *   RESEND_API_KEY        (tuỳ chọn) Resend.com key để gửi email cảnh báo Groq hết quota
  */
 
 const CORS = {
@@ -83,6 +85,12 @@ export default {
     // only receives the text transcript + target sentence, never raw audio).
     if (url.pathname === '/score-ai') {
       return handleScoreAI(request, env);
+    }
+
+    // Public STT transcription via Groq Whisper (rate-limited by IP, no auth).
+    // Receives raw audio blob, returns transcript text. Never stores audio.
+    if (url.pathname === '/transcribe') {
+      return handleTranscribe(request, env);
     }
 
     // All other routes require Supabase JWT
@@ -221,6 +229,85 @@ async function handleScoreAI(request, env) {
   }
 
   return json({ error: 'all_models_failed' }, 503);
+}
+
+// ── /transcribe  — Groq Whisper STT proxy ───────────────────
+// Public endpoint (rate-limited by IP). Receives audio blob (multipart/form-data),
+// round-robins through 5 Groq API keys, emails alert if all exhausted.
+export const GROQ_LANG_MAP = { de: 'de', en: 'en', fr: 'fr', es: 'es', it: 'it', ja: 'ja', ko: 'ko', zh: 'zh', pt: 'pt', ru: 'ru', ar: 'ar', nl: 'nl', pl: 'pl', sv: 'sv', tr: 'tr' };
+
+async function sendAlertEmail(env, subject, body) {
+  if (!env.RESEND_API_KEY) { console.error('[GROQ-ALERT]', subject); return; }
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: 'NghienDe Alert <noreply@shadowecho.app>', to: ['cfvblue@gmail.com'], subject, text: body }),
+    });
+  } catch (e) { console.error('[ALERT-EMAIL-FAILED]', e.message); }
+}
+
+async function handleTranscribe(request, env) {
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+
+  if (env.RATE_LIMITER) {
+    const ip = request.headers.get('CF-Connecting-IP') || 'anon';
+    try {
+      const { success } = await env.RATE_LIMITER.limit({ key: 'transcribe:' + ip });
+      if (!success) return json({ error: 'rate_limited' }, 429);
+    } catch (_) {}
+  }
+
+  let formData;
+  try { formData = await request.formData(); } catch { return json({ error: 'bad_form' }, 400); }
+  const file = formData.get('file');
+  if (!file) return json({ error: 'missing_file' }, 400);
+  const langCode = String(formData.get('lang') || 'de').toLowerCase().slice(0, 5);
+  const lang = GROQ_LANG_MAP[langCode] || 'de';
+
+  const GROQ_KEYS = [
+    env.GROQ_API_KEY_1, env.GROQ_API_KEY_2, env.GROQ_API_KEY_3,
+    env.GROQ_API_KEY_4, env.GROQ_API_KEY_5,
+  ].filter(Boolean);
+
+  if (!GROQ_KEYS.length) return json({ error: 'groq_not_configured' }, 503);
+
+  // Track whether every attempted key hit a quota limit (429) — if so, alert.
+  let allQuota = true;
+  for (const key of GROQ_KEYS) {
+    try {
+      const groqForm = new FormData();
+      groqForm.append('file', file, 'recording.webm');
+      groqForm.append('model', 'whisper-large-v3-turbo');
+      groqForm.append('language', lang);
+      groqForm.append('response_format', 'verbose_json');
+      groqForm.append('timestamp_granularities[]', 'word');
+
+      const resp = await Promise.race([
+        fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${key}` },
+          body: groqForm,
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+      ]);
+
+      if (resp.status === 429) continue; // quota exhausted on this key -> try next
+      allQuota = false;
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      return json({ text: data.text || '', words: data.words || [], engine: 'groq-whisper' });
+    } catch (_) { allQuota = false; } // timeout/network error: not a quota issue
+  }
+
+  if (allQuota) {
+    await sendAlertEmail(env,
+      'NghienDe: Tất cả Groq API keys đã hết quota',
+      `Tất cả ${GROQ_KEYS.length} Groq API keys đã hết hạn mức (429 Too Many Requests).\n\nVui lòng thêm keys mới hoặc nâng cấp tại https://console.groq.com\n\nThời gian: ${new Date().toISOString()}`
+    );
+  }
+
+  return json({ error: 'groq_unavailable' }, 503);
 }
 
 // ── Supabase JWT verification ────────────────────────────────

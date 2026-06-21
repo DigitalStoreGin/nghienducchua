@@ -5,7 +5,6 @@
   "description": "Luyện shadowing chuyên nghiệp: phụ đề, ghi âm, chấm điểm ngữ âm, dịch AI, phân tích từ vựng. Chạy trên YouTube & Netflix.",
   "permissions": [
     "activeTab",
-    "microphone",
     "scripting",
     "sidePanel",
     "storage",

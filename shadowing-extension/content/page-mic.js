@@ -9,6 +9,7 @@
 (function (root) {
   'use strict';
   root.SD = root.SD || {};
+  const WORKER_URL = 'https://nghienducchua-proxy.thoatran21012.workers.dev';
   let stream = null;
 
   async function permission() {
@@ -89,7 +90,7 @@
     const decoded = await ac.decodeAudioData(await blob.arrayBuffer());
     const audio16k = downsampleTo16k(decoded.getChannelData(0), decoded.sampleRate);
     await ac.close();
-    return { audio16k, spokenMs, spoke };
+    return { audio16k, blob, spokenMs, spoke };
   }
 
   // Web Speech NGAY trên trang (origin youtube.com) — continuous để bắt cả câu.
@@ -132,6 +133,25 @@
     });
   }
 
+  // Gửi audio blob lên Cloudflare Worker -> Groq Whisper Large v3 Turbo.
+  // Trả null nếu thất bại (network, quota, timeout) -> caller fallback sang offline.
+  async function transcribeViaGroq(blob, lang) {
+    if (!blob) return null;
+    const form = new FormData();
+    const ext = (blob.type || 'audio/webm').includes('ogg') ? 'ogg' : 'webm';
+    form.append('file', blob, 'recording.' + ext);
+    form.append('lang', lang || 'de');
+    try {
+      const resp = await Promise.race([
+        fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
+      ]);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data.error ? null : data;
+    } catch (_) { return null; }
+  }
+
   async function recognize(opts) {
     opts = opts || {};
     root.SD.pageMic._abort = false; root.SD.pageMic._finalize = false;
@@ -172,6 +192,14 @@
     if (parallel) { try { await new Promise((r) => setTimeout(r, 250)); backup = parallel.get(); } catch (e) {} parallel.stop(); }
 
     if (engine === 'whisper') {
+      // 1. Groq Whisper (nhanh, chính xác, qua Worker -> round-robin 5 keys).
+      const groq = await transcribeViaGroq(data.blob, opts.lang2 || 'de');
+      if (groq && groq.text != null) {
+        const txt = groq.text.trim();
+        if (txt) return { transcript: txt, words: groq.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'groq-whisper (trang)' };
+        if (backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech↔groq (trang)', fallback: true };
+      }
+      // 2. Groq thất bại -> offline Whisper (Side Panel, model đang ấm sẵn).
       const result = await transcribeViaSidePanel(data.audio16k, opts);
       if (result && result.text != null) {
         const txt = (result.text || '').trim();
@@ -180,9 +208,10 @@
         if ((!txt || bad) && backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech↔whisper (trang)', fallback: true };
         return { transcript: txt, words: result.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'whisper:' + (result.modelShort || '?') + ' (trang)', lowConfidence: bad };
       }
-      if (backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech (Whisper Side Panel lỗi)', fallback: true };
-      // Side Panel chưa chấm được & không có dự phòng -> trả rỗng (KHÔNG bắt nói lại).
-      return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'whisper (Side Panel chưa sẵn sàng)' };
+      // 3. Web Speech backup (bắt song song lúc ghi âm) -> không cần nói lại.
+      if (backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech (fallback cuối)', fallback: true };
+      // 4. Tất cả thất bại -> trả rỗng, không hiện lỗi mic.
+      return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (fallback)' };
     }
     // 'server' engine không hỗ trợ tại trang -> để speech.js fallback về Side Panel.
     throw new Error('page-mic-unsupported-engine');
