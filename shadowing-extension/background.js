@@ -7,8 +7,13 @@
 try {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 } catch (e) {}
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   try { chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {}); } catch (e) {}
+  // Lần đầu cài extension -> đánh dấu để content script tự hiện hộp thoại xin quyền
+  // micro NGAY trên trang YouTube/Netflix (origin của trang) ở lần mở đầu tiên.
+  if (details && details.reason === 'install') {
+    try { chrome.storage.local.set({ micOnboardPending: true }); } catch (e) {}
+  }
 });
 
 /* --- Port Manager --- */

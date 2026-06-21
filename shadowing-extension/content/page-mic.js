@@ -220,6 +220,25 @@
   function abort() { root.SD.pageMic._abort = true; }
   function finalize() { root.SD.pageMic._finalize = true; }
 
+  // Lần đầu cài extension: TỰ hiện hộp thoại xin quyền micro NGAY trên trang (như ảnh
+  // "m.youtube.com wants to use microphone"). Chỉ chạy MỘT lần (cờ micOnboardPending do
+  // background đặt khi cài), và chỉ khi quyền còn 'prompt' (chưa cấp / chưa chặn) để
+  // không làm phiền người đã quyết định. Lấy quyền xong nhả track ngay.
+  async function firstRunPrompt() {
+    try {
+      const d = await new Promise((res) => {
+        try { chrome.storage.local.get('micOnboardPending', (x) => res(x || {})); } catch (e) { res({}); }
+      });
+      if (!d.micOnboardPending) return;
+      // Xoá cờ TRƯỚC để dù kết quả thế nào cũng không hỏi lại ở lần mở sau.
+      try { chrome.storage.local.remove('micOnboardPending'); } catch (e) {}
+      let state = 'prompt'; try { state = await permission(); } catch (e) {}
+      if (state === 'granted' || state === 'denied') return; // đã quyết định -> bỏ qua
+      await ensure();  // getUserMedia({ audio:true }) -> hộp thoại micro hiện trên trang
+      release();       // chỉ cần lấy quyền; Side Panel sẽ tự mở mic khi ghi âm
+    } catch (e) {}
+  }
+
   // Side Panel điều khiển trực tiếp (cấp quyền NGAY trên trang, dừng/kết thúc ghi âm).
   chrome.runtime.onMessage.addListener((msg, _s, reply) => {
     if (!msg || msg.sd !== 'page-mic') return;
@@ -235,5 +254,5 @@
     return true;
   });
 
-  root.SD.pageMic = { ensure, permission, recognize, release, abort, finalize, _abort: false, _finalize: false };
+  root.SD.pageMic = { ensure, permission, recognize, release, abort, finalize, firstRunPrompt, _abort: false, _finalize: false };
 })(window);

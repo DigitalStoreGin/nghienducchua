@@ -11,6 +11,8 @@
       SD.engine.setSettings(d.settings);
       SD.bridge.onSubtitles((s) => SD.engine.setSentences(s));
       SD.csapi.init();
+      // Lần đầu cài extension: tự hiện hộp thoại xin quyền micro trên trang (1 lần).
+      if (SD.pageMic && SD.pageMic.firstRunPrompt) SD.pageMic.firstRunPrompt();
     });
   }
   if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
