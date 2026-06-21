@@ -132,6 +132,16 @@
       }
     },
 
+    async recordOnlyAt(i) {
+      if (this.busy) { this.runId++; this.busy = false; }
+      this.busy = true; this.idx = i; this.rep = 0;
+      this.setCurrent(i);
+      const runId = ++this.runId;
+      const s = this.sentences[i]; if (!s) { this.busy = false; return; }
+      try { V().pause(); } catch (e) {}
+      await this.recordAndScore(s, (s.endMs - s.startMs) / 1000, runId);
+    },
+
     async recordAndScore(s, refSec, runId) {
       // --- State: recording ---
       this.emit('state', { state: 'recording', idx: this.idx, rep: this.rep });
@@ -154,9 +164,8 @@
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',
           vad: { silero: !!this.settings?.useSileroVad },
         });
-        // Guard: maxMs (ghi) + 10s (Groq) + 15s (offline Whisper, page-mic tự cắt) + dư.
-        // Mọi nhánh con đều có timeout riêng nên tổng luôn về trước guardMs.
-        const guardMs = maxMs + 28000;
+        // Guard: maxMs (ghi) + 4s (Groq) + 20s (offline Whisper) + buffer.
+        const guardMs = maxMs + 12000;
         res = await Promise.race([
           recPromise,
           new Promise((_, rej) => setTimeout(() => rej(new Error('score-timeout')), guardMs)),

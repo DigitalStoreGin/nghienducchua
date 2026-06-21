@@ -205,6 +205,24 @@
   });
 
   function setStatus(t, kind) { const s = $('#status'); s.textContent = t; s.className = 'status' + (kind ? ' ' + kind : ''); }
+
+  function setRecordScore(score) {
+    const circ = 213.6; // 2π × r(34)
+    const fill = $('#score-circle-fill');
+    const num = $('#record-score-num');
+    if (score == null) {
+      if (fill) { fill.style.strokeDashoffset = circ; fill.className = 'score-circle-fill'; }
+      if (num) num.textContent = '–';
+    } else {
+      const pct = Math.max(0, Math.min(100, Math.round(score)));
+      if (fill) {
+        fill.style.strokeDashoffset = (circ * (1 - pct / 100)).toFixed(1);
+        fill.className = 'score-circle-fill' + (pct >= 75 ? ' hi' : pct >= 50 ? ' mid' : ' lo');
+      }
+      if (num) num.textContent = pct + '%';
+    }
+  }
+
   function onState(st) {
     const map = {
       playing: '▶️ Playing…',
@@ -216,9 +234,16 @@
     recState = st.state || '';
     const fb = $('#finalizeBtn'); if (fb) fb.hidden = st.state !== 'recording';
     if (st.state && map[st.state]) setStatus(map[st.state] + (st.rep != null ? ' (rep ' + (st.rep + 1) + ')' : ''));
+    // Record panel: update listening dot + status text
+    const dot = $('#record-listening-dot');
+    const stxt = $('#record-status-text');
+    const isRec = st.state === 'recording';
+    const isScore = st.state === 'scoring';
+    if (dot) dot.classList.toggle('active', isRec);
+    if (stxt) stxt.textContent = isRec ? 'Listening…' : isScore ? 'Đang chấm…' : 'Sẵn sàng';
     // Show record panel when recording starts
-    if (st.state === 'recording') {
-      const el = $('#you-said-text'); if (el) el.textContent = 'Listening…';
+    if (isRec) {
+      const el = $('#you-said-text'); if (el) el.textContent = '';
       showRecordPanel(true);
       startWaveform();
     } else {
@@ -226,9 +251,9 @@
     }
     // Mic activity indicator: pulse speak button + mic dot when recording
     const speakBtn = $('#try-card-speak');
-    if (speakBtn) speakBtn.classList.toggle('recording', st.state === 'recording');
+    if (speakBtn) speakBtn.classList.toggle('recording', isRec);
     const micBtn = $('#micButton');
-    if (micBtn) micBtn.classList.toggle('recording', st.state === 'recording');
+    if (micBtn) micBtn.classList.toggle('recording', isRec);
   }
   function onProgress(p) {
     const el = $('#prog'); el.hidden = false;
@@ -444,7 +469,9 @@
     }
     // Update record panel
     const ys = $('#you-said-text'); if (ys) ys.textContent = sc.transcript || '–';
-    const mp = $('#match-pct'); if (mp) mp.textContent = sc.overall != null ? 'Match ' + sc.overall + '%' : 'Match –';
+    setRecordScore(sc.overall != null ? sc.overall : null);
+    const stxt = $('#record-status-text'); if (stxt) stxt.textContent = 'Sẵn sàng';
+    const dot = $('#record-listening-dot'); if (dot) dot.classList.remove('active');
     showRecordPanel(true);
     // Update score gauges in practice view
     const so = $('#score-overall'); if (so) so.textContent = sc.overall ?? '–';
@@ -1422,9 +1449,15 @@
   // Record panel
   function showRecordPanel(show) { const p = $('#record-panel'); if (p) p.hidden = !show; }
   { const b = $('#btn-record-close'); if (b) b.onclick = () => showRecordPanel(false); }
-  { const b = $('#btn-how-to-improve'); if (b) b.onclick = () => { const s = sentences[current]; if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => setStatus(t || 'No translation', 'ok')); }; }
-  // Nút "Chấm điểm" trong panel Record — ghi âm lại + chấm câu đang luyện.
-  { const b = $('#btn-rescore'); if (b) b.onclick = () => { if (!sentences.length) return; const el = $('#you-said-text'); if (el) el.textContent = 'Listening…'; const mp = $('#match-pct'); if (mp) mp.textContent = 'Match –'; showRecordPanel(true); startShadow(current); }; }
+  // Nút "Chấm điểm" — bỏ qua phát mẫu, ghi âm và chấm ngay lập tức.
+  { const b = $('#btn-rescore'); if (b) b.onclick = () => {
+    if (!sentences.length) return;
+    const el = $('#you-said-text'); if (el) el.textContent = '';
+    setRecordScore(null);
+    current = Math.max(0, Math.min(current, sentences.length - 1));
+    cmd('select', { i: current, play: false });
+    cmd('recordOnly', { i: current });
+  }; }
 
   // Queue Complete modal
   { const b = $('#modal-close'); if (b) b.onclick = () => { const m = $('#modal-backdrop'); if (m) m.hidden = true; }; }

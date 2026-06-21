@@ -671,7 +671,93 @@ body.hide-text .current-text.revealed { filter: none; }
   font-weight: 700;
   color: #1a73e8;
 }
-/* 3 nút hành động: Listen / How to improve / Chấm điểm — chia đều, không bị cắt */
+/* Listening status row in record panel header */
+.record-status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.record-listening-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #bdc1c6;
+  flex-shrink: 0;
+  transition: background .3s;
+}
+.record-listening-dot.active {
+  background: #34a853;
+  animation: rec-dot-pulse .9s ease-in-out infinite;
+}
+@keyframes rec-dot-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52,168,83,.4); }
+  50%       { opacity: .85; box-shadow: 0 0 0 5px rgba(52,168,83,0); }
+}
+.record-status-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #202124;
+}
+
+/* Circular score display */
+.record-score-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0 4px;
+}
+.record-score-circle-wrap {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.record-score-svg {
+  transform: rotate(-90deg);
+  display: block;
+}
+.score-circle-track {
+  fill: none;
+  stroke: #e8eaed;
+  stroke-width: 7;
+}
+.score-circle-fill {
+  fill: none;
+  stroke: #1a73e8;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 213.6;
+  stroke-dashoffset: 213.6;
+  transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1), stroke .3s;
+}
+.score-circle-fill.hi  { stroke: #34a853; }
+.score-circle-fill.mid { stroke: #fbbc04; }
+.score-circle-fill.lo  { stroke: #ea4335; }
+.record-score-num {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: 800;
+  color: #202124;
+  pointer-events: none;
+  line-height: 1;
+}
+.record-score-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #80868b;
+  margin-top: 4px;
+  letter-spacing: .3px;
+}
+body.dark .score-circle-track { stroke: #3a3a50; }
+body.dark .record-score-num { color: var(--text); }
+body.dark .record-status-text { color: var(--text); }
+
+/* 2 nút hành động: Listen / Chấm điểm — chia đều */
 .record-panel-footer {
   display: flex;
   align-items: stretch;

@@ -43,8 +43,8 @@
   // Ghi âm + VAD thích nghi (im lặng -> tự dừng). Cùng logic với mic-service.js bản Side Panel.
   async function recordRaw(opts) {
     const minMs = 600;
-    const hangMs = (opts.vad && opts.vad.silenceHangMs) || 900;
-    const noSpeechMs = 4500;
+    const hangMs = (opts.vad && opts.vad.silenceHangMs) || 600;
+    const noSpeechMs = 2000;
     const maxMs = opts.maxMs || 7000;
     await ensure();
     const ac = new AudioContext();
@@ -147,7 +147,7 @@
     try {
       const resp = await Promise.race([
         fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 4000)),
       ]);
       if (!resp.ok) return null;
       const data = await resp.json();

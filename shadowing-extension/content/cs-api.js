@@ -138,6 +138,9 @@
         case 'shadow':
           eng.shadowSingle(msg.args && msg.args.i != null ? msg.args.i : eng.current);
           reply({ ok: true }); break;
+        case 'recordOnly':
+          eng.recordOnlyAt(msg.args && msg.args.i != null ? msg.args.i : eng.current);
+          reply({ ok: true }); break;
         case 'shadowFav': {
           const favs = await S().getFavorites();
           const idxs = lastSentences.map((s, i) => (favs.some((f) => f.text === s.text) ? i : -1)).filter((i) => i >= 0);
