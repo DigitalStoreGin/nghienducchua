@@ -119,13 +119,64 @@
     return [];
   }
 
-  // --- Tach mot cau qua dai (chua nhieu cau con) thanh tung cau ---------------
+  // --- Tach mot cau (co the chua nhieu cau con / qua dai) thanh tung cau ngan --
   // Hoc tu splitSegmentBySentences cua ShadowEcho: chia thoi gian theo do dai chu.
+  // Muc tieu: moi doan shadowing la MOT cau tron ven, khong qua dai (de luyen
+  // tung cau mot). Vi du "Hallo. Hallo. Wir freuen uns..." -> 3 doan rieng.
+  const SENT_MAX = 90; // do dai toi da (ky tu) cho 1 doan truoc khi tach theo menh de
+
+  // Cac chu viet tat tieng Duc/chung — KHONG duoc coi dau cham la het cau.
+  // Gom: ten goi (Dr., Prof.…), don vi/viet tat (usw., bzw.…), 1 chu cai hoa
+  // (B. trong "z. B."), va so thu tu (3.).
+  const ABBR_END = /(?:\b(?:Dr|Prof|Hr|Fr|Frl|Nr|St|Str|Mr|Mrs|Ms|Vs|ca|usw|bzw|etc|evtl|ggf|inkl|max|min|Mio|Mrd|Abk|Jh|Jhd|sog|Bd|Aufl|Hrsg|geb|gest|verh|Tel|Abs|Art|Kap|Pos|ehem|vgl|z|B|d|h|u|a|o|s|ff|f)\.|\b\p{Lu}\.|\d+\.)\s*$/u;
+
+  // Tach van ban thanh cac cau con theo dau ket cau:
+  //  - tach khi sau dau cham la chu HOA / so (kieu Duc: dau cau / danh tu viet hoa)
+  //  - nhung gop lai neu manh truoc ket thuc bang chu viet tat (ABBR_END)
+  function splitIntoSentences(text) {
+    const raw = String(text).split(/(?<=[.!?…]['")\]]?)\s+(?=[A-ZÄÖÜ0-9])/);
+    const out = [];
+    for (const piece of raw) {
+      const p = piece.trim(); if (!p) continue;
+      if (out.length && ABBR_END.test(out[out.length - 1])) {
+        out[out.length - 1] = (out[out.length - 1] + ' ' + p).replace(/\s+/g, ' ').trim();
+      } else {
+        out.push(p);
+      }
+    }
+    return out;
+  }
+
+  // Tach 1 cau dai theo menh de (dau phay / cham phay / hai cham), gom cac manh
+  // ngan ke nhau cho gan SENT_MAX de khong bi vun qua nhieu.
+  function splitByClauses(text) {
+    const sub = String(text).split(/(?<=[,;:])\s+/).map((t) => t.trim()).filter(Boolean);
+    if (sub.length <= 1) return [text];
+    const out = [];
+    let buf = '';
+    for (const piece of sub) {
+      if (!buf) buf = piece;
+      else if ((buf + ' ' + piece).length <= SENT_MAX) buf += ' ' + piece;
+      else { out.push(buf); buf = piece; }
+    }
+    if (buf) out.push(buf);
+    return out;
+  }
+
   function splitLongSentence(s) {
-    const text = s.text || '';
-    if (text.length < 120) return [s];
-    const parts = text.split(/(?<=[.!?…])\s+/).map((t) => t.trim()).filter(Boolean);
-    if (parts.length <= 1) return [s];
+    const text = (s.text || '').trim();
+    if (!text) return [s];
+    // Buoc 1: luon tach theo dau ket cau -> moi cau tron ven thanh 1 doan
+    let parts = splitIntoSentences(text);
+    // Buoc 2: cau con nao van qua dai -> tach tiep theo menh de
+    const refined = [];
+    for (const p of parts) {
+      if (p.length <= SENT_MAX) refined.push(p);
+      else for (const q of splitByClauses(p)) refined.push(q);
+    }
+    parts = refined.filter(Boolean);
+    if (parts.length <= 1) return [{ startMs: s.startMs, endMs: s.endMs, text: parts[0] || text }];
+    // Buoc 3: chia thoi gian theo ty le do dai chu cua tung doan
     const total = parts.reduce((a, p) => a + p.length, 0) || 1;
     const dur = Math.max(0, s.endMs - s.startMs);
     let cursor = s.startMs;

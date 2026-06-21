@@ -487,6 +487,7 @@
     if ($('#whisperModel')) $('#whisperModel').value = settings.whisperModel || 'auto';
     if ($('#silerovad')) $('#silerovad').checked = !!settings.useSileroVad;
     if ($('#segpause')) $('#segpause').checked = settings.segPause !== false;
+    if (typeof updatePauseToggle === 'function') updatePauseToggle();
     updateHwInfo();
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
     $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;
@@ -1107,6 +1108,24 @@
     };
   }
 
+  // ===== Ẩn chữ — bảng tự kiểm tra trí nhớ (nghe → nhớ → hiện đáp án) =====
+  // Mở "khung" riêng giống Chép/Điền/Nói & chấm cho nhất quán.
+  function startRecall() {
+    const s = sentences[current]; if (!s) { setStatus('Chưa có câu.', 'warn'); return; }
+    speakText(s.text);
+    const box = $('#dictbox'); box.hidden = false;
+    box.innerHTML = '<div style="font-size:12px;color:#8b94a6">🙈 Nghe rồi nhớ lại câu — bấm "Hiện đáp án" để kiểm tra:</div>' +
+      '<div class="res recall-hidden" id="recallText">' + esc(s.text) + '</div>' +
+      '<div class="drow"><button class="btn" id="recallPlay">🔊 Nghe lại</button>' +
+      '<button class="btn mic" id="recallShow">👁 Hiện đáp án</button>' +
+      '<button class="btn" id="recallClose">Đóng</button></div>';
+    const txt = $('#recallText');
+    $('#recallPlay').onclick = () => speakText(s.text);
+    $('#recallShow').onclick = () => { if (txt) txt.classList.toggle('recall-hidden'); };
+    if (txt) txt.onclick = () => txt.classList.remove('recall-hidden');
+    $('#recallClose').onclick = () => { box.hidden = true; };
+  }
+
   // ===== GĐ2: Flashcard SRS (legacy pane — kept for tab compatibility) =====
   const SRS_KEY = 'sd_srs_v1';
   function srsGet() { return new Promise((res) => { try { chrome.storage.local.get(SRS_KEY, (r) => res((r && r[SRS_KEY]) || {})); } catch (e) { res({}); } }); }
@@ -1303,7 +1322,7 @@
   { const b = $('#btn-cloze'); if (b) b.onclick = () => startCloze(); }
   { const b = $('#btn-hint'); if (b) b.onclick = () => { const s = sentences[current]; if (s && s.trans) setStatus(s.trans, 'ok'); else if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => { if (t) { s.trans = t; setStatus(t, 'ok'); } }); }; }
   { const b = $('#btn-shadow-fav'); if (b) b.onclick = async () => { if (!settings.autoRecord || await enableMic({ silent: true })) cmd('shadowFav', { target: settings.targetLang, native: settings.nativeLang }); }; }
-  { const b = $('#btn-blur'); if (b) b.onclick = toggleBlur; }
+  { const b = $('#btn-blur'); if (b) b.onclick = startRecall; }
   { const b = $('#btn-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) speakText(s.text); }; }
   { const b = $('#btn-load-auto'); if (b) b.onclick = () => cmd('loadAuto', { target: settings.targetLang, native: settings.nativeLang }); }
   { const b = $('#btn-load-live'); if (b) b.onclick = async () => { const r = await cmd('live'); if (r) b.classList.toggle('on', !!r.running); }; }
@@ -1312,6 +1331,20 @@
   { const b = $('#try-card-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) { cmd('select', { i: current }); speakText(s.text); } }; }
   { const b = $('#try-card-speak'); if (b) b.onclick = () => { if (!sentences.length) return; openPractice(current); showRecordPanel(true); startShadow(current); }; }
   { const b = $('#try-card-next'); if (b) b.onclick = () => { if (current + 1 < sentences.length) selectRow(current + 1); }; }
+  // Nut "Tu dung" tren the luyen tap — bat/tat tu dung cuoi moi cau (segPause).
+  function updatePauseToggle() {
+    const b = $('#try-pause-toggle'); if (!b) return;
+    const on = settings.segPause !== false;
+    b.classList.toggle('on', on);
+    b.textContent = on ? '⏸ Tự dừng: Bật' : '▶ Tự dừng: Tắt';
+  }
+  { const b = $('#try-pause-toggle'); if (b) b.onclick = () => {
+      settings.segPause = !(settings.segPause !== false);
+      if ($('#segpause')) $('#segpause').checked = settings.segPause;
+      cmd('settings', settings);
+      updatePauseToggle();
+      setStatus(settings.segPause ? '⏸ Tự dừng cuối mỗi câu: BẬT' : '▶ Tự dừng cuối mỗi câu: TẮT', 'ok');
+    }; }
 
   // Record panel
   function showRecordPanel(show) { const p = $('#record-panel'); if (p) p.hidden = !show; }

@@ -70,4 +70,51 @@ describe('mergeIntoSentences — gộp + tách câu', () => {
     expect(out.length).toBe(1);
     expect(out[0].text).toBe('Ich gehe nach Hause.');
   });
+
+  it('tách nhiều câu ngắn gộp chung thành từng câu riêng', () => {
+    // Lỗi cũ: "Hallo. Hallo. Wir freuen uns..." hiện thành 1 dòng dài.
+    const cues = [
+      { startMs: 0, endMs: 4000, text: 'Hallo. Hallo. Wir freuen uns so sehr, dass ihr heute hier seid.' },
+    ];
+    const out = P.mergeIntoSentences(cues);
+    expect(out.length).toBe(3);
+    expect(out[0].text).toBe('Hallo.');
+    expect(out[1].text).toBe('Hallo.');
+    expect(out[2].text).toBe('Wir freuen uns so sehr, dass ihr heute hier seid.');
+    // thời gian tăng dần, không chồng nhau
+    expect(out[0].startMs).toBeLessThan(out[1].startMs);
+    expect(out[1].startMs).toBeLessThan(out[2].startMs);
+  });
+
+  it('tách câu khác nhau đến từ các cue liền nhau (gap nhỏ)', () => {
+    const cues = [
+      { startMs: 0,    endMs: 1000, text: 'Guten Tag.' },
+      { startMs: 1100, endMs: 4000, text: 'Wir freuen uns, dass ihr hier seid.' },
+    ];
+    const out = P.mergeIntoSentences(cues);
+    expect(out.length).toBe(2);
+    expect(out[0].text).toBe('Guten Tag.');
+    expect(out[1].text).toBe('Wir freuen uns, dass ihr hier seid.');
+  });
+
+  it('KHÔNG tách nhầm chữ viết tắt (z. B., Dr., ordinal)', () => {
+    const cues = [
+      { startMs: 0, endMs: 3000, text: 'Das ist z. B. ein Haus von Dr. Müller am 3. Mai.' },
+    ];
+    const out = P.mergeIntoSentences(cues);
+    expect(out.length).toBe(1);
+    expect(out[0].text).toContain('z. B.');
+    expect(out[0].text).toContain('Dr. Müller');
+  });
+
+  it('tách câu quá dài theo mệnh đề (dấu phẩy) để luyện từng đoạn', () => {
+    const longText =
+      'Wenn das Wetter heute schön ist, gehen wir gemeinsam in den großen Park, ' +
+      'und danach essen wir ein leckeres Eis in der Stadt.';
+    const cues = [{ startMs: 0, endMs: 6000, text: longText }];
+    const out = P.mergeIntoSentences(cues);
+    expect(out.length).toBeGreaterThan(1);
+    // mỗi đoạn không quá dài
+    for (const s of out) expect(s.text.length).toBeLessThanOrEqual(95);
+  });
 });

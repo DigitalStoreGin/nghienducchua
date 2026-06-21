@@ -210,8 +210,28 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   margin-bottom: 8px;
 }
 .try-card-title { color: #1a73e8; font-weight: 700; font-size: 13px; }
+.try-card-head-right { display: flex; align-items: center; gap: 10px; }
 .try-card-next { color: #5f6368; font-size: 12px; cursor: pointer; }
 .try-card-next:hover { color: #1a73e8; }
+/* Toggle "Tự dừng" — bật/tắt tự dừng cuối mỗi câu */
+.try-pause-toggle {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 99px;
+  border: 1.5px solid #d2d9e6;
+  background: #fff;
+  color: #80868b;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.try-pause-toggle:hover { border-color: #1a73e8; }
+.try-pause-toggle.on {
+  background: #e6f4ea;
+  border-color: #34a853;
+  color: #137333;
+}
 .try-card-sentence {
   font-size: 17px; font-weight: 700; color: #202124; line-height: 1.35;
   margin-bottom: 12px;
@@ -791,6 +811,14 @@ body.hide-text .current-text.revealed { filter: none; }
   font-size: 13px;
   line-height: 1.8;
 }
+/* Recall (ẩn chữ) — bấm "Hiện đáp án" để lộ */
+.recall-hidden {
+  filter: blur(7px);
+  user-select: none;
+  cursor: pointer;
+  transition: filter .2s;
+}
+.recall-hidden:hover { filter: blur(4px); }
 /* Cloze inputs */
 .cz {
   margin: 0 2px;
@@ -1461,6 +1489,8 @@ body.dark .try-card-btn { background: var(--bg2); border-color: var(--border); c
 body.dark .try-card-btn--speak { background: #1a73e8; border-color: #1a73e8; color: #fff; }
 body.dark .try-card-preview-row { color: var(--text2); }
 body.dark .try-card-preview-row:hover { background: rgba(26,115,232,.15); color: var(--text); }
+body.dark .try-pause-toggle { background: var(--bg2); border-color: var(--border); color: var(--text2); }
+body.dark .try-pause-toggle.on { background: #1e3a2a; border-color: #34a853; color: #6fcf97; }
 body.dark .status-bar { background: var(--bg2); color: var(--text2); }
 body.dark .icon-btn { color: var(--text2); }
 body.dark .icon-btn:hover { background: var(--bg3); }
