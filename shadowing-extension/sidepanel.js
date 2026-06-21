@@ -10,7 +10,7 @@
   const $ = (s) => document.querySelector(s);
   const esc = (t) => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const WORKER_URL = (typeof CONFIG !== 'undefined' ? CONFIG.WORKER_URL : null) || 'https://nghienducchua-proxy.thoatran21012.workers.dev';
-  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, segPause: true, engine: 'webspeech', whisperModel: 'auto', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
+  let settings = { rate: 1, repeat: 3, autoNext: true, autoRecord: true, segPause: true, engine: 'whisper', whisperModel: 'auto', useSileroVad: false, offsetMs: 0, nativeLang: 'vi', targetLang: 'de', uiLang: 'vi', videoSubs: true, hideText: false, serverUrl: 'http://localhost:8000' };
   let sentences = [], favorites = [], current = 0;
   let recState = ''; // trang thai engine hien tai (de phim Space biet nen ghi hay finalize)
   let port = null;
@@ -323,6 +323,26 @@
       body.appendChild(de);
       if (s.trans) { const tr = document.createElement('div'); tr.className = 'tr'; tr.textContent = s.trans; body.appendChild(tr); }
       row.appendChild(body);
+      // 3 nut hover (an, hien khi chuot qua)
+      const actions = document.createElement('div'); actions.className = 'row-actions';
+      // Nut 🎤 — chon cau va bat dau ghi am
+      const micBtn = document.createElement('button'); micBtn.className = 'row-action-btn'; micBtn.title = 'Luyện câu này'; micBtn.textContent = '🎤';
+      micBtn.onclick = (e) => { e.stopPropagation(); startShadow(i); };
+      // Nut 🌐 — dich toan cau vao .tr
+      const transBtn = document.createElement('button'); transBtn.className = 'row-action-btn'; transBtn.title = 'Dịch câu'; transBtn.textContent = '🌐';
+      transBtn.onclick = async (e) => {
+        e.stopPropagation();
+        if (s.trans) { const trEl = body.querySelector('.tr'); if (trEl) { trEl.hidden = !trEl.hidden; } return; }
+        transBtn.disabled = true;
+        const t = await translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi');
+        transBtn.disabled = false;
+        if (t) { s.trans = t; const trEl = document.createElement('div'); trEl.className = 'tr'; trEl.textContent = t; body.appendChild(trEl); }
+      };
+      // Nut ≡+ — them vao yeu thich
+      const menuBtn = document.createElement('button'); menuBtn.className = 'row-action-btn'; menuBtn.title = 'Thêm vào yêu thích'; menuBtn.textContent = '≡+';
+      menuBtn.onclick = (e) => { e.stopPropagation(); cmd('favorite', { text: s.text }); menuBtn.textContent = '★'; setTimeout(() => { menuBtn.textContent = '≡+'; }, 1200); };
+      actions.appendChild(micBtn); actions.appendChild(transBtn); actions.appendChild(menuBtn);
+      row.appendChild(actions);
       // Cham trang thai (nho, goc phai)
       const dot = document.createElement('span');
       dot.className = 'row-status-dot ' + getSentStatus(s.text);
@@ -566,13 +586,6 @@
     if (!r || !r.ok) { showNoHost(true); return; }
     showNoHost(false);
     settings = Object.assign(settings, r.settings || {}); favorites = r.favorites || []; sentences = r.sentences || []; current = r.current || 0;
-    // Di tản 1 lần: Whisper phải tải model nặng (~75MB) nên hay "Nothing heard"/chậm.
-    // Đưa về Web Speech (nhanh, có ngay, không tải model). Người dùng vẫn đổi lại được.
-    if (!settings.engineMigratedV2) {
-      settings.engineMigratedV2 = true;
-      if (settings.engine === 'whisper') settings.engine = 'webspeech';
-      cmd('settings', settings);
-    }
     applySettings(); renderList(); if (sentences[current]) renderNow({ idx: current, total: sentences.length, sentence: sentences[current] });
   }
 

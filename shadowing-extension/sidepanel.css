@@ -1624,6 +1624,36 @@ body.dark .xp-chip { background: #3d2e00; color: #fbbf24; }
 }
 .search-input:focus { border-color: #1a73e8; background: var(--bg, #fff); }
 
+/* ===== ROW HOVER ACTION BUTTONS ===== */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity .15s;
+  pointer-events: none;
+}
+.sentence-list .row:hover .row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.row-action-btn {
+  width: 26px; height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s;
+  color: inherit;
+}
+.row-action-btn:hover { background: #e8f0fe; }
+.row-action-btn:disabled { opacity: .5; pointer-events: none; }
+
 /* ===== SENTENCE STATUS DOTS ===== */
 .row-status-dot {
   width: 7px; height: 7px;
