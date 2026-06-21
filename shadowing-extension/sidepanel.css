@@ -62,10 +62,9 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   color: #202124;
 }
 
-/* ===== Logo chữ: NghienDℯ — chữ "ℯ" bằng ~2/3 chữ "D" ===== */
+/* ===== Logo chữ: NghienDe — chữ "e" có màu teal làm điểm nhấn ===== */
 .brand-wordmark { white-space: nowrap; }
 .brand-wordmark .brand-e {
-  font-size: .66em;        /* ℯ = 2/3 chiều cao chữ D */
   font-weight: 800;
   color: #1bb6a6;          /* teal accent cho điểm nhấn thương hiệu */
   vertical-align: baseline;
@@ -274,14 +273,49 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   margin-top: 2px;
 }
 
-/* Action buttons inside each row */
-.sentence-list .row .act {
+/* Khi chon cau: can giua theo chieu doc de nut mic/queue nam canh chu (kieu ShadowEcho) */
+.sentence-list .row.cur { align-items: center; }
+
+/* Nut thao tac TRONG DONG cau dang chon (ShadowEcho-style) */
+.row-inline-act {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 6px;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
-.sentence-list .row.cur .act { display: flex; }
+.row-iact {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background .12s, color .12s, transform .08s;
+  padding: 0;
+}
+.row-iact:active { transform: scale(.92); }
+/* Nghe mau */
+.row-listen {
+  width: 30px; height: 30px;
+  border: none; background: transparent; color: #5f6368; font-size: 14px;
+}
+.row-listen:hover { background: #eef1f6; color: #1a73e8; }
+/* Them vao danh sach luyen ⭐ */
+.row-queue {
+  width: 30px; height: 30px;
+  border: 1.5px solid #dadce0; background: #fff; color: #5f6368;
+  font-size: 16px; font-weight: 700; line-height: 1;
+}
+.row-queue:hover { border-color: #1a73e8; color: #1a73e8; }
+.row-queue.on { border-color: #f9ab00; color: #f9ab00; background: #fff8e1; }
+/* Nut MIC chinh — vao man ghi am & cham diem */
+.row-rec {
+  width: 38px; height: 38px;
+  border: none;
+  background: #1a73e8; color: #fff; font-size: 16px;
+  box-shadow: 0 2px 6px rgba(26,115,232,.35);
+}
+.row-rec:hover { background: #1666d0; box-shadow: 0 3px 10px rgba(26,115,232,.45); }
+
+/* ===== Legacy .mini (van dung cho nut 'Cấp quyền micro' trong feedback) ===== */
 .mini {
   padding: 3px 8px;
   border: 1px solid #dadce0;
@@ -1395,6 +1429,11 @@ body.dark .tr { color: var(--text2); }
 body.dark .row-play-btn { color: #5f6368; }
 body.dark .row-play-btn:hover { background: var(--accent-light); color: var(--accent); }
 body.dark .row.cur .row-play-btn { color: var(--accent); }
+body.dark .row-listen { color: var(--text2); }
+body.dark .row-listen:hover { background: var(--bg3); color: var(--accent); }
+body.dark .row-queue { background: var(--bg2); border-color: var(--border); color: var(--text2); }
+body.dark .row-queue:hover { border-color: var(--accent); color: var(--accent); }
+body.dark .row-queue.on { background: #3a2f10; border-color: #f9ab00; color: #f9ab00; }
 body.dark .status-bar { background: var(--bg2); color: var(--text2); }
 body.dark .icon-btn { color: var(--text2); }
 body.dark .icon-btn:hover { background: var(--bg3); }

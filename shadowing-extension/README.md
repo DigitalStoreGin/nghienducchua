@@ -1,8 +1,8 @@
 
-## 🆕 v2.3.0 — Đổi tên **NghienDℯ** + lấy phụ đề nhanh + mic ngay trên trang + giao diện rõ ràng
+## 🆕 v2.3.0 — Đổi tên **NghienDe** + lấy phụ đề nhanh + mic ngay trên trang + giao diện rõ ràng
 
-- **🏷️ Đổi tên app: ShadowEcho → NghienDℯ.** Logo chữ "NghienDℯ" với chữ **ℯ** to bằng ~2/3
-  chữ **D** (CSS `.brand-wordmark .brand-e`, dùng ở màn đăng nhập, onboarding, thanh tiêu đề).
+- **🏷️ Đổi tên app: ShadowEcho → NghienDe.** Logo chữ "NghienDe" với chữ **e** màu teal làm
+  điểm nhấn (CSS `.brand-wordmark .brand-e`, dùng ở màn đăng nhập, onboarding, thanh tiêu đề).
 - **⚡ Lấy phụ đề NHANH như bản cũ:** `fetchYouTubeTrack` giờ chạy **song song 2 đường** và lấy
   đường nào xong trước: (1) **nhanh** — fetch trực tiếp track có sẵn của YouTube (same-origin,
   không cần POT, gần như tức thì khi tracklist đã bắt được); (2) **chắc chắn** — nhờ MAIN world

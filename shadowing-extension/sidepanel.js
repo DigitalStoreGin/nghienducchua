@@ -253,13 +253,26 @@
   function markCur(i) { document.querySelectorAll('.row').forEach((r) => r.classList.toggle('cur', +r.dataset.i === i)); const r = document.querySelector('.row[data-i="' + i + '"]'); if (r) r.scrollIntoView({ block: 'nearest' }); }
 
   function isFav(t) { return favorites.some((f) => f.text === t); }
+
+  // Chon mot cau trong danh sach (kieu ShadowEcho): KHONG nhay sang man luyen ngay.
+  // Chi danh dau cau, phat doan video cua cau do, va hien cac nut thao tac NGAY TRONG dong.
+  // Nguoi dung bam nut mic (xanh) moi vao man ghi am; co the chuyen sang cau khac de luyen.
+  function selectRow(i) {
+    if (i < 0 || i >= sentences.length) return;
+    current = i;
+    cmd('select', { i });            // tua + phat doan video cua cau nay (tu dung cuoi cau neu bat)
+    renderList();                    // ve lai de hien nut thao tac trong dong cau dang chon
+    const s = sentences[i];
+    if (s) renderNow({ idx: i, total: sentences.length, sentence: s });
+  }
+
   function renderList() {
     const c = $('#list'); c.innerHTML = '';
     const filtered = filterSentences();
     // Show/hide filter bar
     const filterBar = $('#status-filter'); if (filterBar) filterBar.hidden = !sentences.length;
-    if (!sentences.length) { c.innerHTML = '<div class="empty">No subtitles loaded. Click Auto / Live / File above.</div>'; return; }
-    if (!filtered.length) { c.innerHTML = '<div class="empty">No sentences match the current filter.</div>'; return; }
+    if (!sentences.length) { c.innerHTML = '<div class="empty">Chưa có phụ đề. Bấm "Lấy phụ đề" ở trên.</div>'; return; }
+    if (!filtered.length) { c.innerHTML = '<div class="empty">Không có câu nào khớp bộ lọc.</div>'; return; }
     filtered.forEach((s) => {
       const i = sentences.indexOf(s);
       const row = document.createElement('div'); row.className = 'row' + (i === current ? ' cur' : ''); row.dataset.i = i;
@@ -267,9 +280,10 @@
       const dot = document.createElement('span');
       dot.className = 'row-status-dot ' + getSentStatus(s.text);
       row.appendChild(dot);
-      // Play button
+      // Play button — phat doan cau (chon cau)
       const playBtn = document.createElement('button'); playBtn.className = 'row-play-btn'; playBtn.textContent = '▶';
-      playBtn.onclick = (e) => { e.stopPropagation(); cmd('select', { i }); openPractice(i); };
+      playBtn.title = 'Nghe & chọn câu này';
+      playBtn.onclick = (e) => { e.stopPropagation(); selectRow(i); };
       row.appendChild(playBtn);
       // Text body
       const body = document.createElement('div'); body.className = 'row-body';
@@ -277,16 +291,30 @@
       body.appendChild(de);
       if (s.trans) { const tr = document.createElement('div'); tr.className = 'tr'; tr.textContent = s.trans; body.appendChild(tr); }
       row.appendChild(body);
-      // Action buttons (shown for current row)
+      // Nut thao tac trong dong — chi hien o cau dang chon (kieu ShadowEcho).
       if (i === current) {
-        const act = document.createElement('div'); act.className = 'act';
+        const act = document.createElement('div'); act.className = 'row-inline-act';
         const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
-        const fav = mk('mini fav' + (isFav(s.text) ? ' on' : ''), isFav(s.text) ? '★' : '☆', stop(async () => { const r = await cmd('fav', { text: s.text }); if (r) { favorites = r.favorites; fav.textContent = isFav(s.text) ? '★' : '☆'; fav.classList.toggle('on', isFav(s.text)); } }));
-        const listen = mk('mini', '🔊', stop(() => speakText(s.text)));
-        const sh = mk('mini sh', 'Practice', stop(() => { cmd('select', { i }); openPractice(i); }));
-        act.append(fav, listen, sh); row.appendChild(act);
+        // Nghe mau (TTS)
+        const listen = document.createElement('button'); listen.className = 'row-iact row-listen';
+        listen.title = 'Nghe mẫu'; listen.innerHTML = '🔊';
+        listen.onclick = stop(() => speakText(s.text));
+        // Them vao danh sach luyen ⭐ (queue)
+        const q = document.createElement('button'); q.className = 'row-iact row-queue' + (isFav(s.text) ? ' on' : '');
+        q.title = isFav(s.text) ? 'Bỏ khỏi danh sách luyện ⭐' : 'Thêm vào danh sách luyện ⭐';
+        q.innerHTML = isFav(s.text) ? '★' : '＋';
+        q.onclick = stop(async () => {
+          const r = await cmd('fav', { text: s.text });
+          if (r) { favorites = r.favorites; const on = isFav(s.text); q.classList.toggle('on', on); q.innerHTML = on ? '★' : '＋'; q.title = on ? 'Bỏ khỏi danh sách luyện ⭐' : 'Thêm vào danh sách luyện ⭐'; }
+        });
+        // Nut MIC xanh — vao man ghi am & cham diem cau nay
+        const rec = document.createElement('button'); rec.className = 'row-iact row-rec';
+        rec.title = 'Nói lại & chấm điểm câu này'; rec.innerHTML = '🎤';
+        rec.onclick = stop(() => { current = i; openPractice(i); showRecordPanel(true); startShadow(i); });
+        act.append(listen, q, rec); row.appendChild(act);
       }
-      row.onclick = () => { cmd('select', { i }); openPractice(i); };
+      // Bam vao dong = chon cau (KHONG nhay sang man luyen ngay).
+      row.onclick = () => selectRow(i);
       c.appendChild(row);
     });
   }
