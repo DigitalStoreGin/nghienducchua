@@ -156,9 +156,10 @@
       });
       const txt = ps.get(); const err = ps.err(); ps.stop();
       if (root.SD.pageMic._abort) throw new Error('recording-aborted');
-      // Trang chặn nhận dạng (Permissions-Policy) hoặc mic bận -> ném lỗi để speech.js
-      // tự chuyển sang chấm bằng mic của Side Panel (nơi đã có quyền & hoạt động ổn định).
-      if (!txt && err && err !== 'no-speech') throw new Error('page-webspeech-' + err);
+      // Kết quả rỗng vì bất kỳ lý do gì (lỗi engine, Permissions-Policy trang, mic bận,
+      // im lặng) -> ném lỗi để speech.js tự chuyển sang Side Panel nhận dạng thay.
+      // Side Panel có quyền "microphone" riêng trong manifest, luôn hoạt động ổn định.
+      if (!txt) throw new Error('page-webspeech-' + (err || 'empty'));
       return { transcript: txt, words: [], pitch: [], spokenMs: Date.now() - started, engine: 'webspeech (trang)' };
     }
 
