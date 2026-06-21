@@ -327,7 +327,14 @@
       const actions = document.createElement('div'); actions.className = 'row-actions';
       // Nut 🎤 — chon cau va bat dau ghi am
       const micBtn = document.createElement('button'); micBtn.className = 'row-action-btn'; micBtn.title = 'Luyện câu này'; micBtn.textContent = '🎤';
-      micBtn.onclick = (e) => { e.stopPropagation(); openPractice(i); showRecordPanel(true); startShadow(i); };
+      micBtn.onclick = (e) => {
+        e.stopPropagation();
+        // 1) DỪNG video + tua về đầu câu NGAY (đồng bộ) -> video không chạy tiếp / lẫn tiếng
+        //    trong lúc chờ cấp quyền mic (enableMic mất 1-3s lần đầu).
+        current = i; cmd('select', { i, play: false });
+        // 2) Chuyển sang khung luyện + render đúng câu i, mở panel Record, rồi ghi âm.
+        openPractice(i); showRecordPanel(true); startShadow(i);
+      };
       // Nut 🌐 — dich toan cau vao .tr
       const transBtn = document.createElement('button'); transBtn.className = 'row-action-btn'; transBtn.title = 'Dịch câu'; transBtn.textContent = '🌐';
       transBtn.onclick = async (e) => {
@@ -1354,6 +1361,12 @@
 
   // Practice view: switch to sentence and show practice pane
   function openPractice(i) {
+    if (i >= 0 && i < sentences.length) {
+      // QUAN TRỌNG: render câu ĐÚNG i vào khung lớn ngay — nếu không, #current-text giữ
+      // câu cũ (lỗi "panel hiện sai câu" khi bấm 🎤 trong danh sách).
+      current = i;
+      renderNow({ idx: i, total: sentences.length, sentence: sentences[i] });
+    }
     showView('practice');
     updateSourceInfo(i);
     // Update next sentence preview

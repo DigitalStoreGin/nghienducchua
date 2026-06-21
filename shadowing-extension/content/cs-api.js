@@ -130,7 +130,7 @@
           status('Đã nạp ' + s.length + ' câu.', 'ok');
           reply({ n: s.length }); break;
         }
-        case 'select': eng.selectSegment(msg.args.i, { play: true }); reply({ ok: true }); break;
+        case 'select': eng.selectSegment(msg.args.i, { play: msg.args.play !== false }); reply({ ok: true }); break;
         case 'togglePlay': eng.togglePlay(); reply({ ok: true }); break;
         case 'next': eng.nextSeg(); reply({ ok: true }); break;
         case 'prev': eng.prevSeg(); reply({ ok: true }); break;

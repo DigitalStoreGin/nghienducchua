@@ -78,6 +78,7 @@
       // -> tranh truong hop bam "Luyen cau" khong phan hoi gi.
       if (this.busy) { this.runId++; this.busy = false; }
       this.busy = true; this.idx = i; this.rep = 0;
+      this.setCurrent(i); // emit 'current' -> Side Panel đồng bộ đúng câu đang luyện
       const runId = ++this.runId;
       await this.runRep(runId);
     },
