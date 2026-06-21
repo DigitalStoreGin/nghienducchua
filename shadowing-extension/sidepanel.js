@@ -243,6 +243,8 @@
     const nextEl = $('#next-text'); const nextS = sentences[c.idx + 1]; if (nextEl) nextEl.textContent = nextS ? nextS.text : '';
     const trEl = $('#trans-text'); if (trEl) trEl.textContent = s.trans || '';
     updateSourceInfo(c.idx);
+    if (typeof current === 'number') { current = c.idx; }
+    updateTryCard();
     // Phụ đề kép: nếu chưa có bản dịch & đã đăng nhập -> tự dịch câu hiện tại
     if (!s.trans && (typeof ShadowAuth !== 'undefined' ? ShadowAuth.isLoggedIn() : false)) {
       translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi').then((t) => {
@@ -255,64 +257,55 @@
   function isFav(t) { return favorites.some((f) => f.text === t); }
 
   // Chon mot cau trong danh sach (kieu ShadowEcho): KHONG nhay sang man luyen ngay.
-  // Chi danh dau cau, phat doan video cua cau do, va hien cac nut thao tac NGAY TRONG dong.
-  // Nguoi dung bam nut mic (xanh) moi vao man ghi am; co the chuyen sang cau khac de luyen.
+  // Chi danh dau cau + phat doan video cua cau do, va cap nhat the "Luyen cau nay" o tren.
+  // Nguoi dung bam "Nói & chấm" tren the (hoac nut mic duoi) moi bat dau ghi am.
   function selectRow(i) {
     if (i < 0 || i >= sentences.length) return;
     current = i;
     cmd('select', { i });            // tua + phat doan video cua cau nay (tu dung cuoi cau neu bat)
-    renderList();                    // ve lai de hien nut thao tac trong dong cau dang chon
+    markCur(i);                      // chi doi vien dong dang chon — khong ve lai ca danh sach
+    updateTryCard();
     const s = sentences[i];
     if (s) renderNow({ idx: i, total: sentences.length, sentence: s });
+  }
+
+  // The luyen tap o dau danh sach (kieu "Try your first shadow" cua ShadowEcho):
+  // hien cau dang chon + nut Nghe / Nói & chấm.
+  function updateTryCard() {
+    const card = $('#try-shadow-card'); if (!card) return;
+    const has = sentences.length > 0;
+    card.hidden = !has;
+    if (!has) return;
+    const s = sentences[current] || sentences[0];
+    const txt = $('#try-card-text'); if (txt) txt.textContent = s ? '“' + s.text + '”' : '—';
   }
 
   function renderList() {
     const c = $('#list'); c.innerHTML = '';
     const filtered = filterSentences();
-    // Show/hide filter bar
+    // Show/hide filter bar + the luyen tap
     const filterBar = $('#status-filter'); if (filterBar) filterBar.hidden = !sentences.length;
+    updateTryCard();
     if (!sentences.length) { c.innerHTML = '<div class="empty">Chưa có phụ đề. Bấm "Lấy phụ đề" ở trên.</div>'; return; }
     if (!filtered.length) { c.innerHTML = '<div class="empty">Không có câu nào khớp bộ lọc.</div>'; return; }
     filtered.forEach((s) => {
       const i = sentences.indexOf(s);
       const row = document.createElement('div'); row.className = 'row' + (i === current ? ' cur' : ''); row.dataset.i = i;
-      // Status dot
-      const dot = document.createElement('span');
-      dot.className = 'row-status-dot ' + getSentStatus(s.text);
-      row.appendChild(dot);
-      // Play button — phat doan cau (chon cau)
-      const playBtn = document.createElement('button'); playBtn.className = 'row-play-btn'; playBtn.textContent = '▶';
+      // Tam giac phat (▷) — chon + phat cau nay
+      const playBtn = document.createElement('button'); playBtn.className = 'row-play-btn'; playBtn.textContent = '▷';
       playBtn.title = 'Nghe & chọn câu này';
       playBtn.onclick = (e) => { e.stopPropagation(); selectRow(i); };
       row.appendChild(playBtn);
-      // Text body
+      // Than chu — chu to, de doc (kieu hinh mau)
       const body = document.createElement('div'); body.className = 'row-body';
       const de = document.createElement('div'); de.className = 'de'; de.textContent = s.text;
       body.appendChild(de);
       if (s.trans) { const tr = document.createElement('div'); tr.className = 'tr'; tr.textContent = s.trans; body.appendChild(tr); }
       row.appendChild(body);
-      // Nut thao tac trong dong — chi hien o cau dang chon (kieu ShadowEcho).
-      if (i === current) {
-        const act = document.createElement('div'); act.className = 'row-inline-act';
-        const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
-        // Nghe mau (TTS)
-        const listen = document.createElement('button'); listen.className = 'row-iact row-listen';
-        listen.title = 'Nghe mẫu'; listen.innerHTML = '🔊';
-        listen.onclick = stop(() => speakText(s.text));
-        // Them vao danh sach luyen ⭐ (queue)
-        const q = document.createElement('button'); q.className = 'row-iact row-queue' + (isFav(s.text) ? ' on' : '');
-        q.title = isFav(s.text) ? 'Bỏ khỏi danh sách luyện ⭐' : 'Thêm vào danh sách luyện ⭐';
-        q.innerHTML = isFav(s.text) ? '★' : '＋';
-        q.onclick = stop(async () => {
-          const r = await cmd('fav', { text: s.text });
-          if (r) { favorites = r.favorites; const on = isFav(s.text); q.classList.toggle('on', on); q.innerHTML = on ? '★' : '＋'; q.title = on ? 'Bỏ khỏi danh sách luyện ⭐' : 'Thêm vào danh sách luyện ⭐'; }
-        });
-        // Nut MIC xanh — vao man ghi am & cham diem cau nay
-        const rec = document.createElement('button'); rec.className = 'row-iact row-rec';
-        rec.title = 'Nói lại & chấm điểm câu này'; rec.innerHTML = '🎤';
-        rec.onclick = stop(() => { current = i; openPractice(i); showRecordPanel(true); startShadow(i); });
-        act.append(listen, q, rec); row.appendChild(act);
-      }
+      // Cham trang thai (nho, goc phai)
+      const dot = document.createElement('span');
+      dot.className = 'row-status-dot ' + getSentStatus(s.text);
+      row.appendChild(dot);
       // Bam vao dong = chon cau (KHONG nhay sang man luyen ngay).
       row.onclick = () => selectRow(i);
       c.appendChild(row);
@@ -1294,6 +1287,11 @@
   { const b = $('#btn-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) speakText(s.text); }; }
   { const b = $('#btn-load-auto'); if (b) b.onclick = () => cmd('loadAuto', { target: settings.targetLang, native: settings.nativeLang }); }
   { const b = $('#btn-load-live'); if (b) b.onclick = async () => { const r = await cmd('live'); if (r) b.classList.toggle('on', !!r.running); }; }
+
+  // The "Luyện câu này" (ShadowEcho-style): Nghe mẫu / Nói & chấm / Câu sau
+  { const b = $('#try-card-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) { cmd('select', { i: current }); speakText(s.text); } }; }
+  { const b = $('#try-card-speak'); if (b) b.onclick = () => { if (!sentences.length) return; openPractice(current); showRecordPanel(true); startShadow(current); }; }
+  { const b = $('#try-card-next'); if (b) b.onclick = () => { if (current + 1 < sentences.length) selectRow(current + 1); }; }
 
   // Record panel
   function showRecordPanel(show) { const p = $('#record-panel'); if (p) p.hidden = !show; }

@@ -218,6 +218,19 @@
       <button class="btn" id="obclose" data-i18n="ob_close">Got it</button>
     </div>
 
+    <!-- The luyen tap (kieu "Try your first shadow") — hien cau dang chon + Nghe / Nói & chấm -->
+    <div id="try-shadow-card" class="try-card" hidden>
+      <div class="try-card-head">
+        <span class="try-card-title">Luyện câu này</span>
+        <span class="try-card-next" id="try-card-next">Câu sau ›</span>
+      </div>
+      <div class="try-card-sentence" id="try-card-text">—</div>
+      <div class="try-card-actions">
+        <button class="try-card-btn try-card-btn--listen" id="try-card-listen">▷ Nghe</button>
+        <button class="try-card-btn try-card-btn--speak" id="try-card-speak">🎤 Nói &amp; chấm</button>
+      </div>
+    </div>
+
     <!-- Sentence list — id="list" used by sidepanel.js -->
     <div id="sentence-list" class="sentence-list">
       <!-- JS renders rows here via renderList(); also proxied from #list below -->

@@ -98,6 +98,8 @@
   //  (2) CHAC CHAN: nho MAIN world fetch co POT (cho video chan tai phu de).
   // Duong nao tra ve cau hop le truoc thi dung; emit MOT LAN tai day.
   function fetchYouTubeTrack(langPref, nativeLang) {
+    // Nhac MAIN world xuat lai tracklist NGAY -> duong nhanh co tracklist som nhat.
+    try { document.dispatchEvent(new CustomEvent('SD_REQUEST_TRACKLIST')); } catch (e) {}
     return new Promise((resolve) => {
       let settled = false, hardTimer = null;
       const done = (sentences) => {
@@ -107,8 +109,8 @@
         emitSentences(sentences, { source: 'youtube', auto: true });
         resolve(sentences);
       };
-      // (1) Duong nhanh — phu de co san (cho toi da 2s neu tracklist chua bat duoc).
-      legacyFetchYouTubeTrack(langPref, nativeLang, { silent: true, maxWaitMs: 2000 })
+      // (1) Duong nhanh — phu de co san (cho toi da 3.5s neu tracklist chua bat duoc).
+      legacyFetchYouTubeTrack(langPref, nativeLang, { silent: true, maxWaitMs: 3500 })
         .then(done).catch(() => {});
       // (2) Duong chac chan — co POT (du phong khi duong nhanh tra rong).
       requestPotFetch(langPref, nativeLang).then(done).catch(() => {});

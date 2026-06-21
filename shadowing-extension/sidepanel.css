@@ -195,51 +195,93 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   white-space: nowrap;
 }
 
-/* ===== SENTENCE LIST ===== */
+/* ===== THẺ "LUYỆN CÂU NÀY" (kiểu Try your first shadow) ===== */
+.try-card {
+  margin: 10px 12px 4px;
+  padding: 14px 16px;
+  background: #eef4ff;
+  border: 1.5px solid #cfe0ff;
+  border-radius: 14px;
+}
+.try-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.try-card-title { color: #1a73e8; font-weight: 700; font-size: 13px; }
+.try-card-next { color: #5f6368; font-size: 12px; cursor: pointer; }
+.try-card-next:hover { color: #1a73e8; }
+.try-card-sentence {
+  font-size: 17px; font-weight: 700; color: #202124; line-height: 1.35;
+  margin-bottom: 12px;
+}
+.try-card-actions { display: flex; gap: 10px; }
+.try-card-btn {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 11px 8px;
+  border-radius: 10px;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid #d2d9e6;
+  background: #fff; color: #3c4043;
+  transition: background .12s, border-color .12s, color .12s, transform .08s;
+}
+.try-card-btn:active { transform: scale(.97); }
+.try-card-btn--listen:hover { border-color: #1a73e8; color: #1a73e8; }
+.try-card-btn--speak {
+  border-color: #1a73e8; background: #1a73e8; color: #fff;
+  box-shadow: 0 2px 8px rgba(26,115,232,.3);
+}
+.try-card-btn--speak:hover { background: #1666d0; }
+
+/* ===== SENTENCE LIST (card chứa danh sách câu, chữ to dễ đọc) ===== */
 .sentence-list {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 0;
+  margin: 8px 12px 12px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #e6e9ef;
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
   scrollbar-width: thin;
   scrollbar-color: #dadce0 transparent;
 }
-.sentence-list::-webkit-scrollbar { width: 5px; }
-.sentence-list::-webkit-scrollbar-thumb { background: #dadce0; border-radius: 5px; }
+.sentence-list::-webkit-scrollbar { width: 6px; }
+.sentence-list::-webkit-scrollbar-thumb { background: #d2d6dd; border-radius: 6px; }
 
-/* List rows — rendered by JS */
+/* List rows — rendered by JS. Chữ to, giãn dòng rộng cho dễ đọc (kiểu hình mẫu). */
 .sentence-list .row {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 9px 12px;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px;
   cursor: pointer;
-  border-bottom: 1px solid #f1f3f4;
-  transition: background .1s;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  transition: background .1s, border-color .12s;
   position: relative;
 }
-.sentence-list .row:hover { background: #f0f4ff; }
+.sentence-list .row:hover { background: #f4f7ff; }
 .sentence-list .row.cur {
-  background: #f8f9ff;
-  border: 2px solid #1a73e8;
-  border-radius: 8px;
-  margin: 2px 6px;
-  padding: 7px 10px;
+  background: #fff;
+  border-color: #1a73e8;
+  box-shadow: 0 1px 6px rgba(26,115,232,.15);
 }
 
-/* Row play button (rendered by JS) */
+/* Tam giac phát (▷) ở đầu mỗi dòng */
 .row-play-btn {
   flex-shrink: 0;
-  width: 22px; height: 22px;
+  width: 26px; height: 26px;
   padding: 0;
   border: none;
   background: transparent;
-  color: #bdc1c6;
-  font-size: 11px;
+  color: #9aa0a6;
+  font-size: 16px;
   cursor: pointer;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   transition: background .15s, color .15s;
-  margin-top: 1px;
 }
 .row-play-btn:hover { background: #e8f0fe; color: #1a73e8; }
 .row.cur .row-play-btn { color: #1a73e8; }
@@ -247,74 +289,19 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
 /* Row body (text container) */
 .row-body { flex: 1; min-width: 0; }
 
-/* Play triangle for rows WITHOUT .row-play-btn (legacy fallback) */
-.sentence-list .row:not(:has(.row-play-btn))::before {
-  content: "▷";
-  color: #bdc1c6;
-  font-size: 12px;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-.sentence-list .row.cur:not(:has(.row-play-btn))::before {
-  content: "▶";
-  color: #1a73e8;
-}
-
 .sentence-list .row .de {
-  font-size: 12px;
+  font-size: 17px;
   font-weight: 500;
   color: #202124;
-  flex: 1;
   line-height: 1.4;
 }
 .sentence-list .row .tr {
-  font-size: 10px;
+  font-size: 13px;
   color: #80868b;
-  margin-top: 2px;
+  margin-top: 3px;
 }
-
-/* Khi chon cau: can giua theo chieu doc de nut mic/queue nam canh chu (kieu ShadowEcho) */
-.sentence-list .row.cur { align-items: center; }
 
 /* Nut thao tac TRONG DONG cau dang chon (ShadowEcho-style) */
-.row-inline-act {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-.row-iact {
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: background .12s, color .12s, transform .08s;
-  padding: 0;
-}
-.row-iact:active { transform: scale(.92); }
-/* Nghe mau */
-.row-listen {
-  width: 30px; height: 30px;
-  border: none; background: transparent; color: #5f6368; font-size: 14px;
-}
-.row-listen:hover { background: #eef1f6; color: #1a73e8; }
-/* Them vao danh sach luyen ⭐ */
-.row-queue {
-  width: 30px; height: 30px;
-  border: 1.5px solid #dadce0; background: #fff; color: #5f6368;
-  font-size: 16px; font-weight: 700; line-height: 1;
-}
-.row-queue:hover { border-color: #1a73e8; color: #1a73e8; }
-.row-queue.on { border-color: #f9ab00; color: #f9ab00; background: #fff8e1; }
-/* Nut MIC chinh — vao man ghi am & cham diem */
-.row-rec {
-  width: 38px; height: 38px;
-  border: none;
-  background: #1a73e8; color: #fff; font-size: 16px;
-  box-shadow: 0 2px 6px rgba(26,115,232,.35);
-}
-.row-rec:hover { background: #1666d0; box-shadow: 0 3px 10px rgba(26,115,232,.45); }
-
 /* ===== Legacy .mini (van dung cho nut 'Cấp quyền micro' trong feedback) ===== */
 .mini {
   padding: 3px 8px;
@@ -1429,11 +1416,11 @@ body.dark .tr { color: var(--text2); }
 body.dark .row-play-btn { color: #5f6368; }
 body.dark .row-play-btn:hover { background: var(--accent-light); color: var(--accent); }
 body.dark .row.cur .row-play-btn { color: var(--accent); }
-body.dark .row-listen { color: var(--text2); }
-body.dark .row-listen:hover { background: var(--bg3); color: var(--accent); }
-body.dark .row-queue { background: var(--bg2); border-color: var(--border); color: var(--text2); }
-body.dark .row-queue:hover { border-color: var(--accent); color: var(--accent); }
-body.dark .row-queue.on { background: #3a2f10; border-color: #f9ab00; color: #f9ab00; }
+body.dark .sentence-list { background: var(--bg2); border-color: var(--border); box-shadow: none; }
+body.dark .try-card { background: #1f2740; border-color: #2c3a63; }
+body.dark .try-card-sentence { color: var(--text); }
+body.dark .try-card-btn { background: var(--bg2); border-color: var(--border); color: var(--text); }
+body.dark .try-card-btn--speak { background: #1a73e8; border-color: #1a73e8; color: #fff; }
 body.dark .status-bar { background: var(--bg2); color: var(--text2); }
 body.dark .icon-btn { color: var(--text2); }
 body.dark .icon-btn:hover { background: var(--bg3); }
