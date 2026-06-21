@@ -203,6 +203,18 @@
           }
           break;
         }
+        case 'ensureMic': {
+          // Cấp quyền micro NGAY trên trang YouTube (hộp thoại hiện tại trang, không mở tab).
+          if (!SD.pageMic) { reply({ ok: false, onPage: false }); break; }
+          try {
+            await SD.pageMic.ensure();
+            let state = 'granted'; try { state = await SD.pageMic.permission(); } catch (e) {}
+            reply({ ok: true, onPage: true, state });
+          } catch (e) {
+            reply({ ok: false, onPage: true, error: String((e && (e.name || e.message)) || 'error'), state: 'denied' });
+          }
+          break;
+        }
         case 'settings': {
           const st = await S().saveSettings(msg.args);
           eng.setSettings(st);

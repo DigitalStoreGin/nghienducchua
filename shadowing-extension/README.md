@@ -1,4 +1,24 @@
 
+## 🆕 v2.3.0 — Đổi tên **NghienDℯ** + lấy phụ đề nhanh + mic ngay trên trang + giao diện rõ ràng
+
+- **🏷️ Đổi tên app: ShadowEcho → NghienDℯ.** Logo chữ "NghienDℯ" với chữ **ℯ** to bằng ~2/3
+  chữ **D** (CSS `.brand-wordmark .brand-e`, dùng ở màn đăng nhập, onboarding, thanh tiêu đề).
+- **⚡ Lấy phụ đề NHANH như bản cũ:** `fetchYouTubeTrack` giờ chạy **song song 2 đường** và lấy
+  đường nào xong trước: (1) **nhanh** — fetch trực tiếp track có sẵn của YouTube (same-origin,
+  không cần POT, gần như tức thì khi tracklist đã bắt được); (2) **chắc chắn** — nhờ MAIN world
+  fetch có POT (cho video chặn tải phụ đề). Trường hợp thường gặp giảm từ ~8–15s xuống <1s.
+- **🎤 Bật & ghi âm NGAY TRÊN TRANG YouTube — không mở tab khác:** thêm `content/page-mic.js`
+  ghi âm tại chính trang (origin youtube.com, dùng quyền mic người dùng đã cấp). Hộp thoại micro
+  hiện ngay trên trang; audio 16k được gửi sang Side Panel để Whisper chấm (`transcribeAudio`).
+  Web Speech vẫn chạy song song làm dự phòng. Tab cấp quyền chỉ còn là phương án cuối.
+- **🔤 Chữ luyện TO hơn:** câu đang luyện tăng 28px → 36px cho dễ đọc khi shadowing.
+- **🧭 Nút Auto/Live/File rõ nghĩa:** đổi nhãn → **Lấy phụ đề / Bắt trực tiếp / Mở file / Bật mic**,
+  mỗi nút có tooltip giải thích chức năng.
+- **🛠️ Thiết kế lại thanh công cụ dưới:** 2 hàng có **nhãn chữ dưới từng icon** (Trước/Phát/Sau/
+  Lặp/Nói & chấm · Gợi ý/Ẩn chữ/Chép/Điền/Câu ⭐/Xong/Menu) — nhìn là biết ngay nút làm gì.
+- Đã có sẵn: **dịch cả câu** (per-sentence + bản dịch YouTube), **điền chỗ trống** (cloze),
+  **chép chính tả** (dictation), **dịch từng từ** (click vào từ).
+
 ## 🆕 v0.20.0 — Web Speech chạy song song + sẵn sàng WebGPU + E2E Playwright
 
 - **🎤 Web Speech chạy SONG SONG khi ghi âm (fallback không phải nói lại):** trong lúc

@@ -483,6 +483,39 @@
     }
   }
 
+  // base64(PCM Int16) -> Float32 [-1,1] (giải mã audio do trang YouTube gửi sang).
+  function b64Int16ToF32(b64) {
+    const bin = atob(b64), len = bin.length, bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    const dv = new DataView(bytes.buffer), n = (len / 2) | 0, f32 = new Float32Array(n);
+    for (let i = 0, o = 0; i < n; i++, o += 2) { const s = dv.getInt16(o, true); f32[i] = s < 0 ? s / 0x8000 : s / 0x7fff; }
+    return f32;
+  }
+
+  // Chấm Whisper trên audio 16k CÓ SẴN (dùng khi ghi âm diễn ra ngay trên trang YouTube).
+  // Model/worker vẫn ở Side Panel; trang chỉ gửi audio sang đây để chấm.
+  async function transcribeAudio16k(audio16k, opts) {
+    opts = opts || {};
+    if (!(await isWhisperAvailable())) throw new Error('whisper-unavailable');
+    const threads = pickThreads();
+    const manual = !!(opts.whisperModel && opts.whisperModel !== 'auto');
+    let transcribeModel; // undefined cho AUTO (dùng pipe hiện tại của worker)
+    if (manual) transcribeModel = pickWhisperModel(opts.whisperModel).id;
+    else if (!activeModelId && !_warmupStarted) { try { warmupWhisper('auto'); } catch (_) {} }
+    const id = crypto.randomUUID();
+    const result = await new Promise((resolve, reject) => {
+      const w = getWorker();
+      let done = false;
+      const cleanup = () => { try { w.removeEventListener('message', listener); } catch (_) {} clearTimeout(to); };
+      const listener = (event) => { const m = event.data || {}; if (m.id !== id || done) return; done = true; cleanup(); if (m.type === 'result') resolve(m); else reject(new Error(m.error || 'whisper-error')); };
+      const to = setTimeout(() => { if (done) return; done = true; cleanup(); reject(new Error('whisper-timeout')); }, 120000);
+      w.addEventListener('message', listener);
+      w.postMessage({ type: 'transcribe', id, audio: audio16k, sampleRate: 16000, model: transcribeModel, numThreads: threads, language: opts.language || 'german' }, [audio16k.buffer]);
+    });
+    activeModelId = result.model || activeModelId;
+    return { text: (result.text || '').trim(), words: result.words || [], model: result.model, modelShort: shortFromId(result.model || transcribeModel || activeModelId || TINY.id) };
+  }
+
   async function recognize(opts) {
     // Create AbortController cho recording nay
     const ac = new AbortController();
@@ -524,6 +557,11 @@
           reply({ ok: true, state }); return;
         }
         if (msg.action === 'recognize') { reply({ ok: true, result: await recognize(msg.opts || {}) }); return; }
+        if (msg.action === 'transcribeAudio') {
+          // Audio ghi ngay trên trang YouTube gửi sang -> chỉ chấm Whisper tại đây.
+          const f32 = b64Int16ToF32(msg.audioB64 || '');
+          reply({ ok: true, result: await transcribeAudio16k(f32, msg.opts || {}) }); return;
+        }
         if (msg.action === 'warmup') { const ok = await warmupWhisper((msg.opts || {}).whisperModel); reply({ ok: true, started: ok }); return; }
         if (msg.action === 'hardware') { reply({ ok: true, hw: detectHardware(), model: pickWhisperModel((msg.opts || {}).whisperModel), status: whisperStatus((msg.opts || {}).whisperModel) }); return; }
         if (msg.action === 'abort') { abortRecording(); reply({ ok: true }); return; }
@@ -534,5 +572,5 @@
     return true;
   });
 
-  root.ShadowMic = { ensureMic, recognize, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper, whisperStatus };
+  root.ShadowMic = { ensureMic, recognize, transcribeAudio16k, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper, whisperStatus };
 })(window);

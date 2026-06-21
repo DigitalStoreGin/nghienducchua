@@ -27,10 +27,10 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   min-height: 0;
 }
 #view-list {
-  padding-bottom: 52px; /* toolbar height */
+  padding-bottom: 96px; /* toolbar height (2 hàng có nhãn) */
 }
 #view-practice {
-  padding-bottom: 52px;
+  padding-bottom: 96px;
 }
 
 /* ===== LIST VIEW — TOP BAR ===== */
@@ -56,10 +56,19 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   border-radius: 6px;
 }
 .brand-name {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   letter-spacing: -.2px;
   color: #202124;
+}
+
+/* ===== Logo chữ: NghienDℯ — chữ "ℯ" bằng ~2/3 chữ "D" ===== */
+.brand-wordmark { white-space: nowrap; }
+.brand-wordmark .brand-e {
+  font-size: .66em;        /* ℯ = 2/3 chiều cao chữ D */
+  font-weight: 800;
+  color: #1bb6a6;          /* teal accent cho điểm nhấn thương hiệu */
+  vertical-align: baseline;
 }
 .list-topbar-right {
   display: flex;
@@ -414,10 +423,10 @@ body.hide-text .current-text.revealed { filter: none; }
 }
 .current-sentence-body { flex: 1; }
 .current-text {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 36px;
+  font-weight: 800;
   color: #202124;
-  line-height: 1.3;
+  line-height: 1.25;
   letter-spacing: -.3px;
   word-break: break-word;
 }
@@ -499,7 +508,7 @@ body.hide-text .current-text.revealed { filter: none; }
 /* ===== RECORD PANEL ===== */
 .record-panel {
   position: fixed;
-  bottom: 52px; /* above toolbar */
+  bottom: 96px; /* above toolbar */
   left: 0;
   right: 0;
   background: #fff;
@@ -587,109 +596,95 @@ body.hide-text .current-text.revealed { filter: none; }
   bottom: 0;
   left: 0;
   right: 0;
-  height: 52px;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 10px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
   background: #fff;
   border-top: 1px solid #e8eaed;
+  box-shadow: 0 -2px 10px rgba(0,0,0,.04);
   z-index: 30;
 }
-.toolbar-play-btn {
-  width: 38px;
-  height: 38px;
-  flex-shrink: 0;
+.toolbar-row {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 4px;
+}
+.toolbar-row--tools {
+  border-top: 1px solid #f1f3f4;
+  padding-top: 4px;
+}
+
+/* Nút chung: icon trên, nhãn dưới */
+.tb-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #3c4043;
+  cursor: pointer;
+  padding: 5px 2px;
+  transition: background .12s, transform .1s, color .12s;
+}
+.tb-btn:hover { background: #f1f3f4; }
+.tb-btn:active { transform: scale(.94); }
+.tb-btn.active { color: #1a73e8; }
+.tb-btn .tb-ico { font-size: 19px; line-height: 1; }
+.tb-btn .tb-label {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #5f6368;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.tb-btn.active .tb-label { color: #1a73e8; }
+
+/* Nút Phát (nổi bật, tròn xanh) */
+.tb-btn--play .tb-ico {
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: #1a73e8;
   color: #fff;
-  font-size: 16px;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background .12s, transform .1s;
-  margin-right: 2px;
-  line-height: 1;
+  font-size: 17px;
+  box-shadow: 0 2px 6px rgba(26,115,232,.35);
 }
-.toolbar-play-btn:hover { background: #1765cc; }
-.toolbar-play-btn:active { transform: scale(.93); }
+.tb-btn--play:hover { background: transparent; }
+.tb-btn--play:hover .tb-ico { background: #1765cc; }
 
-.toolbar-btn {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #3c4043;
-  font-size: 16px;
-  cursor: pointer;
+/* Nút Nói & chấm (nổi bật, accent xanh lá) */
+.tb-btn--rec .tb-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #1e9e6a;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background .1s;
-  line-height: 1;
-  padding: 0;
+  font-size: 17px;
+  box-shadow: 0 2px 6px rgba(30,158,106,.35);
 }
-.toolbar-btn:hover { background: #f1f3f4; }
-.toolbar-btn:active { background: #e8eaed; }
-.toolbar-btn.active { color: #1a73e8; }
+.tb-btn--rec:hover { background: transparent; }
+.tb-btn--rec:hover .tb-ico { background: #18895b; }
+.tb-btn--rec.active .tb-ico { background: #d93025; animation: tbPulse 1s infinite; }
+@keyframes tbPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,48,37,.4); } 50% { box-shadow: 0 0 0 6px rgba(217,48,37,0); } }
 
-.toolbar-text-btn {
-  background: none;
-  border: none;
-  color: #1a73e8;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  white-space: nowrap;
-  transition: background .1s;
-}
-.toolbar-text-btn:hover { background: #e8f0fe; }
-
-.toolbar-icon-btn {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #3c4043;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background .1s;
-  line-height: 1;
-  padding: 0;
-}
-.toolbar-icon-btn:hover { background: #f1f3f4; }
-.toolbar-icon-btn.active { color: #f9ab00; }
-
-.toolbar-menu-btn {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #5f6368;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background .1s;
-  margin-left: auto;
-  line-height: 1;
-  padding: 0;
-}
-.toolbar-menu-btn:hover { background: #f1f3f4; }
+.tb-btn--sm .tb-ico { font-size: 16px; }
+.tb-btn--menu { color: #5f6368; }
 
 /* ===== SPEED ROW (hidden by default, in toolbar area) ===== */
 .speed-row {
@@ -706,7 +701,7 @@ body.hide-text .current-text.revealed { filter: none; }
 .dictbox {
   position: fixed;
   right: 10px;
-  bottom: 60px;
+  bottom: 104px;
   left: 10px;
   z-index: 40;
   padding: 14px;
@@ -1350,12 +1345,14 @@ body.hide-text .current-text.revealed { filter: none; }
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 320px) {
-  .current-text { font-size: 22px; }
+  .current-text { font-size: 26px; }
   .source-bar { gap: 4px; }
   .src-btn { font-size: 10px; padding: 4px 6px; }
-  .bottom-toolbar { gap: 2px; padding: 0 6px; }
-  .toolbar-btn { width: 30px; height: 30px; font-size: 14px; }
-  .toolbar-play-btn { width: 34px; height: 34px; }
+  .bottom-toolbar { padding: 4px 4px; }
+  .tb-btn { padding: 4px 1px; }
+  .tb-btn .tb-ico { font-size: 16px; }
+  .tb-btn .tb-label { font-size: 9px; }
+  .tb-btn--play .tb-ico, .tb-btn--rec .tb-ico { width: 34px; height: 34px; font-size: 15px; }
 }
 
 /* ===== DARK MODE ===== */
@@ -1407,8 +1404,12 @@ body.dark .current-sentence-wrap { background: var(--bg2); }
 body.dark .current-text { color: var(--text); }
 body.dark .trans-text { color: var(--text2); }
 body.dark .record-panel { background: var(--bg2); border-color: var(--border); }
-body.dark .toolbar-btn { background: var(--bg2); color: var(--text); border-color: var(--border); }
-body.dark .toolbar-play-btn { background: var(--accent); }
+body.dark .bottom-toolbar { background: var(--bg); border-color: var(--border); }
+body.dark .toolbar-row--tools { border-top-color: var(--border); }
+body.dark .tb-btn { color: var(--text); }
+body.dark .tb-btn:hover { background: var(--bg3); }
+body.dark .tb-btn .tb-label { color: var(--text2); }
+body.dark .tb-btn--play .tb-ico { background: var(--accent); }
 body.dark .setting-input, body.dark .setting-select { background: var(--bg3); border-color: var(--border); color: var(--text); }
 body.dark .auth-input { background: var(--bg3); border-color: var(--border); color: var(--text); }
 body.dark .usage-bar-wrap { background: var(--bg3); }

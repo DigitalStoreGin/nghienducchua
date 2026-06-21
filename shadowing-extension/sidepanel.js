@@ -43,19 +43,42 @@
   async function enableMic(options) {
     const button = $('#micButton');
     const silent = options && options.silent;
+    const markReady = () => { if (button) { button.classList.remove('pending'); button.classList.add('ready'); button.dataset.ready = '1'; } };
     try {
       if (button) { button.disabled = true; button.classList.add('pending'); }
+      // 1) ƯU TIÊN: cấp quyền NGAY trên trang YouTube/Netflix (hộp thoại hiện tại trang, KHÔNG mở tab).
+      const onPage = await cmd('ensureMic');
+      if (onPage && onPage.ok && onPage.state !== 'denied') {
+        markReady();
+        if (!silent) setStatus('🎤 Micro đã bật ngay trên trang — chọn một câu và nói.', 'ok');
+        return true;
+      }
+      // Đang ở trang có content script:
+      if (onPage && onPage.onPage) {
+        if (button) button.classList.remove('pending');
+        // Bị chặn cứng -> hướng dẫn sửa NGAY trên trang (không mở tab).
+        if (!silent) setStatus('🎤 Bấm biểu tượng 🔒/🎤 cạnh thanh địa chỉ của tab → Microphone → Allow → bấm Bật mic lại.', 'warn');
+        return false;
+      }
+      // onPage == null (hộp thoại có thể đang chờ trên trang) & đang ở YouTube/Netflix -> chờ user bấm Allow.
+      const tab = await activeTab();
+      if (tab && /youtube\.com|netflix\.com/.test(tab.url || '')) {
+        if (button) button.classList.remove('pending');
+        if (!silent) setStatus('🎤 Hãy bấm "Allow / Cho phép" ở hộp thoại micro trên trang, rồi bấm Bật mic lần nữa.', 'warn');
+        return false;
+      }
+      // 2) DỰ PHÒNG: không ở trang hỗ trợ -> mic của Side Panel.
       await window.ShadowMic.ensureMic();
-      if (button) { button.classList.remove('pending'); button.classList.add('ready'); button.dataset.ready = '1'; }
-      setStatus('Micro đã sẵn sàng — hãy chọn một câu và bắt đầu nói.', 'ok');
+      markReady();
+      if (!silent) setStatus('Micro đã sẵn sàng — hãy chọn một câu và bắt đầu nói.', 'ok');
       return true;
     } catch (error) {
       if (button) button.classList.remove('pending', 'ready');
-      // Bị chặn quyền: Side Panel KHÔNG hiện được hộp thoại -> mở thẳng tab cấp quyền.
+      // Bị chặn quyền cứng ở cả hai nơi -> mở trang cấp quyền của extension (phương án cuối).
       if (isMicBlocked(error)) {
         if (!silent) {
           openMicPermissionPage();
-          setStatus('🎤 Đã mở tab "Cấp quyền micro". Bấm Allow trong tab đó rồi quay lại bấm Bật mic.', 'warn');
+          setStatus('🎤 Trên trang YouTube: bấm 🔒/🎤 cạnh thanh địa chỉ → Microphone → Allow. Nếu vẫn chặn, dùng tab vừa mở.', 'warn');
           renderFeedback({ error: 'mic:blocked' });
         }
       } else if (!silent) {
@@ -66,9 +89,16 @@
     } finally { if (button) button.disabled = false; }
   }
 
+  // Báo cho trình ghi âm TRÊN TRANG (page-mic.js) dừng/kết thúc — vì ghi âm có thể
+  // đang chạy ngay trên tab YouTube chứ không phải ở Side Panel.
+  function pageMicSignal(action) {
+    try { activeTab().then((t) => { if (t) chrome.tabs.sendMessage(t.id, { sd: 'page-mic', action }).catch(() => {}); }); } catch (e) {}
+  }
+
   async function startShadow(i) {
     // Huy lan ghi am cu (neu dang treo) de bat dau moi -> luon co phan hoi
     try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (e) {}
+    pageMicSignal('abort');
     if (settings.autoRecord && !await enableMic({ silent: true })) return;
     $('#fb').hidden = true;
     setStatus('▶️ Bắt đầu luyện câu…');
@@ -151,7 +181,7 @@
     switch (msg.evt) {
       case 'sentences': sentences = p || []; renderList(); break;
       case 'current': current = p.idx; renderNow(p); markCur(p.idx); break;
-      case 'playstate': { const b = $('.cbtn.play'); if (b) b.textContent = p.playing ? '⏸' : '▶'; break; }
+      case 'playstate': { const b = $('#btn-play-pause') || $('.cbtn.play'); if (b) { const ic = b.querySelector('.tb-ico') || b; ic.textContent = p.playing ? '⏸' : '▶'; const lb = b.querySelector('.tb-label'); if (lb) lb.textContent = p.playing ? 'Dừng' : 'Phát'; } break; }
       case 'loop': $('#loop').classList.toggle('on', p); break;
       case 'state': onState(p); break;
       case 'feedback': renderFeedback(p); break;
@@ -379,7 +409,7 @@
   document.querySelectorAll('[data-cmd]').forEach((b) => {
     const c = b.dataset.cmd;
     if (['loadAuto', 'prev', 'next', 'togglePlay', 'stop'].includes(c)) b.onclick = () => {
-      if (c === 'stop') { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (e) {} const fb = $('#finalizeBtn'); if (fb) fb.hidden = true; }
+      if (c === 'stop') { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (e) {} pageMicSignal('abort'); const fb = $('#finalizeBtn'); if (fb) fb.hidden = true; }
       cmd(c, { target: settings.targetLang, native: settings.nativeLang });
     };
     if (c === 'mic') b.onclick = () => enableMic();
@@ -836,7 +866,7 @@
     document.querySelectorAll('.upgrade-plan-btn').forEach((btn) => {
       btn.onclick = () => {
         const plan = btn.dataset.plan;
-        const subject = encodeURIComponent('ShadowEcho Upgrade — ' + plan);
+        const subject = encodeURIComponent('NghienDe Upgrade — ' + plan);
         const body = encodeURIComponent('Hi, I want to upgrade to the ' + plan + ' plan.\n\nEmail: ' + (ShadowAuth.getUser()?.email || ''));
         window.open('mailto:contact@spiragiving.dev?subject=' + subject + '&body=' + body, '_blank');
       };
@@ -1104,7 +1134,7 @@
     vi: { tab_practice:'Luyện', tab_vocab:'Từ vựng', tab_flash:'Thẻ', tab_progress:'Tiến độ',
       nohost:'Mở một video YouTube hoặc Netflix rồi quay lại đây.',
       ob_title:'Bắt đầu nhanh', ob1:'Mở video tiếng Đức trên YouTube.', ob2:'Bấm "Phụ đề tự động" (hoặc nạp file SRT/VTT).', ob3:'Bấm "Bật mic", cho phép micro cho extension.', ob4:'Bấm một câu → nói lại → xem điểm.', ob_close:'Đã hiểu',
-      src_auto:'Phụ đề tự động', src_live:'Live (bật CC)', src_file:'File SRT/VTT', src_mic:'Bật mic', src_diag:'Kiểm tra',
+      src_auto:'Lấy phụ đề', src_live:'Bắt trực tiếp', src_file:'Mở file', src_mic:'Bật mic', src_diag:'Kiểm tra',
       status_init:'Mở video, lấy phụ đề để bắt đầu.',
       set_speed:'Tốc độ', set_rep:'Lặp', set_autonext:'Auto next', set_autorec:'Auto ghi âm', set_vsubs:'Phụ đề trên video', set_engine:'Engine', set_silero:'Silero VAD', set_offset:'Offset', set_target:'Học', set_native:'Dịch sang', set_uilang:'Ngôn ngữ', set_server:'Server', set_deepl:'DeepL key', set_orkey:'OpenRouter key',
       t_prev:'Câu trước', t_play:'Phát/Dừng', t_loop:'Lặp 1 câu', t_next:'Câu sau', t_shadow:'Luyện', t_listen:'Nghe mẫu', t_dict:'Chép chính tả', t_cloze:'Điền chỗ trống', t_blur:'Ẩn chữ (tự kiểm tra)', kbd_hint:'⌨ Space: nói · ◀ ▶: câu · ▲ ▼: tốc độ · R: nghe · L: lặp · B: ẩn chữ',
@@ -1112,7 +1142,7 @@
     en: { tab_practice:'Practice', tab_vocab:'Words', tab_flash:'Cards', tab_progress:'Progress',
       nohost:'Open a YouTube or Netflix video, then come back here.',
       ob_title:'Quick start', ob1:'Open a German video on YouTube.', ob2:'Click "Auto subtitles" (or load an SRT/VTT file).', ob3:'Click "Enable mic" and allow microphone access for the extension.', ob4:'Click a line → speak it back → see your score.', ob_close:'Got it',
-      src_auto:'Auto subtitles', src_live:'Live (turn on CC)', src_file:'SRT/VTT file', src_mic:'Enable mic', src_diag:'Self-test',
+      src_auto:'Get subtitles', src_live:'Live capture', src_file:'Open file', src_mic:'Enable mic', src_diag:'Self-test',
       status_init:'Open a video and load subtitles to begin.',
       set_speed:'Speed', set_rep:'Repeat', set_autonext:'Auto next', set_autorec:'Auto record', set_vsubs:'Subtitles on video', set_engine:'Engine', set_silero:'Silero VAD', set_offset:'Offset', set_target:'Learn', set_native:'Translate to', set_uilang:'Language', set_server:'Server', set_deepl:'DeepL key', set_orkey:'OpenRouter key',
       t_prev:'Previous', t_play:'Play/Pause', t_loop:'Loop one', t_next:'Next', t_shadow:'Practice', t_listen:'Listen', t_dict:'Dictation', t_cloze:'Fill blanks', t_blur:'Hide text (self-test)', kbd_hint:'⌨ Space: speak · ◀ ▶: line · ▲ ▼: speed · R: listen · L: loop · B: hide',
@@ -1151,7 +1181,7 @@
       row(r.vsubs, 'Overlay phụ đề video') +
       row(r.tracklist, 'Tracklist YouTube') +
       (r.mic !== 'granted' ? '<div class="hintline">→ Bấm 🎤 Bật mic để cấp quyền.</div>' : '') +
-      (r.sentences === 0 ? '<div class="hintline">→ Bấm ⬇️ Phụ đề tự động / 🔴 Live / 📂 File.</div>' : '');
+      (r.sentences === 0 ? '<div class="hintline">→ Bấm 📥 Lấy phụ đề / 🔴 Bắt trực tiếp / 📂 Mở file.</div>' : '');
   }
 
   // ===== Fill-in-the-blank (cloze) =====
@@ -1464,7 +1494,7 @@
   // Nut "Toi noi xong -> cham ngay": dung ghi am tuc thi nhung van cham diem
   {
     const fbtn = $('#finalizeBtn');
-    if (fbtn) fbtn.onclick = () => { try { window.ShadowMic && window.ShadowMic.finalizeRecording(); } catch (e) {} fbtn.hidden = true; setStatus('🧮 Đang chấm…'); };
+    if (fbtn) fbtn.onclick = () => { try { window.ShadowMic && window.ShadowMic.finalizeRecording(); } catch (e) {} pageMicSignal('finalize'); fbtn.hidden = true; setStatus('🧮 Đang chấm…'); };
   }
   // Nut an/mo chu
   { const bb = $('#blurBtn'); if (bb) bb.onclick = toggleBlur; }
@@ -1481,7 +1511,7 @@
     switch (e.code) {
       case 'Space': // ghi am cau hien tai / dung & cham neu dang ghi
         e.preventDefault();
-        if (recState === 'recording') { try { window.ShadowMic && window.ShadowMic.finalizeRecording(); } catch (_) {} const fb = $('#finalizeBtn'); if (fb) fb.hidden = true; }
+        if (recState === 'recording') { try { window.ShadowMic && window.ShadowMic.finalizeRecording(); } catch (_) {} pageMicSignal('finalize'); const fb = $('#finalizeBtn'); if (fb) fb.hidden = true; }
         else startShadow(current);
         break;
       case 'ArrowLeft': e.preventDefault(); cmd('prev'); break;
@@ -1492,7 +1522,7 @@
       case 'KeyR': e.preventDefault(); { const s = sentences[current]; if (s) speakText(s.text); } break; // nghe mau
       case 'KeyL': e.preventDefault(); cmd('loop').then((r) => { if (r) { const b = $('#loop'); if (b) b.classList.toggle('on', !!r.loop); } }); break;
       case 'KeyB': e.preventDefault(); toggleBlur(); break;
-      case 'KeyS': case 'Escape': e.preventDefault(); try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {} cmd('stop'); break;
+      case 'KeyS': case 'Escape': e.preventDefault(); try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {} pageMicSignal('abort'); cmd('stop'); break;
       case 'KeyM': e.preventDefault(); openMenu(); break;
       case 'Slash': if (e.shiftKey) { e.preventDefault(); const o = $('#kbd-overlay'); if (o) o.hidden = !o.hidden; } break;
       default: break;

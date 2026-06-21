@@ -14,9 +14,24 @@
     }
   }
 
-  async function ensureMic() { await request('ensure'); return true; }
+  async function ensureMic() {
+    // Ưu tiên cấp quyền NGAY trên trang (origin youtube.com) — không phải mở tab.
+    if (root.SD.pageMic) { try { await root.SD.pageMic.ensure(); return true; } catch (e) { /* rơi xuống Side Panel */ } }
+    await request('ensure'); return true;
+  }
   function setProgress(cb) { onProgress = cb; }
   async function recognize(opts) {
+    opts = opts || {};
+    // Ghi âm NGAY trên trang nếu được (dùng quyền micro của youtube.com, không mở tab).
+    // Lỗi (chưa cấp quyền / engine không hỗ trợ) -> rơi xuống ghi âm tại Side Panel.
+    if (root.SD.pageMic && opts.usePageMic !== false && (opts.engine || 'whisper') !== 'server') {
+      try { return await root.SD.pageMic.recognize(opts); }
+      catch (e) {
+        const m = (e && e.message) || String(e);
+        if (/recording-aborted/.test(m)) return { error: m }; // user bấm Dừng -> tôn trọng
+        // các lỗi khác -> thử lại bằng Side Panel bên dưới
+      }
+    }
     try { return (await request('recognize', opts)).result; }
     catch (error) {
       const message = error.message || String(error);

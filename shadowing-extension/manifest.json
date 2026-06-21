@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "ShadowEcho — Luyện Shadowing tiếng Đức (YouTube & Netflix)",
-  "version": "2.0.0",
+  "name": "NghienDℯ — Luyện Shadowing tiếng Đức (YouTube & Netflix)",
+  "version": "2.3.0",
   "description": "Luyện shadowing chuyên nghiệp: phụ đề, ghi âm, chấm điểm ngữ âm, dịch AI, phân tích từ vựng. Chạy trên YouTube & Netflix.",
   "permissions": [
     "activeTab",
@@ -33,7 +33,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Shadowing Deutsch",
+    "default_title": "NghienDℯ — Shadowing Deutsch",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -83,6 +83,7 @@
         "content/storage.js",
         "content/video-controller.js",
         "content/speech.js",
+        "content/page-mic.js",
         "content/bridge.js",
         "content/shadow-engine.js",
         "content/video-subs.js",

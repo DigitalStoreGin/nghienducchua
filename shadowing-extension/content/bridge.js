@@ -44,19 +44,19 @@
       return;
     }
 
-    // Phu de da fetch xong (co POT) tu MAIN world -> parse + gan ban dich
+    // Phu de da fetch xong (co POT) tu MAIN world -> parse + gan ban dich.
+    // KHONG emit o day — ben dieu phoi (fetchYouTubeTrack) emit ket qua ve dich truoc.
     if (d.format === 'yt-captions') {
+      let sentences = null;
       const cues = P.parseJson3(d.data);
       if (cues && cues.length) {
-        const sentences = P.mergeIntoSentences(cues);
+        sentences = P.mergeIntoSentences(cues);
         if (d.transData) {
           try { const tcues = P.parseJson3(d.transData); if (tcues.length) attachTrans(sentences, tcues); } catch (e) {}
         }
-        emitSentences(sentences, { source: 'youtube', auto: true });
-        if (pendingFetch) { const r = pendingFetch.resolve; clearPending(); r(sentences); }
-      } else if (pendingFetch) {
-        const r = pendingFetch.resolve; clearPending(); r(null);
       }
+      if (pendingFetch) { const r = pendingFetch.resolve; clearPending(); r(sentences && sentences.length ? sentences : null); }
+      else if (sentences && sentences.length) emitSentences(sentences, { source: 'youtube', auto: true }); // den muon -> van hien
       return;
     }
     if (d.format === 'yt-error') {
@@ -92,29 +92,53 @@
     if (P && P.attachTranslations) return P.attachTranslations(sentences, tcues);
   }
 
-  // Yeu cau MAIN world (intercept-youtube.js) fetch phu de co POT token roi tra ket qua.
+  // Lay phu de YouTube — CHAY SONG SONG 2 duong, lay duong nao xong TRUOC:
+  //  (1) NHANH: fetch truc tiep tu tracklist co san (same-origin, KHONG can POT) —
+  //      giong cach ban cu, gan nhu tuc thi khi tracklist da bat duoc.
+  //  (2) CHAC CHAN: nho MAIN world fetch co POT (cho video chan tai phu de).
+  // Duong nao tra ve cau hop le truoc thi dung; emit MOT LAN tai day.
   function fetchYouTubeTrack(langPref, nativeLang) {
     return new Promise((resolve) => {
-      // Huy yeu cau cu neu con treo
-      if (pendingFetch) { const old = pendingFetch.resolve; clearPending(); try { old(null); } catch (e) {} }
-      const timer = setTimeout(() => {
-        clearPending();
-        // Du phong: thu cach cu (truc tiep, khong POT) — co the van chay voi video cu
-        legacyFetchYouTubeTrack(langPref, nativeLang).then(resolve);
-      }, 14000);
-      pendingFetch = { resolve, timer };
-      try {
-        document.dispatchEvent(new CustomEvent('SD_FETCH_YT_TRACK', { detail: { langPref: langPref || 'de', nativeLang: nativeLang || '' } }));
-      } catch (e) { clearPending(); legacyFetchYouTubeTrack(langPref, nativeLang).then(resolve); }
+      let settled = false, hardTimer = null;
+      const done = (sentences) => {
+        if (settled || !sentences || !sentences.length) return;
+        settled = true;
+        try { clearTimeout(hardTimer); } catch (e) {}
+        emitSentences(sentences, { source: 'youtube', auto: true });
+        resolve(sentences);
+      };
+      // (1) Duong nhanh — phu de co san (cho toi da 2s neu tracklist chua bat duoc).
+      legacyFetchYouTubeTrack(langPref, nativeLang, { silent: true, maxWaitMs: 2000 })
+        .then(done).catch(() => {});
+      // (2) Duong chac chan — co POT (du phong khi duong nhanh tra rong).
+      requestPotFetch(langPref, nativeLang).then(done).catch(() => {});
+      // Ca 2 deu that bai trong han -> tra null de UI bao.
+      hardTimer = setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, 15000);
     });
   }
 
-  // Du phong: cach cu (fetch truc tiep tu ISOLATED, KHONG co POT — co the that bai tren
-  // YouTube moi, nhung van huu ich khi POT khong bat duoc hoac video cu).
-  async function legacyFetchYouTubeTrack(langPref, nativeLang) {
+  // Nho MAIN world (intercept-youtube.js) fetch co POT, tra ve Promise<sentences|null>.
+  function requestPotFetch(langPref, nativeLang) {
+    return new Promise((resolve) => {
+      if (pendingFetch) { const old = pendingFetch.resolve; clearPending(); try { old(null); } catch (e) {} }
+      const timer = setTimeout(() => { clearPending(); resolve(null); }, 14000);
+      pendingFetch = { resolve, timer };
+      try {
+        document.dispatchEvent(new CustomEvent('SD_FETCH_YT_TRACK', { detail: { langPref: langPref || 'de', nativeLang: nativeLang || '' } }));
+      } catch (e) { clearPending(); resolve(null); }
+    });
+  }
+
+  // Duong NHANH: fetch truc tiep tu ISOLATED (same-origin youtube.com -> co cookie,
+  // khong can POT). Chay duoc khi tracklist da bat duoc; video chan tai phu de se
+  // tra rong -> tra null va de duong POT lo.
+  async function legacyFetchYouTubeTrack(langPref, nativeLang, opts) {
+    opts = opts || {};
+    const maxWaitMs = opts.maxWaitMs != null ? opts.maxWaitMs : 5000;
     if (!lastTracklist || !lastTracklist.length) {
-      for (let attempt = 0; attempt < 5; attempt++) {
-        await new Promise((r) => setTimeout(r, 1000));
+      const t0 = Date.now();
+      while (Date.now() - t0 < maxWaitMs) {
+        await new Promise((r) => setTimeout(r, 250));
         if (lastTracklist && lastTracklist.length) break;
       }
     }
@@ -135,7 +159,7 @@
           if (tcues.length) attachTrans(sentences, tcues);
         } catch (e) {}
       }
-      emitSentences(sentences, { source: 'youtube', auto: true });
+      if (!opts.silent) emitSentences(sentences, { source: 'youtube', auto: true });
       return sentences;
     } catch (e) {}
     return null;
