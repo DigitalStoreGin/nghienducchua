@@ -125,9 +125,9 @@ export default {
   },
 };
 
-// ── /score-ai  — Claude Haiku pronunciation scoring ──────────
+// ── /score-ai  — AI pronunciation scoring via OpenRouter (free) ──
 // Public endpoint (rate-limited by IP). Receives text transcript + target
-// sentence; never stores audio. Claude returns structured JSON score.
+// sentence; never stores audio. Returns structured JSON score.
 async function handleScoreAI(request, env) {
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
@@ -140,7 +140,7 @@ async function handleScoreAI(request, env) {
     } catch (_) {}
   }
 
-  if (!env.ANTHROPIC_API_KEY) return json({ error: 'not_configured' }, 503);
+  if (!env.OPENROUTER_API_KEY && !env.ANTHROPIC_API_KEY) return json({ error: 'not_configured' }, 503);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
@@ -150,33 +150,77 @@ async function handleScoreAI(request, env) {
 
   const LANG_NAME = { de: 'German', en: 'English', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese' };
   const langName = LANG_NAME[targetLang] || targetLang;
+  const systemPrompt = `You are evaluating ${langName} pronunciation. Respond ONLY with a JSON object — no markdown, no explanation.`;
+  const userPrompt = `Target: "${target}"\nStudent said: "${transcript}"\n\nReturn JSON only:\n{"pronunciation":0-100,"fluency":0-100,"overall":0-100,"feedback":"tip in Vietnamese ≤12 words"}`;
 
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 200,
-        system: `You are evaluating ${langName} pronunciation. Respond ONLY with a JSON object — no markdown, no explanation.`,
-        messages: [{
-          role: 'user',
-          content: `Target: "${target}"\nStudent said: "${transcript}"\n\nReturn JSON only:\n{"pronunciation":0-100,"fluency":0-100,"overall":0-100,"feedback":"helpful tip in Vietnamese ≤12 words"}`,
-        }],
-      }),
-    });
-    if (!resp.ok) return json({ error: 'anthropic-' + resp.status }, 502);
-    const data = await resp.json();
-    const raw = (data?.content?.[0]?.text || '').trim().replace(/^```json\n?|\n?```$/g, '').trim();
-    const score = JSON.parse(raw);
-    return json({ ...score, engine: 'claude-haiku', transcript });
-  } catch (e) {
-    return json({ error: 'score-error', message: e.message }, 500);
+  // Primary: OpenRouter free models (try in order, 5s timeout each)
+  if (env.OPENROUTER_API_KEY) {
+    const SCORE_MODELS = [
+      'google/gemma-4-31b-it:free',
+      'openai/gpt-oss-120b:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+    ];
+    for (const model of SCORE_MODELS) {
+      try {
+        const resp = await Promise.race([
+          fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://shadowecho.app',
+              'X-Title': 'ShadowEcho Language Learning',
+            },
+            body: JSON.stringify({
+              model,
+              max_tokens: 150,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+            }),
+          }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+        ]);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const raw = (data?.choices?.[0]?.message?.content || '').trim().replace(/^```json\n?|\n?```$/g, '').trim();
+        if (!raw) continue;
+        const score = JSON.parse(raw);
+        if (!score.overall) continue;
+        return json({ ...score, engine: 'openrouter/' + model.split('/')[0], transcript });
+      } catch (_) { /* try next model */ }
+    }
   }
+
+  // Fallback: Anthropic Claude Haiku (if key configured)
+  if (env.ANTHROPIC_API_KEY) {
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 200,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      });
+      if (!resp.ok) return json({ error: 'anthropic-' + resp.status }, 502);
+      const data = await resp.json();
+      const raw = (data?.content?.[0]?.text || '').trim().replace(/^```json\n?|\n?```$/g, '').trim();
+      const score = JSON.parse(raw);
+      return json({ ...score, engine: 'claude-haiku', transcript });
+    } catch (e) {
+      return json({ error: 'score-error', message: e.message }, 500);
+    }
+  }
+
+  return json({ error: 'all_models_failed' }, 503);
 }
 
 // ── Supabase JWT verification ────────────────────────────────

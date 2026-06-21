@@ -468,10 +468,10 @@ test('Claude AI scoring appears after local score', async ({ page }) => {
   // claudeScoreAsync() after the fetch resolves and the result is rendered).
   await page.waitForSelector('.ai-score--done', { timeout: 8000 });
 
-  // The AI score box must mention "Claude" and display a score >= 80.
+  // The AI score box must show the AI evaluation header and a score >= 80.
   const aiBoxText = await page.locator('.ai-score--done').textContent();
 
-  expect(aiBoxText, 'AI score box mentions Claude').toContain('Claude');
+  expect(aiBoxText, 'AI score box shows evaluation header').toContain('AI đánh giá');
 
   // Extract all numbers from the text and check at least one is >= 80.
   const numbers = (aiBoxText.match(/\d+/g) || []).map(Number);

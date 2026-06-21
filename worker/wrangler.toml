@@ -9,7 +9,7 @@ compatibility_flags = ["nodejs_compat"]
 # DEEPL_API_KEY
 # OPENROUTER_API_KEY
 # ADMIN_KEY
-# ANTHROPIC_API_KEY   (claude-haiku chấm điểm phát âm qua /score-ai — public, rate-limited by IP)
+# ANTHROPIC_API_KEY   (tuỳ chọn — fallback cho /score-ai nếu OpenRouter thất bại)
 # SENTRY_DSN          (tuỳ chọn — bật giám sát lỗi qua /log; chưa set thì ghi console)
 
 # Burst rate limit theo user (Cloudflare native, GA). 30 lần / 60 giây.

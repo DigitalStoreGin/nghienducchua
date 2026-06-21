@@ -350,7 +350,7 @@
       const ai = await r.json();
       if (ai.error || !aiBox.isConnected) { aiBox.hidden = true; return; }
       aiBox.innerHTML =
-        '<div class="ai-score-head">🤖 Claude AI đánh giá</div>' +
+        '<div class="ai-score-head">🤖 AI đánh giá</div>' +
         '<div class="ai-score-bars">' +
           '<span>Phát âm <b>' + (ai.pronunciation ?? '—') + '</b></span>' +
           '<span>Lưu loát <b>' + (ai.fluency ?? '—') + '</b></span>' +
