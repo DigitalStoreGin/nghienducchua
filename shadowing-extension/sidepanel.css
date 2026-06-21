@@ -12,7 +12,7 @@ body {
   background: #fff;
   color: #202124;
   font: 13px / 1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 button, input, select, textarea { font: inherit; }
 button:focus-visible,
@@ -28,6 +28,8 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
 }
 #view-list {
   padding-bottom: 96px; /* toolbar height (2 hàng có nhãn) */
+  height: 100%;
+  overflow: hidden;
 }
 #view-practice {
   padding-bottom: 96px;
@@ -233,6 +235,42 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   box-shadow: 0 2px 8px rgba(26,115,232,.3);
 }
 .try-card-btn--speak:hover { background: #1666d0; }
+
+/* Recording state — speak button pulses red */
+.try-card-btn--speak.recording {
+  background: #e53935;
+  border-color: #e53935;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(229,57,53,.35); }
+  50% { box-shadow: 0 2px 16px rgba(229,57,53,.7), 0 0 0 6px rgba(229,57,53,.12); }
+}
+.src-btn--mic.recording .mic-dot {
+  background: #e53935;
+  animation: mic-pulse .6s infinite;
+}
+
+/* Next-sentence previews inside try-card */
+.try-card-previews {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.try-card-preview-row {
+  font-size: 14px;
+  color: #5f6368;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background .1s, color .1s;
+}
+.try-card-preview-row:hover { background: rgba(26,115,232,.08); color: #202124; }
 
 /* ===== SENTENCE LIST (card chứa danh sách câu, chữ to dễ đọc) ===== */
 .sentence-list {
@@ -1421,6 +1459,8 @@ body.dark .try-card { background: #1f2740; border-color: #2c3a63; }
 body.dark .try-card-sentence { color: var(--text); }
 body.dark .try-card-btn { background: var(--bg2); border-color: var(--border); color: var(--text); }
 body.dark .try-card-btn--speak { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+body.dark .try-card-preview-row { color: var(--text2); }
+body.dark .try-card-preview-row:hover { background: rgba(26,115,232,.15); color: var(--text); }
 body.dark .status-bar { background: var(--bg2); color: var(--text2); }
 body.dark .icon-btn { color: var(--text2); }
 body.dark .icon-btn:hover { background: var(--bg3); }

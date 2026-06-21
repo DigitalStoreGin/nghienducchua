@@ -224,6 +224,11 @@
     } else {
       stopWaveform();
     }
+    // Mic activity indicator: pulse speak button + mic dot when recording
+    const speakBtn = $('#try-card-speak');
+    if (speakBtn) speakBtn.classList.toggle('recording', st.state === 'recording');
+    const micBtn = $('#micButton');
+    if (micBtn) micBtn.classList.toggle('recording', st.state === 'recording');
   }
   function onProgress(p) {
     const el = $('#prog'); el.hidden = false;
@@ -277,11 +282,26 @@
     card.hidden = !has;
     if (!has) return;
     const s = sentences[current] || sentences[0];
-    const txt = $('#try-card-text'); if (txt) txt.textContent = s ? '“' + s.text + '”' : '—';
+    const txt = $('#try-card-text'); if (txt) txt.textContent = s ? '”' + s.text + '”' : '—';
+    // Show next 2 sentences as clickable preview rows
+    const previews = $('#try-card-previews');
+    if (previews) {
+      previews.innerHTML = '';
+      for (let k = 1; k <= 2; k++) {
+        const ns = sentences[current + k];
+        if (!ns) break;
+        const p = document.createElement('div');
+        p.className = 'try-card-preview-row';
+        p.textContent = ns.text;
+        const idx = current + k;
+        p.onclick = () => selectRow(idx);
+        previews.appendChild(p);
+      }
+    }
   }
 
   function renderList() {
-    const c = $('#list'); c.innerHTML = '';
+    const c = $('#sentence-list'); c.innerHTML = '';
     const filtered = filterSentences();
     // Show/hide filter bar + the luyen tap
     const filterBar = $('#status-filter'); if (filterBar) filterBar.hidden = !sentences.length;
