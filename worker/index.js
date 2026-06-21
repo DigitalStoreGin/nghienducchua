@@ -238,11 +238,16 @@ export const GROQ_LANG_MAP = { de: 'de', en: 'en', fr: 'fr', es: 'es', it: 'it',
 
 async function sendAlertEmail(env, subject, body) {
   if (!env.RESEND_API_KEY) { console.error('[GROQ-ALERT]', subject); return; }
+  // Người nhận: ALERT_EMAIL nếu đặt, mặc định email chủ tài khoản Resend (gửi được
+  // ngay không cần xác thực domain). Sau khi xác thực domain -> đổi sang cfvblue@gmail.com.
+  const to = env.ALERT_EMAIL || 'huytruong18122001@gmail.com';
+  // from: ALERT_FROM nếu đã xác thực domain; mặc định địa chỉ thử nghiệm của Resend.
+  const from = env.ALERT_FROM || 'NghienDe Alert <onboarding@resend.dev>';
   try {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'NghienDe Alert <noreply@shadowecho.app>', to: ['cfvblue@gmail.com'], subject, text: body }),
+      body: JSON.stringify({ from, to: [to], subject, text: body }),
     });
   } catch (e) { console.error('[ALERT-EMAIL-FAILED]', e.message); }
 }
