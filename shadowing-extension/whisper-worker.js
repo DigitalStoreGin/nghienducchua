@@ -1,6 +1,6 @@
 /* Web Worker (ES module). Chạy Whisper qua transformers.js CỤC BỘ (vendor/).
- * Model do mic-service chọn theo cấu hình máy (tiny/base/small) rồi gửi sang.
- * Model Whisper tải từ HuggingFace lần đầu (~40–480MB tùy model) rồi browser cache.
+ * Model do mic-service chọn theo cấu hình máy (tiny/base/small/medium) rồi gửi sang.
+ * Model Whisper tải từ HuggingFace lần đầu (~75MB–1.5GB tùy model) rồi browser cache.
  * Thiếu vendor/transformers.min.js -> import lỗi -> mic-service tự fallback Web Speech.
  *
  * NÂNG CẤP DẦN (progressive): mic-service nạp model NHỎ trước (tiny) để khách dùng
