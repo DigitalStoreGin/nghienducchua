@@ -123,7 +123,7 @@
   // Hoc tu splitSegmentBySentences cua ShadowEcho: chia thoi gian theo do dai chu.
   // Muc tieu: moi doan shadowing la MOT cau tron ven, khong qua dai (de luyen
   // tung cau mot). Vi du "Hallo. Hallo. Wir freuen uns..." -> 3 doan rieng.
-  const SENT_MAX = 90; // do dai toi da (ky tu) cho 1 doan truoc khi tach theo menh de
+  const WORD_MAX = 10; // toi da 10 tu moi doan shadowing (khoang 5-10 tu la ly tuong)
 
   // Cac chu viet tat tieng Duc/chung — KHONG duoc coi dau cham la het cau.
   // Gom: ten goi (Dr., Prof.…), don vi/viet tat (usw., bzw.…), 1 chu cai hoa
@@ -147,17 +147,59 @@
     return out;
   }
 
-  // Tach 1 cau dai theo menh de (dau phay / cham phay / hai cham), gom cac manh
-  // ngan ke nhau cho gan SENT_MAX de khong bi vun qua nhieu.
+  // Dem so tu trong van ban.
+  function wc(text) { return String(text).split(/\s+/).filter(Boolean).length; }
+
+  // Chia thoi gian proportional theo so tu cho tung doan.
+  function timeSlice(s, parts) {
+    if (parts.length <= 1) return [{ startMs: s.startMs, endMs: s.endMs, text: parts[0] || s.text }];
+    const totalW = parts.reduce((a, p) => a + wc(p), 0) || 1;
+    const dur = Math.max(0, s.endMs - s.startMs);
+    let cursor = s.startMs;
+    return parts.map((text, i) => {
+      const end = i === parts.length - 1 ? s.endMs : Math.round(cursor + dur * (wc(text) / totalW));
+      const seg = { startMs: cursor, endMs: end, text };
+      cursor = end;
+      return seg;
+    });
+  }
+
+  // Tach 1 cau dai theo menh de (dau phay / cham phay / hai cham), gom lai
+  // de moi doan co tu 4 den WORD_MAX tu (ly tuong de shadowing).
+  // Word co the la viet tat neu ket thuc bang dau cham va co it hon 5 ky tu.
+  // (z., B., Dr., 3., usw. ...) — KHONG duoc cat ngay sau no.
+  function isAbbrWord(w) { return /^[A-Za-zÄÖÜäöüß]{1,4}\.$/.test(w) || /^\d+\.$/.test(w); }
+
   function splitByClauses(text) {
-    const sub = String(text).split(/(?<=[,;:])\s+/).map((t) => t.trim()).filter(Boolean);
-    if (sub.length <= 1) return [text];
+    const clauses = String(text).split(/(?<=[,;:])\s+/).map((t) => t.trim()).filter(Boolean);
+    if (clauses.length <= 1) {
+      // Khong co dau phay/cham phay: ep tach theo so tu nhung tranh cat sau viet tat.
+      const words = String(text).split(/\s+/).filter(Boolean);
+      const chunks = [];
+      let start = 0;
+      const HARD = WORD_MAX + 4; // cap tuyet doi de tranh doan qua dai
+      for (let i = WORD_MAX; i < words.length; i++) {
+        const segLen = i - start;
+        // Cho phep tach khi: du WORD_MAX tu VA neither word[-1] nor word[i] la viet tat.
+        // Buoc ep khi qua HARD tu bat ke.
+        const safeBreak = !isAbbrWord(words[i - 1]) && !isAbbrWord(words[i]);
+        if (segLen >= HARD || (segLen >= WORD_MAX && safeBreak)) {
+          chunks.push(words.slice(start, i).join(' '));
+          start = i;
+        }
+      }
+      chunks.push(words.slice(start).join(' '));
+      return chunks;
+    }
+    // Gom clause lai: neu gop them van <= WORD_MAX tu thi gop; neu khong thi day vao ket qua
     const out = [];
     let buf = '';
-    for (const piece of sub) {
-      if (!buf) buf = piece;
-      else if ((buf + ' ' + piece).length <= SENT_MAX) buf += ' ' + piece;
-      else { out.push(buf); buf = piece; }
+    let bufW = 0;
+    for (const clause of clauses) {
+      const cw = wc(clause);
+      if (!buf) { buf = clause; bufW = cw; }
+      else if (bufW + cw <= WORD_MAX) { buf += ' ' + clause; bufW += cw; }
+      else { out.push(buf); buf = clause; bufW = cw; }
     }
     if (buf) out.push(buf);
     return out;
@@ -166,27 +208,16 @@
   function splitLongSentence(s) {
     const text = (s.text || '').trim();
     if (!text) return [s];
-    // Buoc 1: luon tach theo dau ket cau -> moi cau tron ven thanh 1 doan
+    // Buoc 1: tach theo dau ket cau
     let parts = splitIntoSentences(text);
-    // Buoc 2: cau con nao van qua dai -> tach tiep theo menh de
+    // Buoc 2: doan nao con qua dai (> WORD_MAX tu) thi tach tiep theo menh de / ep tu
     const refined = [];
     for (const p of parts) {
-      if (p.length <= SENT_MAX) refined.push(p);
+      if (wc(p) <= WORD_MAX) refined.push(p);
       else for (const q of splitByClauses(p)) refined.push(q);
     }
-    parts = refined.filter(Boolean);
-    if (parts.length <= 1) return [{ startMs: s.startMs, endMs: s.endMs, text: parts[0] || text }];
-    // Buoc 3: chia thoi gian theo ty le do dai chu cua tung doan
-    const total = parts.reduce((a, p) => a + p.length, 0) || 1;
-    const dur = Math.max(0, s.endMs - s.startMs);
-    let cursor = s.startMs;
-    const out = [];
-    for (let i = 0; i < parts.length; i++) {
-      const end = i === parts.length - 1 ? s.endMs : Math.round(cursor + dur * (parts[i].length / total));
-      out.push({ startMs: cursor, endMs: end, text: parts[i] });
-      cursor = end;
-    }
-    return out;
+    // Buoc 3: chia thoi gian theo ty le so tu
+    return timeSlice(s, refined.filter(Boolean));
   }
 
   // --- Gop cau: fix caption cuon + gom cac dong thanh cau tron ven ------------

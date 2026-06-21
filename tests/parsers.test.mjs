@@ -107,14 +107,30 @@ describe('mergeIntoSentences — gộp + tách câu', () => {
     expect(out[0].text).toContain('Dr. Müller');
   });
 
-  it('tách câu quá dài theo mệnh đề (dấu phẩy) để luyện từng đoạn', () => {
+  it('tách câu quá dài theo mệnh đề (dấu phẩy) — mỗi đoạn ≤10 từ', () => {
     const longText =
       'Wenn das Wetter heute schön ist, gehen wir gemeinsam in den großen Park, ' +
       'und danach essen wir ein leckeres Eis in der Stadt.';
     const cues = [{ startMs: 0, endMs: 6000, text: longText }];
     const out = P.mergeIntoSentences(cues);
     expect(out.length).toBeGreaterThan(1);
-    // mỗi đoạn không quá dài
-    for (const s of out) expect(s.text.length).toBeLessThanOrEqual(95);
+    // mỗi đoạn không quá 10 từ (lý tưởng cho shadowing)
+    for (const s of out) {
+      const wordCount = s.text.split(/\s+/).filter(Boolean).length;
+      expect(wordCount).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('câu không có dấu phẩy bị tách cứng tại 10 từ', () => {
+    const longText = 'Das ist ein sehr langer Satz ohne Satzzeichen und er geht noch weiter und weiter.';
+    const cues = [{ startMs: 0, endMs: 8000, text: longText }];
+    const out = P.mergeIntoSentences(cues);
+    expect(out.length).toBeGreaterThan(1);
+    for (const s of out) {
+      const wordCount = s.text.split(/\s+/).filter(Boolean).length;
+      expect(wordCount).toBeLessThanOrEqual(10);
+    }
+    // thời gian tăng dần
+    for (let i = 1; i < out.length; i++) expect(out[i].startMs).toBeGreaterThan(out[i-1].startMs);
   });
 });
