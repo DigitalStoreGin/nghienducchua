@@ -121,15 +121,18 @@
   }
 
   // Nhờ Side Panel chấm Whisper trên audio đã ghi (model + worker nằm ở Side Panel).
+  // Timeout 15s: nếu Side Panel không trả lời (port đóng / chưa mở) → resolve(null) để
+  // caller fallback về Web Speech, tránh treo mãi gây rec:score-timeout.
   function transcribeViaSidePanel(audio16k, opts) {
     return new Promise((resolve) => {
       let audioB64; try { audioB64 = f32ToB64Int16(audio16k); } catch (e) { resolve(null); return; }
+      const timer = setTimeout(() => resolve(null), 15000);
       try {
         chrome.runtime.sendMessage(
           { sd: 'mic-service', action: 'transcribeAudio', audioB64, sampleRate: 16000, opts },
-          (resp) => { if (chrome.runtime.lastError || !resp || !resp.ok) resolve(null); else resolve(resp.result); }
+          (resp) => { clearTimeout(timer); if (chrome.runtime.lastError || !resp || !resp.ok) resolve(null); else resolve(resp.result); }
         );
-      } catch (e) { resolve(null); }
+      } catch (e) { clearTimeout(timer); resolve(null); }
     });
   }
 

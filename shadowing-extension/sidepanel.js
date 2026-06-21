@@ -327,7 +327,7 @@
       const actions = document.createElement('div'); actions.className = 'row-actions';
       // Nut 🎤 — chon cau va bat dau ghi am
       const micBtn = document.createElement('button'); micBtn.className = 'row-action-btn'; micBtn.title = 'Luyện câu này'; micBtn.textContent = '🎤';
-      micBtn.onclick = (e) => { e.stopPropagation(); startShadow(i); };
+      micBtn.onclick = (e) => { e.stopPropagation(); openPractice(i); showRecordPanel(true); startShadow(i); };
       // Nut 🌐 — dich toan cau vao .tr
       const transBtn = document.createElement('button'); transBtn.className = 'row-action-btn'; transBtn.title = 'Dịch câu'; transBtn.textContent = '🌐';
       transBtn.onclick = async (e) => {

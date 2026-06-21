@@ -121,7 +121,8 @@
       this.emit('state', { state: 'paused', idx: this.idx, rep: this.rep });
 
       if (this.settings?.autoRecord) {
-        await this.delay(300, runId);
+        // 800ms im lặng: cho echo video tắt hẳn trước khi VAD đo ngưỡng nền.
+        await this.delay(800, runId);
         if (runId !== this.runId || !this.busy) return;
         await this.recordAndScore(s, endSec - startSec, runId);
       } else {
@@ -146,8 +147,9 @@
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',
           vad: { silero: !!this.settings?.useSileroVad },
         });
-        // Timeout chong treo: dam bao 'busy' luon duoc giai phong du STT khong tra ve
-        const guardMs = maxMs + 30000;
+        // Guard: maxMs (ghi) + 15s (Groq timeout) + 15s (offline Whisper timeout) + 5s dư.
+        // transcribeViaSidePanel đã có timeout 15s riêng nên tổng luôn dưới guardMs.
+        const guardMs = maxMs + 35000;
         res = await Promise.race([
           recPromise,
           new Promise((_, rej) => setTimeout(() => rej(new Error('score-timeout')), guardMs)),
@@ -215,11 +217,16 @@
       return new Promise((resolve) => {
         const started = Date.now();
         let pausedSince = 0;
+        // Hard timeout = max(8s, thời gian đến endSec × 2 + 3s). Đảm bảo không bao giờ
+        // chạy quá 2 lần độ dài câu — nếu xảy ra thì timestamp sai hoặc video đứng.
+        const v0 = V().el;
+        const remaining = v0 ? Math.max(0, endSec - v0.currentTime) : (endSec || 5);
+        const hardMs = Math.max(8000, Math.round(remaining * 2000 + 3000));
         const t = setInterval(() => {
           // Guard: runId thay doi hoac stop
           if (runId !== this.runId || !this.busy) { clearInterval(t); resolve(false); return; }
-          // Guard: hard timeout 15s
-          if (Date.now() - started > 15000) { clearInterval(t); resolve(true); return; }
+          // Guard: hard timeout
+          if (Date.now() - started > hardMs) { clearInterval(t); resolve(true); return; }
           // Guard: video element chua san sang
           if (!V().isReady()) return;
 
