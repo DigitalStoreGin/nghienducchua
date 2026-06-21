@@ -23,3 +23,8 @@ compatibility_flags = ["nodejs_compat"]
 name = "RATE_LIMITER"
 namespace_id = "1001"
 simple = { limit = 30, period = 60 }
+
+# KV để chống gửi email cảnh báo trùng (chỉ gửi 1 lần mỗi 6 giờ khi Groq hết quota).
+[[kv_namespaces]]
+binding = "ALERT_KV"
+id = "a25409e9999e45eb9920a7e237456e79"

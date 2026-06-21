@@ -52,7 +52,7 @@ function json(data, status = 200) {
 
 // ── Main dispatcher ──────────────────────────────────────────
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS });
     }
@@ -90,7 +90,7 @@ export default {
     // Public STT transcription via Groq Whisper (rate-limited by IP, no auth).
     // Receives raw audio blob, returns transcript text. Never stores audio.
     if (url.pathname === '/transcribe') {
-      return handleTranscribe(request, env);
+      return handleTranscribe(request, env, ctx);
     }
 
     // All other routes require Supabase JWT
@@ -247,7 +247,29 @@ async function sendAlertEmail(env, subject, body) {
   } catch (e) { console.error('[ALERT-EMAIL-FAILED]', e.message); }
 }
 
-async function handleTranscribe(request, env) {
+// Gửi email cảnh báo "hết Groq quota" nhưng CHỐNG TRÙNG: chỉ 1 lần mỗi 6 giờ
+// (dùng KV làm cờ thời gian). Tránh spam hộp thư khi có nhiều request liên tục.
+async function maybeAlertGroqExhausted(env, keyCount) {
+  const ALERT_TTL = 6 * 60 * 60; // 6 giờ
+  if (env.ALERT_KV) {
+    try {
+      const last = await env.ALERT_KV.get('groq_exhausted_alert');
+      if (last) return; // đã gửi trong 6 giờ qua -> bỏ qua
+      await env.ALERT_KV.put('groq_exhausted_alert', new Date().toISOString(), { expirationTtl: ALERT_TTL });
+    } catch (_) { /* KV lỗi -> vẫn gửi (thà trùng còn hơn mất cảnh báo) */ }
+  }
+  await sendAlertEmail(env,
+    'NghienDe: Tất cả Groq API keys đã hết quota',
+    `Tất cả ${keyCount} Groq API keys đã hết hạn mức (429 Too Many Requests).\n\n` +
+    `Hệ thống đã TỰ ĐỘNG chuyển sang phương án miễn phí (Whisper offline trên máy khách) — ` +
+    `người dùng KHÔNG bị gián đoạn và không hề biết.\n\n` +
+    `Bạn nên thêm keys mới hoặc nâng cấp tại https://console.groq.com\n\n` +
+    `(Email này chỉ gửi 1 lần mỗi 6 giờ để tránh spam.)\n` +
+    `Thời gian: ${new Date().toISOString()}`
+  );
+}
+
+async function handleTranscribe(request, env, ctx) {
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
   if (env.RATE_LIMITER) {
@@ -300,11 +322,12 @@ async function handleTranscribe(request, env) {
     } catch (_) { allQuota = false; } // timeout/network error: not a quota issue
   }
 
+  // Hết cả 5 key (đều 429) -> gửi email cảnh báo ẩn (chống trùng, không chặn
+  // người dùng nhờ waitUntil) rồi báo extension chuyển sang phương án miễn phí.
   if (allQuota) {
-    await sendAlertEmail(env,
-      'NghienDe: Tất cả Groq API keys đã hết quota',
-      `Tất cả ${GROQ_KEYS.length} Groq API keys đã hết hạn mức (429 Too Many Requests).\n\nVui lòng thêm keys mới hoặc nâng cấp tại https://console.groq.com\n\nThời gian: ${new Date().toISOString()}`
-    );
+    const alert = maybeAlertGroqExhausted(env, GROQ_KEYS.length);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(alert); else await alert;
+    return json({ error: 'groq_exhausted', fallback: 'free' }, 503);
   }
 
   return json({ error: 'groq_unavailable' }, 503);
