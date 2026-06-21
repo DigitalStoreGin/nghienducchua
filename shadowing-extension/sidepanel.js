@@ -334,6 +334,34 @@
   }
   function mk(cls, txt, on) { const b = document.createElement('button'); b.className = cls; b.textContent = txt; b.onclick = on; return b; }
 
+  // Gửi transcript + câu mục tiêu lên Worker → Claude Haiku chấm điểm.
+  // Fire-and-forget: không bao giờ block UI. Nếu thành công → cập nhật aiBox.
+  async function claudeScoreAsync(target, transcript, aiBox) {
+    try {
+      const r = await Promise.race([
+        fetch(WORKER_URL + '/score-ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target, transcript, targetLang: settings.targetLang || 'de' }),
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+      ]);
+      if (!r.ok || !aiBox || !aiBox.isConnected) { if (aiBox) aiBox.hidden = true; return; }
+      const ai = await r.json();
+      if (ai.error || !aiBox.isConnected) { aiBox.hidden = true; return; }
+      aiBox.innerHTML =
+        '<div class="ai-score-head">🤖 Claude AI đánh giá</div>' +
+        '<div class="ai-score-bars">' +
+          '<span>Phát âm <b>' + (ai.pronunciation ?? '—') + '</b></span>' +
+          '<span>Lưu loát <b>' + (ai.fluency ?? '—') + '</b></span>' +
+          '<span>Tổng <b>' + (ai.overall ?? '—') + '</b></span>' +
+        '</div>' +
+        (ai.feedback ? '<div class="ai-feedback">💡 ' + esc(ai.feedback) + '</div>' : '');
+      aiBox.className = 'ai-score ai-score--done';
+      aiBox.hidden = false; // ensure visible even if parent or prior code set hidden
+    } catch { if (aiBox && aiBox.isConnected) aiBox.hidden = true; }
+  }
+
   function renderFeedback(f) {
     const box = $('#fb'); box.hidden = false;
     if (f.error) {
@@ -378,7 +406,15 @@
       ring('Fluency', sc.fluency) + ring('Intonation', sc.intonation) + '</div>' +
       '<div class="words">' + words + '</div>' +
       '<div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>' +
-      (sc.lowConfidence ? '<div class="err" style="margin-top:6px">🤔 Nhận diện chưa chắc chắn — thử nói lại rõ hơn để chấm chính xác.</div>' : '');
+      (sc.lowConfidence ? '<div class="err" style="margin-top:6px">🤔 Nhận diện chưa chắc chắn — thử nói lại rõ hơn để chấm chính xác.</div>' : '') +
+      '<div class="ai-score ai-score--loading">⏳ Đang chấm bằng Claude AI…</div>';
+    // Async: Claude AI scores in background, updates UI when ready
+    const aiBox = box.querySelector('.ai-score');
+    if (aiBox && sc.transcript && f.sentence && f.sentence.text) {
+      claudeScoreAsync(f.sentence.text, sc.transcript, aiBox);
+    } else if (aiBox) {
+      aiBox.hidden = true;
+    }
     // Update record panel
     const ys = $('#you-said-text'); if (ys) ys.textContent = sc.transcript || '–';
     const mp = $('#match-pct'); if (mp) mp.textContent = sc.overall != null ? 'Match ' + sc.overall + '%' : 'Match –';

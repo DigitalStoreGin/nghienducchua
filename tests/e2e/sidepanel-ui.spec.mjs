@@ -398,3 +398,83 @@ test('Record panel shows when Nói & chấm is clicked', async ({ page }) => {
   // Give it a generous timeout since startShadow does async work.
   await expect(page.locator('#record-panel')).toBeVisible({ timeout: 5000 });
 });
+
+// ---------------------------------------------------------------------------
+// TEST 7: Claude AI scoring appears after local score
+// ---------------------------------------------------------------------------
+test('Claude AI scoring appears after local score', async ({ page }) => {
+  await openSidepanel(page);
+
+  // Register route for the Claude scoring endpoint BEFORE triggering fetch.
+  await page.route('**/score-ai', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        pronunciation: 82,
+        fluency: 88,
+        overall: 85,
+        feedback: 'Phát âm tốt, chú ý âm cuối',
+        engine: 'claude-haiku',
+        transcript: 'Dann bist du hier genau richtig',
+      }),
+    })
+  );
+
+  // Inject one sentence so the feedback event has a valid sentence to look up.
+  await page.evaluate(() =>
+    window.testInjectSentences([
+      { id: 0, startMs: 0, endMs: 3000, text: 'Dann bist du hier genau richtig.' },
+    ])
+  );
+
+  // Wait for the sentence row to appear before firing feedback.
+  await page.waitForFunction(
+    () => document.querySelectorAll('#list .row, #sentence-list .row').length === 1,
+    { timeout: 5000 }
+  );
+
+  // Fire the feedback port message that triggers renderFeedback() and then
+  // claudeScoreAsync().
+  await page.evaluate(() =>
+    window.testFirePortMessage({
+      sd: 'evt',
+      evt: 'feedback',
+      payload: {
+        score: {
+          words: [],
+          pronunciation: 72,
+          fluency: 78,
+          overall: 75,
+          transcript: 'Dann bist du hier genau richtig',
+          engine: 'webspeech (trang)',
+          intonation: null,
+          lowConfidence: false,
+          counts: { correct: 0, near: 0, wrong: 0, missing: 0, extra: 0, total: 5 },
+        },
+        sentence: { id: 0, startMs: 0, endMs: 3000, text: 'Dann bist du hier genau richtig.' },
+        rep: 0,
+      },
+    })
+  );
+
+  // #fb is inside #view-practice which is hidden by default.
+  // Expose view-practice so the .ai-score element is visible to Playwright.
+  await page.evaluate(() => {
+    const vp = document.getElementById('view-practice');
+    if (vp) vp.hidden = false;
+  });
+
+  // Wait for the AI score box to finish loading (.ai-score--done is added by
+  // claudeScoreAsync() after the fetch resolves and the result is rendered).
+  await page.waitForSelector('.ai-score--done', { timeout: 8000 });
+
+  // The AI score box must mention "Claude" and display a score >= 80.
+  const aiBoxText = await page.locator('.ai-score--done').textContent();
+
+  expect(aiBoxText, 'AI score box mentions Claude').toContain('Claude');
+
+  // Extract all numbers from the text and check at least one is >= 80.
+  const numbers = (aiBoxText.match(/\d+/g) || []).map(Number);
+  const hasHighScore = numbers.some((n) => n >= 80);
+  expect(hasHighScore, `AI score box contains a number >= 80 (found: ${numbers.join(', ')})`).toBe(true);
+});

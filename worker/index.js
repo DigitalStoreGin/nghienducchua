@@ -79,6 +79,12 @@ export default {
       return handleAdmin(request, url.pathname, env);
     }
 
+    // Public pronunciation scoring (rate-limited by IP, no auth required —
+    // only receives the text transcript + target sentence, never raw audio).
+    if (url.pathname === '/score-ai') {
+      return handleScoreAI(request, env);
+    }
+
     // All other routes require Supabase JWT
     const authHeader = request.headers.get('Authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -118,6 +124,60 @@ export default {
     return json({ error: 'not_found' }, 404);
   },
 };
+
+// ── /score-ai  — Claude Haiku pronunciation scoring ──────────
+// Public endpoint (rate-limited by IP). Receives text transcript + target
+// sentence; never stores audio. Claude returns structured JSON score.
+async function handleScoreAI(request, env) {
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+
+  // Burst rate limit per IP (reuse same binding as /log).
+  if (env.RATE_LIMITER) {
+    const ip = request.headers.get('CF-Connecting-IP') || 'anon';
+    try {
+      const { success } = await env.RATE_LIMITER.limit({ key: 'score:' + ip });
+      if (!success) return json({ error: 'rate_limited' }, 429);
+    } catch (_) {}
+  }
+
+  if (!env.ANTHROPIC_API_KEY) return json({ error: 'not_configured' }, 503);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
+  const { target, transcript, targetLang = 'de' } = body;
+  if (!target || !transcript) return json({ error: 'missing_fields' }, 400);
+  if (String(target).length > 400 || String(transcript).length > 400) return json({ error: 'too_long' }, 400);
+
+  const LANG_NAME = { de: 'German', en: 'English', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese' };
+  const langName = LANG_NAME[targetLang] || targetLang;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: `You are evaluating ${langName} pronunciation. Respond ONLY with a JSON object — no markdown, no explanation.`,
+        messages: [{
+          role: 'user',
+          content: `Target: "${target}"\nStudent said: "${transcript}"\n\nReturn JSON only:\n{"pronunciation":0-100,"fluency":0-100,"overall":0-100,"feedback":"helpful tip in Vietnamese ≤12 words"}`,
+        }],
+      }),
+    });
+    if (!resp.ok) return json({ error: 'anthropic-' + resp.status }, 502);
+    const data = await resp.json();
+    const raw = (data?.content?.[0]?.text || '').trim().replace(/^```json\n?|\n?```$/g, '').trim();
+    const score = JSON.parse(raw);
+    return json({ ...score, engine: 'claude-haiku', transcript });
+  } catch (e) {
+    return json({ error: 'score-error', message: e.message }, 500);
+  }
+}
 
 // ── Supabase JWT verification ────────────────────────────────
 async function verifyToken(token, env) {
