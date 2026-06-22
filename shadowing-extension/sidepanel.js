@@ -210,14 +210,15 @@
     const circ = 213.6; // 2π × r(34)
     const fill = $('#score-circle-fill');
     const num = $('#record-score-num');
+    // SVG elements: className is read-only (SVGAnimatedString) → dùng setAttribute.
     if (score == null) {
-      if (fill) { fill.style.strokeDashoffset = circ; fill.className = 'score-circle-fill'; }
+      if (fill) { fill.style.strokeDashoffset = circ; fill.setAttribute('class', 'score-circle-fill'); }
       if (num) num.textContent = '–';
     } else {
       const pct = Math.max(0, Math.min(100, Math.round(score)));
       if (fill) {
         fill.style.strokeDashoffset = (circ * (1 - pct / 100)).toFixed(1);
-        fill.className = 'score-circle-fill' + (pct >= 75 ? ' hi' : pct >= 50 ? ' mid' : ' lo');
+        fill.setAttribute('class', 'score-circle-fill' + (pct >= 75 ? ' hi' : pct >= 50 ? ' mid' : ' lo'));
       }
       if (num) num.textContent = pct + '%';
     }

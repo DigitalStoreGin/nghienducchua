@@ -164,8 +164,8 @@
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',
           vad: { silero: !!this.settings?.useSileroVad },
         });
-        // Guard: maxMs (ghi) + 4s (Groq) + 20s (offline Whisper) + buffer.
-        const guardMs = maxMs + 12000;
+        // Guard: maxMs (ghi) + 2s (Groq) + 20s (offline Whisper) + buffer.
+        const guardMs = maxMs + 6000;
         res = await Promise.race([
           recPromise,
           new Promise((_, rej) => setTimeout(() => rej(new Error('score-timeout')), guardMs)),

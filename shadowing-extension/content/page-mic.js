@@ -147,7 +147,7 @@
     try {
       const resp = await Promise.race([
         fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 4000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 2000)),
       ]);
       if (!resp.ok) return null;
       const data = await resp.json();
