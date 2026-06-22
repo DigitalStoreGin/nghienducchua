@@ -331,6 +331,7 @@
   function pickWhisperModel(override) { return WS.pickWhisperModel(detectHardware(), override); }
   function pickThreads() { return WS.pickThreads(detectHardware()); }
   const TINY = (WS.WHISPER_MODELS && WS.WHISPER_MODELS.tiny) || { id: 'Xenova/whisper-tiny', short: 'tiny' };
+  const BASE = (WS.WHISPER_MODELS && WS.WHISPER_MODELS.base) || { id: 'Xenova/whisper-base', short: 'base' };
   function shortFromId(id) { return String(id || '').replace('Xenova/whisper-', '') || 'base'; }
 
   // ── Trạng thái nâng cấp dần ──────────────────────────────────────────
@@ -363,8 +364,11 @@
   }
 
   // Nạp sẵn model để lần ghi âm đầu không phải chờ.
-  //  Chế độ AUTO: nạp TINY trước (nhẹ ~75MB, sẵn sàng nhanh) cho khách dùng ngay,
-  //  rồi tự nâng cấp lên model PHÙ HỢP MÁY ở nền. Chọn tay (override) -> nạp đúng model đó.
+  //  Chế độ AUTO (v3):
+  //   - Sàn = BASE (~145MB) — không dùng tiny. BASE sẵn sàng trong ~3-5s.
+  //   - Nếu đích = SMALL: nạp BASE trước, sau khi BASE ready → nạp SMALL ở nền.
+  //   - Nếu đích = BASE (máy yếu/ít nhân): chỉ nạp BASE, không nâng cấp.
+  //   - Chọn tay: nạp đúng model đó (bất kỳ model, kể cả tiny/medium theo ý user).
   async function warmupWhisper(override) {
     if (!(await isWhisperAvailable())) return false;
     const target = pickWhisperModel(override);
@@ -374,15 +378,21 @@
     try {
       const w = getWorker();
       const manual = override && override !== 'auto';
-      if (manual || target.id === TINY.id) {
-        // Khách chọn tay, hoặc máy yếu chỉ hợp tiny -> nạp đúng 1 model.
-        activeModelId = activeModelId || TINY.id; // tạm dùng tiny tới khi 'ready'
+      if (manual) {
+        // Chọn tay: nạp đúng model user muốn (tiny/base/small/medium).
+        activeModelId = activeModelId || target.id;
         _pendingUpgrade = null;
         w.postMessage({ type: 'warmup', model: target.id, numThreads: threads });
+      } else if (target.id === BASE.id) {
+        // Máy vừa/yếu — đích là BASE, không cần nâng cấp.
+        activeModelId = activeModelId || BASE.id;
+        _pendingUpgrade = null;
+        w.postMessage({ type: 'warmup', model: BASE.id, numThreads: threads });
       } else {
-        // AUTO: tiny trước, đích phù hợp máy nâng cấp ở nền.
+        // Máy mạnh — đích là SMALL: nạp BASE trước (sàn), nâng SMALL ở nền.
         _pendingUpgrade = { id: target.id, threads };
-        w.postMessage({ type: 'warmup', model: TINY.id, numThreads: threads });
+        activeModelId = activeModelId || BASE.id;
+        w.postMessage({ type: 'warmup', model: BASE.id, numThreads: threads });
       }
       return true;
     } catch (_) { return false; }
@@ -426,7 +436,7 @@
     let transcribeModel; // undefined cho AUTO
     if (manual) transcribeModel = pickWhisperModel(opts.whisperModel).id;
     else if (!activeModelId && !_warmupStarted) { try { warmupWhisper('auto'); } catch (_) {} }
-    const labelModel = transcribeModel || activeModelId || TINY.id;
+    const labelModel = transcribeModel || activeModelId || BASE.id;
     // Bắt Web Speech SONG SONG (dự phòng không cần nói lại). Lấy kết quả sau khi ghi xong.
     const parallel = startParallelWebSpeech(opts);
     let webspeechBackup = '';
@@ -515,7 +525,7 @@
       w.postMessage({ type: 'transcribe', id, audio: audio16k, sampleRate: 16000, model: transcribeModel, numThreads: threads, language: opts.language || 'german' }, [audio16k.buffer]);
     });
     activeModelId = result.model || activeModelId;
-    return { text: (result.text || '').trim(), words: result.words || [], model: result.model, modelShort: shortFromId(result.model || transcribeModel || activeModelId || TINY.id) };
+    return { text: (result.text || '').trim(), words: result.words || [], model: result.model, modelShort: shortFromId(result.model || transcribeModel || activeModelId || BASE.id) };
   }
 
   async function recognize(opts) {

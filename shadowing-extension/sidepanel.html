@@ -509,10 +509,11 @@
         <div class="setting-row">
           <label class="setting-label" for="whisperModel">Model Whisper</label>
           <select id="whisperModel" class="setting-select">
-            <option value="auto">Tự động (theo máy)</option>
-            <option value="tiny">Tiny — nhẹ (máy 4GB)</option>
-            <option value="base">Base — cân bằng</option>
-            <option value="small">Small — mạnh nhất (máy 8GB)</option>
+            <option value="auto">Tự động (base ↔ small, ~30% RAM)</option>
+            <option value="base">Base — nhanh (~145MB, máy yếu)</option>
+            <option value="small">Small — tốt nhất (~480MB, ≥ 4GB RAM)</option>
+            <option value="medium">Medium — mạnh nhất (~1.5GB, ≥ 8GB RAM)</option>
+            <option value="tiny">Tiny — cực nhẹ (~75MB, chỉ ép tay)</option>
           </select>
         </div>
         <!-- Hiển thị máy đã phát hiện + model đang chọn -->

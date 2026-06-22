@@ -1646,20 +1646,23 @@
     if (!window.ShadowMic || !window.ShadowMic.detectHardware) { el.textContent = ''; return; }
     try {
       const avail = await window.ShadowMic.isWhisperAvailable();
-      const st = window.ShadowMic.whisperStatus ? window.ShadowMic.whisperStatus(settings.whisperModel) : null;
-      const hw = (st && st.hw) || window.ShadowMic.detectHardware();
+      const st  = window.ShadowMic.whisperStatus ? window.ShadowMic.whisperStatus(settings.whisperModel) : null;
+      const hw  = (st && st.hw) || window.ShadowMic.detectHardware();
       const sel = window.ShadowMic.pickWhisperModel(settings.whisperModel);
-      const memTxt = hw.mem >= 8 ? '8GB+' : hw.mem + 'GB';
+      // describeChoice: mô tả rõ lý do chọn (% RAM, cores) — dùng nếu có
+      const desc = (window.WhisperSelect && window.WhisperSelect.describeChoice)
+        ? window.WhisperSelect.describeChoice(hw, settings.whisperModel === 'auto' ? 'auto' : settings.whisperModel)
+        : (sel.short.toUpperCase() + ' · ' + sel.label);
+      const memEff = (window.WhisperSelect && window.WhisperSelect.effectiveMem) ? window.WhisperSelect.effectiveMem(hw) : hw.mem;
+      const memTxt = memEff >= 8 ? memEff + 'GB' : hw.mem + 'GB';
       if (settings.engine !== 'whisper') {
         el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân CPU';
       } else if (!avail) {
-        el.textContent = '⚠️ Thiếu thư viện Whisper (vendor/) — đang dùng Web Speech tạm. Xem README.';
+        el.textContent = '⚠️ Thiếu thư viện Whisper (vendor/) — đang dùng Web Speech tạm.';
       } else if (st && st.upgrading && st.active) {
-        // Đang dùng model nhỏ, nâng lên model phù hợp máy ở nền.
-        el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân → Whisper ' + st.active.toUpperCase() +
-          ' (đang nâng lên ' + sel.short.toUpperCase() + '…)';
+        el.textContent = '🖥️ Đang chạy ' + st.active.toUpperCase() + ', nâng lên ' + sel.short.toUpperCase() + ' ở nền… · ' + memTxt;
       } else {
-        el.textContent = '🖥️ ' + memTxt + ' RAM · ' + hw.cores + ' nhân → Whisper ' + sel.short.toUpperCase() + ' (' + sel.label + ')';
+        el.textContent = '🖥️ ' + desc;
       }
     } catch (_) { el.textContent = ''; }
   }
