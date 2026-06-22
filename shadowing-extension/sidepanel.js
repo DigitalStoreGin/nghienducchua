@@ -418,13 +418,20 @@
   function renderFeedback(f) {
     const box = $('#fb'); box.hidden = false;
     if (f.error) {
-      let m = f.error, micFix = false;
-      if (/server-unavailable/.test(f.error)) m = 'Cannot reach STT Server (' + f.error.replace('server-unavailable:', '') + '). Check server URL or switch Engine to Web Speech.';
-      else if (/whisper-unavailable/.test(f.error)) m = 'Whisper not ready — run build-release to embed it, or switch Engine to Web Speech.';
-      else if (/^mic|not-allowed/.test(f.error)) { m = 'Side Panel cần quyền micro của <b>extension</b> (khác với quyền của youtube.com). Bấm nút bên dưới để cấp quyền.'; micFix = true; }
-      else if (/empty-transcript/.test(f.error)) { m = '🤔 Nothing heard. Try speaking louder or check your mic.'; }
+      let m = f.error, micFix = false, shortMsg = 'Chưa chấm được', hint = '';
+      if (/server-unavailable/.test(f.error)) { m = 'Không kết nối được STT Server (' + f.error.replace('server-unavailable:', '') + '). Đổi Engine sang Web Speech trong Cài đặt.'; shortMsg = 'Lỗi server'; }
+      else if (/whisper-unavailable/.test(f.error)) { m = 'Whisper chưa sẵn sàng — đang dùng Web Speech tạm. Thử lại sau giây lát.'; shortMsg = 'Đang tải model…'; }
+      else if (/score-timeout/.test(f.error)) { m = '⏱️ Chấm quá lâu (mạng chậm hoặc model đang tải). Hãy thử lại — nói rõ, gần micro.'; shortMsg = 'Hết thời gian — thử lại'; hint = 'Nhấn 🎤 Chấm điểm để thử lại.'; }
+      else if (/^mic|not-allowed|denied|audio-capture/.test(f.error)) { m = 'Cần quyền micro. Bấm 🔒/🎤 cạnh thanh địa chỉ của tab video → Microphone → Allow, rồi bấm Chấm điểm lại.'; micFix = true; shortMsg = 'Cần quyền micro'; hint = 'Cấp quyền micro rồi thử lại.'; }
+      else if (/empty-transcript|silent/.test(f.error)) { m = '🤔 Không nghe thấy gì. Nói to hơn, gần micro, rồi bấm 🎤 Chấm điểm.'; shortMsg = 'Không nghe thấy'; hint = 'Nói to & rõ hơn rồi bấm 🎤 Chấm điểm.'; }
       box.innerHTML = '<div class="err">⚠️ ' + m + (micFix ? ' <button class="mini sh" id="micfix">🎤 Cấp quyền micro</button>' : '') + '</div>';
       if (micFix) $('#micfix').onclick = () => openMicPermissionPage();
+      // Cập nhật record panel để KHÔNG bị "đứng hình" — người dùng thấy ngay lý do.
+      const stxt = $('#record-status-text'); if (stxt) stxt.textContent = shortMsg;
+      const dot = $('#record-listening-dot'); if (dot) dot.classList.remove('active');
+      const ys = $('#you-said-text'); if (ys) ys.textContent = hint || m.replace(/<[^>]+>/g, '');
+      setRecordScore(null);
+      stopWaveform();
       return;
     }
     const sc = f.score;
@@ -1448,16 +1455,33 @@
     }; }
 
   // Record panel
-  function showRecordPanel(show) { const p = $('#record-panel'); if (p) p.hidden = !show; }
+  function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) syncToolbarHeight(); p.hidden = !show; } }
   { const b = $('#btn-record-close'); if (b) b.onclick = () => showRecordPanel(false); }
   // Nút "Chấm điểm" — bỏ qua phát mẫu, ghi âm và chấm ngay lập tức.
-  { const b = $('#btn-rescore'); if (b) b.onclick = () => {
+  { const b = $('#btn-rescore'); if (b) b.onclick = async () => {
     if (!sentences.length) return;
-    const el = $('#you-said-text'); if (el) el.textContent = '';
-    setRecordScore(null);
-    current = Math.max(0, Math.min(current, sentences.length - 1));
-    cmd('select', { i: current, play: false });
-    cmd('recordOnly', { i: current });
+    if (b.disabled) return; b.disabled = true;
+    try {
+      // QUAN TRỌNG: đảm bảo quyền micro TRƯỚC. Nếu chưa cấp, getUserMedia sẽ treo
+      // ở tab video (hộp thoại hiện trên trang, không phải Side Panel) khiến người
+      // dùng tưởng "bấm không có gì xảy ra". enableMic hiện hộp thoại + báo trạng thái.
+      const stxt = $('#record-status-text');
+      if (settings.autoRecord) {
+        if (stxt) stxt.textContent = 'Đang bật micro…';
+        const ok = await enableMic({ silent: true });
+        if (!ok) {
+          if (stxt) stxt.textContent = 'Cần quyền micro';
+          setStatus('🎤 Hãy cấp quyền micro (xem hộp thoại trên tab video) rồi bấm Chấm điểm lại.', 'warn');
+          return;
+        }
+      }
+      const el = $('#you-said-text'); if (el) el.textContent = '';
+      setRecordScore(null);
+      if (stxt) stxt.textContent = 'Đang chuẩn bị…';
+      current = Math.max(0, Math.min(current, sentences.length - 1));
+      cmd('select', { i: current, play: false });
+      cmd('recordOnly', { i: current });
+    } finally { b.disabled = false; }
   }; }
 
   // Queue Complete modal
@@ -1719,6 +1743,24 @@
       default: break;
     }
   });
+  // --- Đồng bộ chiều cao thanh công cụ dưới → biến CSS --toolbar-h ---
+  // Thanh công cụ 2 hàng có nhãn cao hơn giá trị mặc định trong CSS. Nếu lệch,
+  // record panel (ngồi ở bottom:var(--toolbar-h)) bị thanh công cụ che mất 2 nút
+  // Listen/Chấm điểm. Đo CHÍNH XÁC chiều cao thật rồi áp vào biến → luôn vừa khít,
+  // bất kể font/dark mode/màn hình nhỏ.
+  function syncToolbarHeight() {
+    const tb = $('#bottom-toolbar'); if (!tb || tb.hidden) return;
+    const h = Math.ceil(tb.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty('--toolbar-h', h + 'px');
+  }
+  syncToolbarHeight();
+  window.addEventListener('resize', syncToolbarHeight);
+  window.addEventListener('load', syncToolbarHeight);
+  try {
+    const tb = $('#bottom-toolbar');
+    if (tb && window.ResizeObserver) { const ro = new ResizeObserver(syncToolbarHeight); ro.observe(tb); }
+  } catch (_) {}
+
   // Load persistent data
   loadStreak();
   loadSentStatus();

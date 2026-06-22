@@ -145,9 +145,12 @@
     form.append('file', blob, 'recording.' + ext);
     form.append('lang', lang || 'de');
     try {
+      // Timeout 8s: đây là ĐƯỜNG CHÍNH (Groq nhanh & chính xác). Groq thường trả
+      // trong ~1-2s; 8s chỉ là lưới an toàn để KHÔNG cắt sớm khi mạng/upload chậm,
+      // tránh rơi xuống fallback rồi trả rỗng (gây "không chấm được").
       const resp = await Promise.race([
         fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 2000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 8000)),
       ]);
       if (!resp.ok) return null;
       const data = await resp.json();

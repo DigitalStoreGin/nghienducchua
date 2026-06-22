@@ -13,9 +13,10 @@ body {
   color: #202124;
   font: 13px / 1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow: hidden;
-  /* Chiều cao thực của thanh công cụ 2 hàng có nhãn (~104px). Dùng chung để
-     các panel nổi (record/dictbox) và padding view không bị toolbar che. */
-  --toolbar-h: 104px;
+  /* Chiều cao thực của thanh công cụ 2 hàng có nhãn. Giá trị mặc định ~120px là
+     phỏng đoán an toàn; sidepanel.js ĐO CHÍNH XÁC lúc chạy và ghi đè biến này để
+     record panel (bottom:var(--toolbar-h)) không bao giờ bị toolbar che 2 nút. */
+  --toolbar-h: 120px;
 }
 button, input, select, textarea { font: inherit; }
 button:focus-visible,
@@ -763,35 +764,43 @@ body.dark .score-circle-track { stroke: #3a3a50; }
 body.dark .record-score-num { color: var(--text); }
 body.dark .record-status-text { color: var(--text); }
 
-/* 2 nút hành động: Listen / Chấm điểm — pinned at bottom, không bị đẩy */
+/* 2 nút hành động: Listen / Chấm điểm — luôn ghim đáy panel, không bao giờ bị đẩy */
 .record-panel-footer {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
-  margin-top: 10px;
-  padding-bottom: 2px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eceff1;
 }
 .record-action-btn {
   flex: 1 1 0;
   min-width: 92px;
-  padding: 9px 10px;
-  border: 1px solid #dadce0;
-  border-radius: 20px;
+  padding: 12px 12px;
+  border: 1.5px solid #dadce0;
+  border-radius: 24px;
   background: #fff;
   color: #1a73e8;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background .12s, border-color .12s, box-shadow .12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background .12s, border-color .12s, box-shadow .12s, transform .08s;
 }
 .record-action-btn:hover { background: #e8f0fe; }
-/* Nút chính "Chấm điểm" — tô đặc màu xanh để nổi bật */
+.record-action-btn:active { transform: scale(.97); }
+.record-action-btn:disabled { opacity: .55; cursor: default; }
+/* Nút chính "Chấm điểm" — tô đặc màu xanh + đổ bóng nhẹ để nổi bật */
 .record-action-btn--primary {
   background: #1a73e8;
   border-color: #1a73e8;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(26,115,232,.28);
 }
 .record-action-btn--primary:hover { background: #1763c7; border-color: #1763c7; }
 body.dark .record-action-btn { background: var(--bg2); border-color: var(--border); color: var(--accent); }
@@ -1656,6 +1665,8 @@ body.dark .current-sentence-wrap { background: var(--bg2); }
 body.dark .current-text { color: var(--text); }
 body.dark .trans-text { color: var(--text2); }
 body.dark .record-panel { background: var(--bg2); border-color: var(--border); }
+body.dark .record-panel-footer { border-top-color: var(--border); }
+body.dark .you-said-text { color: var(--text); }
 body.dark .bottom-toolbar { background: var(--bg); border-color: var(--border); }
 body.dark .toolbar-row--tools { border-top-color: var(--border); }
 body.dark .tb-btn { color: var(--text); }

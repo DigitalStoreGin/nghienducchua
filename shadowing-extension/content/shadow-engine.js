@@ -164,8 +164,9 @@
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',
           vad: { silero: !!this.settings?.useSileroVad },
         });
-        // Guard: maxMs (ghi) + 2s (Groq) + 20s (offline Whisper) + buffer.
-        const guardMs = maxMs + 6000;
+        // Guard cho TOÀN BỘ quá trình recognize = maxMs (ghi) + ~8s (Groq) + buffer
+        // để fallback offline Whisper kịp khởi động. Quá mốc này coi như treo → báo lỗi.
+        const guardMs = maxMs + 12000;
         res = await Promise.race([
           recPromise,
           new Promise((_, rej) => setTimeout(() => rej(new Error('score-timeout')), guardMs)),
