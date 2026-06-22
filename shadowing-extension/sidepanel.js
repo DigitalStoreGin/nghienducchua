@@ -420,6 +420,38 @@
     } catch { if (aiBox && aiBox.isConnected) aiBox.hidden = true; }
   }
 
+  function triggerCelebration(tier) {
+    const wrap = $('#record-score-circle-wrap') || document.querySelector('.record-score-circle-wrap');
+    if (!wrap) return;
+    // Remove any leftover confetti from prior run
+    wrap.querySelectorAll('.confetti-piece').forEach((el) => el.remove());
+    wrap.classList.remove('score-bounce', 'score-pulse');
+    // Force reflow so animation restarts
+    void wrap.offsetWidth;
+    if (tier === 'excellent') {
+      wrap.classList.add('score-bounce');
+      const colors = ['#34a853', '#fbbc04', '#ea4335', '#1a73e8', '#9c27b0', '#ff9800', '#00bcd4'];
+      for (let i = 0; i < 22; i++) {
+        const p = document.createElement('span');
+        p.className = 'confetti-piece';
+        const angle = (i / 22) * 2 * Math.PI + (Math.random() - .5) * .6;
+        const dist  = 35 + Math.random() * 45;
+        p.style.cssText =
+          '--cx:' + (Math.cos(angle) * dist).toFixed(0) + 'px;' +
+          '--cy:' + (Math.sin(angle) * dist - 20).toFixed(0) + 'px;' +
+          '--cr:' + Math.round(Math.random() * 540 - 270) + 'deg;' +
+          'background:' + colors[i % colors.length] + ';' +
+          'animation-delay:' + (i * 0.025).toFixed(3) + 's;' +
+          'border-radius:' + (Math.random() > .5 ? '50%' : '2px') + ';';
+        wrap.appendChild(p);
+      }
+      setTimeout(() => wrap.querySelectorAll('.confetti-piece').forEach((el) => el.remove()), 1600);
+    } else if (tier === 'good') {
+      wrap.classList.add('score-pulse');
+    }
+    setTimeout(() => wrap.classList.remove('score-bounce', 'score-pulse'), 800);
+  }
+
   function renderFeedback(f) {
     const box = $('#fb'); box.hidden = false;
     if (f.error) {
@@ -444,6 +476,7 @@
       const stxt = $('#record-status-text'); if (stxt) stxt.textContent = shortMsg;
       const dot = $('#record-listening-dot'); if (dot) dot.classList.remove('active');
       const ys = $('#you-said-text'); if (ys) ys.textContent = hint || m.replace(/<[^>]+>/g, '');
+      const tm = $('#score-tier-msg'); if (tm) tm.hidden = true;
       setRecordScore(null);
       stopWaveform();
       return;
@@ -489,8 +522,39 @@
     } else if (aiBox) {
       aiBox.hidden = true;
     }
-    // Update record panel
-    const ys = $('#you-said-text'); if (ys) ys.textContent = sc.transcript || '–';
+    // Update record panel — YOU SAID: colored word spans when available
+    const ys = $('#you-said-text');
+    if (ys) {
+      if (sc.words && sc.words.length) {
+        ys.innerHTML = sc.words.map((w) =>
+          '<span class="fw ' + w.status + '" title="' + (w.heard ? 'Nghe: ' + esc(w.heard) : 'Không nghe') + '">' + esc(w.text) + '</span>'
+        ).join('');
+      } else {
+        ys.textContent = sc.transcript || '–';
+      }
+    }
+    // Score tier message + celebration
+    const tm = $('#score-tier-msg');
+    if (tm) {
+      const pct = sc.overall != null ? Math.round(sc.overall) : null;
+      if (pct == null) {
+        tm.hidden = true;
+      } else if (pct >= 80) {
+        tm.textContent = '🎉 Xuất sắc! Phát âm rất tốt!';
+        tm.className = 'score-tier-msg tier-excellent';
+        tm.hidden = false;
+        setTimeout(() => triggerCelebration('excellent'), 350);
+      } else if (pct >= 65) {
+        tm.textContent = '👍 Tạm được! Tiếp tục cố gắng!';
+        tm.className = 'score-tier-msg tier-good';
+        tm.hidden = false;
+        setTimeout(() => triggerCelebration('good'), 350);
+      } else {
+        tm.textContent = '💪 Cố lên! Thử lại nhé!';
+        tm.className = 'score-tier-msg tier-try';
+        tm.hidden = false;
+      }
+    }
     setRecordScore(sc.overall != null ? sc.overall : null);
     const stxt = $('#record-status-text'); if (stxt) stxt.textContent = 'Sẵn sàng';
     const dot = $('#record-listening-dot'); if (dot) dot.classList.remove('active');
@@ -1546,6 +1610,7 @@
     showRecordPanel(true);
     setRecordScore(null);
     { const el = $('#you-said-text'); if (el) el.textContent = ''; }
+    { const tm = $('#score-tier-msg'); if (tm) tm.hidden = true; }
     const fb = $('#fb'); if (fb) fb.hidden = true;
     // Tạm dừng video trên trang để tiếng video không lẫn vào mic (echo).
     cmd('holdPause', { ms: 9000 });

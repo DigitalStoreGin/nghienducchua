@@ -590,12 +590,79 @@ body.hide-text .current-text.revealed { filter: none; }
   font-size: 13px;
   line-height: 2;
 }
-/* Word-level feedback (JS adds classes) */
-.fw { padding: 1px 3px; border-radius: 4px; }
+/* Word-level feedback (JS adds classes) — used in both #fb box and record panel YOU SAID */
+.fw {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 5px;
+  margin: 2px 1px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: default;
+  transition: transform .1s;
+}
+.fw:hover { transform: scale(1.06); }
 .fw.correct { background: #ceead6; color: #1e7e34; }
-.fw.near { background: #fde8c0; color: #a0522d; }
-.fw.wrong { background: #fad2cf; color: #b31412; }
-.fw.missing { color: #ea4335; text-decoration: line-through; }
+.fw.near    { background: #fef3cd; color: #856404; }
+.fw.wrong   { background: #fad2cf; color: #b31412; text-decoration: underline wavy #ea4335; }
+.fw.missing { background: #fce8e6; color: #ea4335; text-decoration: line-through; opacity: .75; }
+
+/* Score tier message — shown in record panel below circle */
+.score-tier-msg {
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  padding: 5px 14px;
+  border-radius: 20px;
+  margin: 8px auto 2px;
+  display: inline-block;
+  animation: tier-pop .35s cubic-bezier(.34,1.56,.64,1);
+}
+.score-tier-msg.tier-excellent { background: #ceead6; color: #1e7e34; }
+.score-tier-msg.tier-good      { background: #fef3cd; color: #856404; }
+.score-tier-msg.tier-try       { background: #fce8e6; color: #b31412; }
+@keyframes tier-pop {
+  0%   { transform: scale(.5); opacity: 0; }
+  100% { transform: scale(1);  opacity: 1; }
+}
+
+/* Confetti particles (created by JS on excellent scores) */
+.confetti-piece {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+  animation: confetti-burst 1.1s ease-out forwards;
+  z-index: 20;
+}
+@keyframes confetti-burst {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translate(var(--cx, 0px), var(--cy, -70px)) rotate(var(--cr, 360deg)) scale(.6); opacity: 0; }
+}
+/* Score circle bounce on excellent */
+@keyframes score-bounce {
+  0%   { transform: scale(1); }
+  25%  { transform: scale(1.22); }
+  55%  { transform: scale(.92); }
+  78%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+.score-bounce { animation: score-bounce .65s cubic-bezier(.36,.07,.19,.97); }
+/* Score circle pulse on good */
+@keyframes score-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.1); }
+}
+.score-pulse { animation: score-pulse .5s ease; }
+/* Glow on hi score */
+.score-circle-fill.hi {
+  stroke: #34a853;
+  filter: drop-shadow(0 0 6px rgba(52,168,83,.55));
+}
 
 /* ===== RECORD PANEL ===== */
 .record-panel {
@@ -656,15 +723,12 @@ body.hide-text .current-text.revealed { filter: none; }
 .you-said-text {
   font-size: 13px;
   color: #202124;
-  min-height: 18px;
-  /* Clamp to 2 lines so it can't push footer off-screen */
-  max-height: 40px;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  min-height: 24px;
+  max-height: 90px;
+  overflow-y: auto;
   word-break: break-word;
-  margin-bottom: 0;
+  margin-bottom: 2px;
+  line-height: 1.8;
 }
 /* Match % nổi bật trên 1 hàng riêng — legacy kept for compat */
 .record-panel-match {
@@ -712,6 +776,7 @@ body.hide-text .current-text.revealed { filter: none; }
   align-items: center;
   padding: 6px 0 2px;
   flex-shrink: 0;
+  overflow: visible;
 }
 .record-score-circle-wrap {
   position: relative;
@@ -720,6 +785,7 @@ body.hide-text .current-text.revealed { filter: none; }
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: visible;
 }
 .record-score-svg {
   transform: rotate(-90deg);
