@@ -141,6 +141,13 @@
         case 'recordOnly':
           eng.recordOnlyAt(msg.args && msg.args.i != null ? msg.args.i : eng.current);
           reply({ ok: true }); break;
+        case 'holdPause':
+          // Side Panel ghi âm → giữ video DỪNG trong N ms để tiếng video không lẫn vào mic.
+          eng.holdPause(msg.args && msg.args.ms);
+          reply({ ok: true }); break;
+        case 'releasePause':
+          eng.releasePause();
+          reply({ ok: true }); break;
         case 'shadowFav': {
           const favs = await S().getFavorites();
           const idxs = lastSentences.map((s, i) => (favs.some((f) => f.text === s.text) ? i : -1)).filter((i) => i >= 0);

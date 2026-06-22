@@ -165,12 +165,13 @@
     // --- VAD THICH NGHI theo RMS (mac dinh / du phong khi khong co Silero).
     //     autoGainControl khuech dai tieng on nen, nen do nen nhieu ~400ms dau roi tu dat nguong. ---
     const FRAME = 50;
-    let frames = 0, noiseSum = 0, noiseN = 0, thresh = 0.02;
+    let frames = 0, noiseSum = 0, noiseN = 0, thresh = 0.02, peakRms = 0;
     const monitor = setInterval(() => {
       analyser.getFloatTimeDomainData(sample);
       let rms = 0;
       for (let i = 0; i < sample.length; i++) rms += sample[i] * sample[i];
       rms = Math.sqrt(rms / sample.length);
+      if (rms > peakRms) peakRms = rms; // đỉnh âm lượng (chẩn đoán mic im lặng)
       pitch.push(estimatePitch(sample, ac.sampleRate));
       if (sileroActive) return; // Silero dang dieu khien spoke/silenceMs
       frames++;
@@ -209,7 +210,59 @@
     const decoded = await ac.decodeAudioData(await blob.arrayBuffer());
     const audio16k = downsampleTo16k(decoded.getChannelData(0), decoded.sampleRate);
     await ac.close();
-    return { audio16k, pitch, spokenMs, spoke };
+    return { audio16k, pitch, spokenMs, spoke, blob, peakRms };
+  }
+
+  // ── Groq Whisper qua background SW (đường đã được self-test xác nhận: ~250ms) ──
+  function blobToB64(blob) {
+    return new Promise((resolve, reject) => {
+      blob.arrayBuffer().then((buf) => {
+        const bytes = new Uint8Array(buf); let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        resolve(btoa(bin));
+      }).catch(reject);
+    });
+  }
+  async function groqTranscribe(blob, lang) {
+    if (!blob || !blob.size) return { _err: 'no-blob' };
+    let b64; try { b64 = await blobToB64(blob); } catch (e) { return { _err: 'encode-fail' }; }
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ _err: 'bg-timeout' }), 13000);
+      try {
+        chrome.runtime.sendMessage(
+          { sd: 'groq-transcribe', audioB64: b64, mime: blob.type || 'audio/webm', lang: lang || 'de' },
+          (r) => { clearTimeout(timer); if (chrome.runtime.lastError) resolve({ _err: 'bg-' + chrome.runtime.lastError.message }); else if (r && r.ok && r.data) resolve(r.data); else resolve({ _err: (r && r._err) || 'bg-fail' }); }
+        );
+      } catch (e) { clearTimeout(timer); resolve({ _err: 'bg-throw' }); }
+    });
+  }
+
+  // ── ĐƯỜNG CHÍNH MỚI: ghi âm NGAY TRONG SIDE PANEL (DOM extension, ổn định) → Groq.
+  //    Không qua content script, không Web Speech, không Whisper offline. Luôn trả kết
+  //    quả rõ ràng (transcript / no-voice / lỗi) — không bao giờ treo. ──
+  async function recordAndTranscribe(opts) {
+    opts = opts || {};
+    const ac = new AbortController();
+    currentAbort = ac; currentFinalize = false;
+    let data;
+    try {
+      data = await recordRaw(opts.maxMs || 7000, ac.signal, {
+        silero: !!opts.useSileroVad, noSpeechMs: 3500, silenceHangMs: 700, minMs: 500,
+      });
+    } catch (e) {
+      currentAbort = null;
+      const m = (e && e.message) || String(e);
+      if (/recording-aborted/.test(m)) return { error: 'aborted' };
+      return { error: 'rec:' + m };
+    }
+    currentAbort = null;
+    // VAD không thấy tiếng nói → mic im lặng → báo rõ (không gửi Groq để khỏi bịa).
+    if (!data.spoke) return { transcript: '', spoke: false, peakRms: data.peakRms, spokenMs: data.spokenMs, engine: 'no-voice' };
+    const groq = await groqTranscribe(data.blob, opts.lang2 || 'de');
+    if (groq && !groq._err && (groq.text || '').trim()) {
+      return { transcript: groq.text.trim(), words: groq.words || [], pitch: data.pitch, spokenMs: data.spokenMs, spoke: true, peakRms: data.peakRms, engine: 'groq-whisper' };
+    }
+    return { transcript: '', spoke: true, peakRms: data.peakRms, spokenMs: data.spokenMs, engine: 'silent (groq:' + ((groq && groq._err) || 'empty') + ')' };
   }
 
   async function webSpeech(opts) {
@@ -584,5 +637,5 @@
     return true;
   });
 
-  root.ShadowMic = { ensureMic, recognize, transcribeAudio16k, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper, whisperStatus };
+  root.ShadowMic = { ensureMic, recognize, transcribeAudio16k, recordAndTranscribe, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper, whisperStatus };
 })(window);

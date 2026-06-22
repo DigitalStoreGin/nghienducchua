@@ -1489,7 +1489,7 @@
 
   // Toolbar buttons wiring
   { const b = $('#btn-play-pause'); if (b) b.onclick = () => cmd('togglePlay', { target: settings.targetLang, native: settings.nativeLang }); }
-  { const b = $('#btn-shadow'); if (b) b.onclick = () => { showRecordPanel(true); startShadow(current); }; }
+  { const b = $('#btn-shadow'); if (b) b.onclick = () => { showRecordPanel(true); scoreNow(); }; }
   { const b = $('#btn-prev'); if (b) b.onclick = () => cmd('prev'); }
   { const b = $('#btn-next'); if (b) b.onclick = () => { cmd('next'); if (sentences[current + 1]) openPractice(current + 1); }; }
   { const b = $('#btn-dictation'); if (b) b.onclick = () => startDictation(); }
@@ -1503,7 +1503,7 @@
 
   // The "Luyện câu này" (ShadowEcho-style): Nghe mẫu / Nói & chấm / Câu sau
   { const b = $('#try-card-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) { cmd('select', { i: current }); speakText(s.text); } }; }
-  { const b = $('#try-card-speak'); if (b) b.onclick = () => { if (!sentences.length) return; openPractice(current); showRecordPanel(true); startShadow(current); }; }
+  { const b = $('#try-card-speak'); if (b) b.onclick = () => { if (!sentences.length) return; openPractice(current); showRecordPanel(true); scoreNow(); }; }
   { const b = $('#try-card-next'); if (b) b.onclick = () => { if (current + 1 < sentences.length) selectRow(current + 1); }; }
   // Nut "Tu dung" tren the luyen tap — bat/tat tu dung cuoi moi cau (segPause).
   function updatePauseToggle() {
@@ -1522,21 +1522,58 @@
 
   // Record panel
   function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) syncToolbarHeight(); p.hidden = !show; } }
-  { const b = $('#btn-record-close'); if (b) b.onclick = () => showRecordPanel(false); }
-  // Nút "Chấm điểm" — ghi âm và chấm ngay. KHÔNG chờ enableMic (gây kẹt "Đang bật
-  // micro…"): bản thân recordRaw đã tự gọi getUserMedia. Nếu chưa cấp quyền, luồng
-  // lỗi sẽ hiện "Cần quyền micro" để xử lý.
-  { const b = $('#btn-rescore'); if (b) b.onclick = () => {
-    if (!sentences.length) return;
-    // Đang ghi → nút này là "⏹ Dừng & chấm": dừng ghi ngay & chấm phần đã nói.
-    if (recState === 'recording') { pageMicSignal('finalize'); return; }
-    const el = $('#you-said-text'); if (el) el.textContent = '';
+  { const b = $('#btn-record-close'); if (b) b.onclick = () => { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {} showRecordPanel(false); }; }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // CHẤM ĐIỂM (kiến trúc mới): ghi âm + Groq + chấm điểm HOÀN TOÀN trong Side
+  // Panel (DOM extension ổn định, đã có quyền mic). Content script chỉ tạm dừng
+  // video. Bỏ hẳn content-script recording / Web Speech / Whisper offline.
+  // ───────────────────────────────────────────────────────────────────────
+  let panelRecording = false;
+  function setPanelRecUI(on) {
+    const dot = $('#record-listening-dot'); if (dot) dot.classList.toggle('active', on);
+    const st = $('#record-status-text'); if (st) st.textContent = on ? 'Listening…' : 'Đang chấm…';
+    const b = $('#btn-rescore'); if (b) b.innerHTML = on ? '⏹ Dừng &amp; chấm' : '🎤 Chấm điểm';
+  }
+  async function scoreNow() {
+    if (!sentences.length) { setStatus('Chưa có câu để chấm.', 'warn'); return; }
+    // Đang ghi → bấm lần nữa = "Dừng & chấm": chốt ngay phần đã nói.
+    if (panelRecording) { try { window.ShadowMic && window.ShadowMic.finalizeRecording(); } catch (_) {} return; }
+    if (!window.ShadowMic || !window.ShadowMic.recordAndTranscribe) { setStatus('Mic service chưa sẵn sàng — tải lại extension.', 'warn'); return; }
+    const idx = Math.max(0, Math.min(current, sentences.length - 1));
+    const s = sentences[idx]; if (!s) return;
+    current = idx;
+    showRecordPanel(true);
     setRecordScore(null);
-    const stxt = $('#record-status-text'); if (stxt) stxt.textContent = 'Đang chuẩn bị…';
-    current = Math.max(0, Math.min(current, sentences.length - 1));
-    cmd('select', { i: current, play: false });
-    cmd('recordOnly', { i: current });
-  }; }
+    { const el = $('#you-said-text'); if (el) el.textContent = ''; }
+    const fb = $('#fb'); if (fb) fb.hidden = true;
+    // Tạm dừng video trên trang để tiếng video không lẫn vào mic (echo).
+    cmd('holdPause', { ms: 9000 });
+    panelRecording = true; setPanelRecUI(true); startWaveform();
+    let res;
+    try {
+      res = await window.ShadowMic.recordAndTranscribe({ maxMs: 7000, lang2: settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad });
+    } catch (e) { res = { error: 'rec:' + ((e && e.message) || e) }; }
+    panelRecording = false; setPanelRecUI(false); stopWaveform();
+    cmd('releasePause');
+    if (!res || res.error) {
+      if (res && res.error === 'aborted') { const st = $('#record-status-text'); if (st) st.textContent = 'Sẵn sàng'; return; }
+      renderFeedback({ error: (res && res.error) || 'unknown' });
+      return;
+    }
+    if (!res.transcript) { renderFeedback({ error: 'empty-transcript', engine: res.engine }); return; }
+    // Chấm điểm NGAY trong Side Panel (phonetic.js đã nạp).
+    let score = null;
+    try {
+      if (window.SD && window.SD.phonetic) {
+        score = window.SD.phonetic.analyze(s.text, res.transcript, { pitch: res.pitch || [], spokenMs: res.spokenMs, refMs: (s.endMs - s.startMs) });
+      }
+    } catch (e) {}
+    if (!score) { renderFeedback({ error: 'Thiếu bộ chấm điểm (phonetic.js) — tải lại extension.' }); return; }
+    score.engine = res.engine;
+    renderFeedback({ score, sentence: s });
+  }
+  { const b = $('#btn-rescore'); if (b) b.onclick = () => scoreNow(); }
 
   // Queue Complete modal
   { const b = $('#modal-close'); if (b) b.onclick = () => { const m = $('#modal-backdrop'); if (m) m.hidden = true; }; }
@@ -1778,10 +1815,9 @@
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (isTyping(e.target)) return;
     switch (e.code) {
-      case 'Space': // ghi am cau hien tai / dung & cham neu dang ghi
+      case 'Space': // ghi âm câu hiện tại / dừng & chấm nếu đang ghi
         e.preventDefault();
-        if (recState === 'recording') { try { window.ShadowMic && window.ShadowMic.finalizeRecording(); } catch (_) {} pageMicSignal('finalize'); const fb = $('#finalizeBtn'); if (fb) fb.hidden = true; }
-        else startShadow(current);
+        scoreNow(); // tự xử lý: đang ghi → finalize; chưa ghi → bắt đầu ghi & chấm
         break;
       case 'ArrowLeft': e.preventDefault(); cmd('prev'); break;
       case 'ArrowRight': e.preventDefault(); cmd('next'); break;

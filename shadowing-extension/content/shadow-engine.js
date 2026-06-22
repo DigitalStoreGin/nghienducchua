@@ -132,6 +132,20 @@
       }
     },
 
+    // Giữ video DỪNG trong ms (watchdog mỗi 150ms) khi Side Panel đang ghi âm.
+    holdPause(ms) {
+      try { V().pause(); } catch (e) {}
+      this.releasePause();
+      this._holdTimer = setInterval(() => {
+        try { const v = V().el; if (v && !v.paused) v.pause(); } catch (e) {}
+      }, 150);
+      this._holdStop = setTimeout(() => { this.releasePause(); }, ms || 9000);
+    },
+    releasePause() {
+      if (this._holdTimer) { clearInterval(this._holdTimer); this._holdTimer = null; }
+      if (this._holdStop) { clearTimeout(this._holdStop); this._holdStop = null; }
+    },
+
     async recordOnlyAt(i) {
       if (this.busy) { this.runId++; this.busy = false; }
       this.busy = true; this.idx = i; this.rep = 0;
