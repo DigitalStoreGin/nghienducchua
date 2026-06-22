@@ -1364,10 +1364,22 @@
     box.innerHTML = html;
     const st = await pageMicRequest('selftest', { record: true, recMs: 4000 });
     const report = st && st.ok && st.report ? st.report : null;
+
+    // KẾT LUẬN nổi bật lên đầu: mic có thu được tiếng + Groq nghe được gì.
+    let verdict = '';
+    if (report && report.steps) {
+      const micStep = report.steps.find((s) => /Mức âm mic/.test(s.name));
+      const groqStep = report.steps.find((s) => /Groq chấm/.test(s.name));
+      if (micStep && !micStep.ok) verdict = '<div class="err">🔴 <b>MICRO KHÔNG THU ĐƯỢC TIẾNG.</b> ' + esc(micStep.detail) + '<br>→ Windows: Settings → System → Sound → <b>Input</b> → chọn đúng mic + kéo Volume lên 100%. Thử nói sát mic.</div>';
+      else if (micStep && groqStep && groqStep.ok) verdict = '<div class="ok-banner" style="background:#e6f4ea;color:#137333;padding:8px;border-radius:8px;margin-bottom:6px">🟢 <b>MỌI THỨ HOẠT ĐỘNG!</b> Groq ' + esc(groqStep.detail) + '</div>';
+      else if (micStep && micStep.ok) verdict = '<div class="hintline">🟡 Mic thu tốt nhưng Groq chưa ra chữ — xem dòng Groq bên dưới.</div>';
+    }
+    html = verdict + html;
+
     if (report && report.steps) {
       report.steps.forEach((s) => { html += row(s.ok, s.name, s.detail); });
     } else {
-      html += row(false, 'Self-test ghi âm', 'không chạy được (content script cũ? Tải lại tab)');
+      html += row(false, 'Self-test ghi âm', 'không chạy được — TẢI LẠI extension (chrome://extensions → Reload) rồi thử lại');
     }
 
     // Khối văn bản để COPY gửi support.
@@ -1381,9 +1393,10 @@
     }
     const reportText = lines.join('\n');
     html += '<div class="hintline">📋 Sao chép báo cáo dưới đây rồi gửi cho tôi:</div>';
-    html += '<textarea id="diag-report" readonly style="width:100%;height:120px;font:11px monospace;margin-top:4px;border:1px solid #dadce0;border-radius:6px;padding:6px;background:#f8f9fa;color:#202124">' + esc(reportText) + '</textarea>';
+    html += '<textarea id="diag-report" readonly style="width:100%;height:110px;font:11px monospace;margin-top:4px;border:1px solid #dadce0;border-radius:6px;padding:6px;background:#f8f9fa;color:#202124">' + esc(reportText) + '</textarea>';
     html += '<button class="mini sh" id="diag-copy" style="margin-top:6px">📋 Copy báo cáo</button>';
-    box.innerHTML = html;
+    // Bọc trong khung cuộn được để KHÔNG bị cắt mất dòng kết quả ghi âm/Groq.
+    box.innerHTML = '<div style="max-height:340px;overflow-y:auto">' + html + '</div>';
     const cp = $('#diag-copy');
     if (cp) cp.onclick = () => { try { const ta = $('#diag-report'); ta.select(); document.execCommand('copy'); cp.textContent = '✅ Đã copy'; setTimeout(() => { cp.textContent = '📋 Copy báo cáo'; }, 1500); } catch (e) {} };
   }
@@ -1502,31 +1515,17 @@
   // Record panel
   function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) syncToolbarHeight(); p.hidden = !show; } }
   { const b = $('#btn-record-close'); if (b) b.onclick = () => showRecordPanel(false); }
-  // Nút "Chấm điểm" — bỏ qua phát mẫu, ghi âm và chấm ngay lập tức.
-  { const b = $('#btn-rescore'); if (b) b.onclick = async () => {
+  // Nút "Chấm điểm" — ghi âm và chấm ngay. KHÔNG chờ enableMic (gây kẹt "Đang bật
+  // micro…"): bản thân recordRaw đã tự gọi getUserMedia. Nếu chưa cấp quyền, luồng
+  // lỗi sẽ hiện "Cần quyền micro" để xử lý.
+  { const b = $('#btn-rescore'); if (b) b.onclick = () => {
     if (!sentences.length) return;
-    if (b.disabled) return; b.disabled = true;
-    try {
-      // QUAN TRỌNG: đảm bảo quyền micro TRƯỚC. Nếu chưa cấp, getUserMedia sẽ treo
-      // ở tab video (hộp thoại hiện trên trang, không phải Side Panel) khiến người
-      // dùng tưởng "bấm không có gì xảy ra". enableMic hiện hộp thoại + báo trạng thái.
-      const stxt = $('#record-status-text');
-      if (settings.autoRecord) {
-        if (stxt) stxt.textContent = 'Đang bật micro…';
-        const ok = await enableMic({ silent: true });
-        if (!ok) {
-          if (stxt) stxt.textContent = 'Cần quyền micro';
-          setStatus('🎤 Hãy cấp quyền micro (xem hộp thoại trên tab video) rồi bấm Chấm điểm lại.', 'warn');
-          return;
-        }
-      }
-      const el = $('#you-said-text'); if (el) el.textContent = '';
-      setRecordScore(null);
-      if (stxt) stxt.textContent = 'Đang chuẩn bị…';
-      current = Math.max(0, Math.min(current, sentences.length - 1));
-      cmd('select', { i: current, play: false });
-      cmd('recordOnly', { i: current });
-    } finally { b.disabled = false; }
+    const el = $('#you-said-text'); if (el) el.textContent = '';
+    setRecordScore(null);
+    const stxt = $('#record-status-text'); if (stxt) stxt.textContent = 'Đang chuẩn bị…';
+    current = Math.max(0, Math.min(current, sentences.length - 1));
+    cmd('select', { i: current, play: false });
+    cmd('recordOnly', { i: current });
   }; }
 
   // Queue Complete modal
