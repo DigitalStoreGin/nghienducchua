@@ -427,8 +427,13 @@
       else if (/^mic|not-allowed|denied|audio-capture/.test(f.error)) { m = 'Cần quyền micro. Bấm 🔒/🎤 cạnh thanh địa chỉ của tab video → Microphone → Allow, rồi bấm Chấm điểm lại.'; micFix = true; shortMsg = 'Cần quyền micro'; hint = 'Cấp quyền micro rồi thử lại.'; }
       else if (/empty-transcript|silent/.test(f.error)) {
         const eng = f.engine || '';
-        const groqHint = eng.includes('groq:') ? ' (' + eng.replace(/.*groq:/, 'Groq: ') + ')' : '';
-        m = '🤔 Không nghe thấy gì' + groqHint + '. Nói to hơn, gần micro, rồi bấm 🎤 Chấm điểm.'; shortMsg = 'Không nghe thấy'; hint = 'Nói to & rõ hơn rồi bấm 🎤 Chấm điểm.';
+        if (eng.includes('no-voice')) {
+          m = '🔇 Micro không thu được tiếng nói. Kiểm tra: (1) Windows → Cài đặt → Âm thanh → <b>Đầu vào</b>: chọn đúng micro &amp; kéo âm lượng lên 100%; (2) nói sát micro hơn. Sau đó bấm 🎤 Chấm điểm lại.';
+          shortMsg = 'Mic thu im lặng'; hint = 'Mic không thu được tiếng — kiểm tra thiết bị micro trong Windows.';
+        } else {
+          const groqHint = eng.includes('groq:') ? ' (' + eng.replace(/.*groq:/, 'Groq: ') + ')' : '';
+          m = '🤔 Không nghe thấy gì' + groqHint + '. Nói to hơn, gần micro, rồi bấm 🎤 Chấm điểm.'; shortMsg = 'Không nghe thấy'; hint = 'Nói to & rõ hơn rồi bấm 🎤 Chấm điểm.';
+        }
       }
       box.innerHTML = '<div class="err">⚠️ ' + m + (micFix ? ' <button class="mini sh" id="micfix">🎤 Cấp quyền micro</button>' : '') + '</div>';
       if (micFix) $('#micfix').onclick = () => openMicPermissionPage();

@@ -210,6 +210,13 @@
 
     if (engine === 'whisper') {
       let groqErrReason = '';
+      // CHẶN ẢO GIÁC TRÊN IM LẶNG: nếu VAD không phát hiện tiếng nói (mic thu im lặng)
+      // VÀ Web Speech song song cũng không bắt được gì → audio trống. KHÔNG gửi Groq vì
+      // Whisper sẽ "bịa" ra "Vielen Dank."/"Untertitel" trên audio trống. Trả rỗng để
+      // báo trung thực "Không nghe thấy" thay vì chấm điểm trên câu bịa.
+      if (!data.spoke && !(backup && backup.trim())) {
+        return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (no-voice: mic thu im lặng)' };
+      }
       // 1. Groq Whisper (nhanh, chính xác, qua Cloudflare Worker → round-robin 5 keys).
       const groq = await transcribeViaGroq(data.blob, opts.lang2 || 'de');
       if (groq && groq._err) groqErrReason = groq._err; // lưu lý do để debug
