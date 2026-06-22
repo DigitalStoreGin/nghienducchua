@@ -138,23 +138,32 @@
 
   // Gửi audio blob lên Cloudflare Worker -> Groq Whisper Large v3 Turbo.
   // Trả null nếu thất bại (network, quota, timeout) -> caller fallback sang offline.
+  // Uint8Array -> base64 (gửi audio qua message tới background, an toàn với mọi byte).
+  function bytesToB64(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  // Gửi audio sang BACKGROUND service worker để fetch Worker /transcribe.
+  // KHÔNG fetch trực tiếp ở content script: CSP (connect-src) của YouTube CHẶN
+  // fetch tới domain Worker → request thất bại im lặng (đây là lỗi "ghi xong không
+  // có kết quả"). Background SW có host_permissions + không bị page CSP → luôn gọi được.
   async function transcribeViaGroq(blob, lang) {
     if (!blob) return { _err: 'no-blob' };
-    const form = new FormData();
-    const ext = (blob.type || 'audio/webm').includes('ogg') ? 'ogg' : 'webm';
-    form.append('file', blob, 'recording.' + ext);
-    form.append('lang', lang || 'de');
-    try {
-      // Timeout 10s: Groq thường trả ~1-2s; 10s là lưới an toàn cho mạng chậm/upload lớn.
-      const resp = await Promise.race([
-        fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
-      ]);
-      if (!resp.ok) return { _err: 'http-' + resp.status };
-      const data = await resp.json();
-      if (data.error) return { _err: 'groq-api:' + data.error };
-      return data; // { text, words, ... }
-    } catch (e) { return { _err: (e && e.message) || 'groq-error' }; }
+    let b64;
+    try { b64 = bytesToB64(new Uint8Array(await blob.arrayBuffer())); }
+    catch (e) { return { _err: 'encode-fail' }; }
+    const resp = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ ok: false, _err: 'bg-timeout' }), 13000);
+      try {
+        chrome.runtime.sendMessage(
+          { sd: 'groq-transcribe', audioB64: b64, mime: blob.type || 'audio/webm', lang: lang || 'de' },
+          (r) => { clearTimeout(timer); resolve(chrome.runtime.lastError ? { ok: false, _err: 'bg-' + chrome.runtime.lastError.message } : (r || { ok: false, _err: 'bg-empty' })); }
+        );
+      } catch (e) { clearTimeout(timer); resolve({ ok: false, _err: 'bg-throw:' + ((e && e.message) || e) }); }
+    });
+    if (resp && resp.ok && resp.data) return resp.data; // { text, words, ... }
+    return { _err: (resp && resp._err) || 'bg-fail' };
   }
 
   async function recognize(opts) {
@@ -227,6 +236,58 @@
   function abort() { root.SD.pageMic._abort = true; }
   function finalize() { root.SD.pageMic._finalize = true; }
 
+  // Tự kiểm tra TOÀN BỘ pipeline ghi âm + chấm điểm, trả báo cáo từng bước để gửi support.
+  async function selfTest(opts) {
+    opts = opts || {};
+    const steps = [];
+    const add = (name, ok, detail) => steps.push({ name, ok: !!ok, detail: detail == null ? '' : String(detail) });
+
+    // 1. Quyền micro trên trang
+    let perm = 'unknown'; try { perm = await permission(); } catch (e) {}
+    add('Quyền micro (trang)', perm === 'granted', perm);
+
+    // 2. getUserMedia (mở mic thật)
+    let gumOk = false;
+    try { await ensure(); gumOk = true; add('Mở micro (getUserMedia)', true, 'OK'); }
+    catch (e) { add('Mở micro (getUserMedia)', false, (e && (e.name + ': ' + e.message)) || String(e)); }
+
+    // 3. MediaRecorder codec
+    let mime = '';
+    try { mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].find((t) => MediaRecorder.isTypeSupported(t)) || ''; } catch (e) {}
+    add('MediaRecorder codec', !!mime, mime || 'không hỗ trợ');
+
+    // 4. Fetch TRỰC TIẾP /health từ trang — nếu BỊ CHẶN tức là CSP trang chặn (đúng như nghi ngờ)
+    try {
+      const t0 = Date.now();
+      const r = await fetch(WORKER_URL + '/health');
+      add('Fetch trực tiếp /health (trang)', r.ok, 'HTTP ' + r.status + ' · ' + (Date.now() - t0) + 'ms');
+    } catch (e) { add('Fetch trực tiếp /health (trang)', false, 'BỊ CHẶN bởi CSP trang? ' + ((e && e.message) || e)); }
+
+    // 5. /health QUA BACKGROUND (đường đi thật của Groq sau khi sửa)
+    try {
+      const r = await new Promise((resolve) => {
+        try { chrome.runtime.sendMessage({ sd: 'worker-health' }, (x) => resolve(chrome.runtime.lastError ? { ok: false, err: chrome.runtime.lastError.message } : x)); }
+        catch (e) { resolve({ ok: false, err: String(e) }); }
+      });
+      add('Worker /health qua background', !!(r && r.ok), (r && (r.detail || r.err)) + (r && r.ms != null ? ' · ' + r.ms + 'ms' : ''));
+    } catch (e) { add('Worker /health qua background', false, String(e)); }
+
+    // 6. Ghi âm thật 3.5s + Groq qua background
+    if (gumOk && opts.record !== false) {
+      try {
+        root.SD.pageMic._abort = false; root.SD.pageMic._finalize = false;
+        const data = await recordRaw({ maxMs: opts.recMs || 3500, vad: {} });
+        add('Ghi âm ~3.5s', !!(data && data.blob && data.blob.size), 'blob ' + (data && data.blob ? data.blob.size : 0) + ' bytes · có tiếng nói=' + (data && data.spoke));
+        const t0 = Date.now();
+        const groq = await transcribeViaGroq(data.blob, opts.lang || 'de');
+        if (groq && groq._err) add('Groq chấm (qua background)', false, groq._err + ' · ' + (Date.now() - t0) + 'ms');
+        else add('Groq chấm (qua background)', !!(groq && groq.text != null), 'nghe được: "' + ((groq && groq.text) || '(rỗng)') + '" · ' + (Date.now() - t0) + 'ms');
+      } catch (e) { add('Ghi âm + Groq', false, (e && (e.name + ': ' + e.message)) || String(e)); }
+      finally { try { release(); } catch (_) {} }
+    }
+    return { steps, host: location.hostname, ua: navigator.userAgent.slice(0, 60) };
+  }
+
   // Lần đầu cài extension: TỰ hiện hộp thoại xin quyền micro NGAY trên trang (như ảnh
   // "m.youtube.com wants to use microphone"). Chỉ chạy MỘT lần (cờ micOnboardPending do
   // background đặt khi cài), và chỉ khi quyền còn 'prompt' (chưa cấp / chưa chặn) để
@@ -255,6 +316,7 @@
         if (msg.action === 'ensure') { await ensure(); reply({ ok: true, state: await permission() }); return; }
         if (msg.action === 'abort') { abort(); reply({ ok: true }); return; }
         if (msg.action === 'finalize') { finalize(); reply({ ok: true }); return; }
+        if (msg.action === 'selftest') { reply({ ok: true, report: await selfTest(msg.opts || {}) }); return; }
         reply({ ok: false, error: 'unknown-action' });
       } catch (e) { reply({ ok: false, error: (e && e.message) || String(e), name: (e && e.name) || 'Error' }); }
     })();

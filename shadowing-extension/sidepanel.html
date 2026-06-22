@@ -521,6 +521,12 @@
           <span class="setting-hw-text" id="hwInfo">Đang kiểm tra cấu hình máy…</span>
         </div>
 
+        <!-- Tự kiểm tra ghi âm + chấm điểm (gửi báo cáo cho support) -->
+        <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:6px">
+          <button class="btn-selftest" id="btn-selftest" style="width:100%;padding:10px;border:1.5px solid #1a73e8;border-radius:10px;background:#e8f0fe;color:#1a73e8;font-weight:600;cursor:pointer">🔧 Tự kiểm tra ghi âm &amp; chấm điểm</button>
+          <div id="selftest-box" class="diagbox" hidden></div>
+        </div>
+
         <!-- Silero VAD — id="silerovad" used by sidepanel.js -->
         <div class="setting-row setting-row--toggle">
           <label class="setting-label" for="silerovad">Silero VAD</label>

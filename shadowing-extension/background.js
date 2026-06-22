@@ -68,7 +68,51 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 /* --- Fallback: van ho tro sendMessage cho mic-service va legacy --- */
+const WORKER_URL = 'https://nghienducchua-proxy.thoatran21012.workers.dev';
+
+// Base64 (audio bytes) -> Blob -> POST /transcribe. CHẠY TRONG BACKGROUND SW vì
+// content script trên YouTube bị CSP (connect-src) của trang CHẶN fetch tới domain
+// lạ. Background SW có host_permissions + KHÔNG bị page CSP → luôn gọi được Groq.
+async function handleGroqTranscribe(msg) {
+  try {
+    const bin = atob(msg.audioB64 || '');
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const mime = msg.mime || 'audio/webm';
+    const blob = new Blob([bytes], { type: mime });
+    const form = new FormData();
+    const ext = mime.includes('ogg') ? 'ogg' : 'webm';
+    form.append('file', blob, 'recording.' + ext);
+    form.append('lang', msg.lang || 'de');
+    const resp = await Promise.race([
+      fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
+    ]);
+    if (!resp.ok) return { ok: false, _err: 'http-' + resp.status };
+    const data = await resp.json();
+    if (data && data.error) return { ok: false, _err: 'groq-api:' + data.error };
+    return { ok: true, data };
+  } catch (e) { return { ok: false, _err: (e && e.message) || 'groq-error' }; }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  // Groq STT relay (content script -> background -> Worker). Async reply.
+  if (msg && msg.sd === 'groq-transcribe') {
+    handleGroqTranscribe(msg).then(reply).catch((e) => reply({ ok: false, _err: String((e && e.message) || e) }));
+    return true;
+  }
+  // Worker health check qua background (dùng cho self-test). Async reply.
+  if (msg && msg.sd === 'worker-health') {
+    (async () => {
+      try {
+        const t0 = Date.now();
+        const r = await fetch(WORKER_URL + '/health');
+        let body = ''; try { body = JSON.stringify(await r.json()); } catch (_) {}
+        reply({ ok: r.ok, detail: 'HTTP ' + r.status + (body ? ' ' + body.slice(0, 90) : ''), ms: Date.now() - t0 });
+      } catch (e) { reply({ ok: false, err: 'fetch failed: ' + ((e && e.message) || e) }); }
+    })();
+    return true;
+  }
   // Mic-service messages: relay truc tiep (chi can Side Panel gui/nhan)
   if (msg && msg.sd === 'mic-service') return; // xu ly boi mic-service.js trong Side Panel
   // Legacy evt messages tu content script (neu chua chuyen sang port)

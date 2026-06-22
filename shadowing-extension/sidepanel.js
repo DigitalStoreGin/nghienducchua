@@ -1331,22 +1331,61 @@
   }
 
   // ===== Self-test / chẩn đoán =====
-  async function runDiag() {
-    const box = $('#diagbox'); box.hidden = false; box.innerHTML = '⏳ Đang kiểm tra…';
+  // Gửi yêu cầu tới page-mic.js trên tab video, chờ phản hồi.
+  async function pageMicRequest(action, opts) {
+    const t = await activeTab(); if (!t) return null;
+    return new Promise((resolve) => {
+      try {
+        chrome.tabs.sendMessage(t.id, { sd: 'page-mic', action, opts: opts || {} },
+          (r) => { resolve(chrome.runtime.lastError ? null : r); });
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  { const b = $('#btn-selftest'); if (b) b.onclick = () => runDiag('#selftest-box'); }
+
+  async function runDiag(boxSel) {
+    const box = $(boxSel || '#diagbox'); box.hidden = false;
+    box.innerHTML = '⏳ Đang kiểm tra kết nối…';
     const r = await cmd('diag');
-    if (!r || !r.ok) { box.innerHTML = '<b class="bad">✗ Không kết nối được content script.</b> Mở/tải lại tab YouTube hoặc Netflix.'; return; }
+    if (!r || !r.ok) { box.innerHTML = '<b class="bad">✗ Không kết nối được content script.</b> Mở/tải lại tab YouTube hoặc Netflix rồi thử lại.'; return; }
     try { const p = await chrome.runtime.sendMessage({ sd: 'mic-service', action: 'permission' }); if (p && p.ok) r.mic = p.state; } catch (e) {}
-    const row = (ok, label, val) => '<div class="drow2"><span class="' + (ok ? 'gook' : 'gobad') + '">' + (ok ? '✓' : '✗') + '</span> ' + label + (val != null ? ': <b>' + val + '</b>' : '') + '</div>';
-    box.innerHTML =
+    const row = (ok, label, val) => '<div class="drow2"><span class="' + (ok ? 'gook' : 'gobad') + '">' + (ok ? '✓' : '✗') + '</span> ' + label + (val != null ? ': <b>' + esc(String(val)) + '</b>' : '') + '</div>';
+
+    let html =
       row(true, 'Trang', r.host) +
       row(r.video, 'Tìm thấy &lt;video&gt;') +
       row(r.sentences > 0, 'Phụ đề đã nạp', r.sentences + ' câu') +
-      row(r.mic === 'granted', 'Quyền micro của extension', r.mic) +
       row(r.engine, 'Engine sẵn sàng') +
-      row(r.vsubs, 'Overlay phụ đề video') +
-      row(r.tracklist, 'Tracklist YouTube') +
-      (r.mic !== 'granted' ? '<div class="hintline">→ Bấm 🎤 Bật mic để cấp quyền.</div>' : '') +
-      (r.sentences === 0 ? '<div class="hintline">→ Bấm 📥 Lấy phụ đề / 🔴 Bắt trực tiếp / 📂 Mở file.</div>' : '');
+      row(r.vsubs, 'Overlay phụ đề video');
+
+    // Self-test sâu: ghi âm thật + Groq (mất ~4-5s, cần nói vài tiếng).
+    html += '<div class="hintline">🎤 Đang chạy kiểm tra ghi âm + chấm điểm — <b>hãy nói “xin chào test” trong ~3 giây</b>…</div>';
+    box.innerHTML = html;
+    const st = await pageMicRequest('selftest', { record: true, recMs: 3500 });
+    const report = st && st.ok && st.report ? st.report : null;
+    if (report && report.steps) {
+      report.steps.forEach((s) => { html += row(s.ok, s.name, s.detail); });
+    } else {
+      html += row(false, 'Self-test ghi âm', 'không chạy được (content script cũ? Tải lại tab)');
+    }
+
+    // Khối văn bản để COPY gửi support.
+    const lines = ['=== ShadowEcho self-test ===',
+      'host: ' + (r.host || ''),
+      'video: ' + r.video + ' · subs: ' + r.sentences + ' · engine: ' + r.engine,
+      'mic(extension): ' + r.mic];
+    if (report && report.steps) {
+      lines.push('ua: ' + (report.ua || ''));
+      report.steps.forEach((s) => lines.push((s.ok ? '[OK] ' : '[FAIL] ') + s.name + ': ' + s.detail));
+    }
+    const reportText = lines.join('\n');
+    html += '<div class="hintline">📋 Sao chép báo cáo dưới đây rồi gửi cho tôi:</div>';
+    html += '<textarea id="diag-report" readonly style="width:100%;height:120px;font:11px monospace;margin-top:4px;border:1px solid #dadce0;border-radius:6px;padding:6px;background:#f8f9fa;color:#202124">' + esc(reportText) + '</textarea>';
+    html += '<button class="mini sh" id="diag-copy" style="margin-top:6px">📋 Copy báo cáo</button>';
+    box.innerHTML = html;
+    const cp = $('#diag-copy');
+    if (cp) cp.onclick = () => { try { const ta = $('#diag-report'); ta.select(); document.execCommand('copy'); cp.textContent = '✅ Đã copy'; setTimeout(() => { cp.textContent = '📋 Copy báo cáo'; }, 1500); } catch (e) {} };
   }
 
   // ===== Fill-in-the-blank (cloze) =====
