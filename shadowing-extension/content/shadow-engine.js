@@ -167,8 +167,9 @@
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',
           vad: { silero: !!this.settings?.useSileroVad },
         });
-        // Guard cho TOÀN BỘ: maxMs (ghi) + 10s (Groq) + 20s (Whisper load) + buffer.
-        const guardMs = maxMs + 35000;
+        // Guard cho TOÀN BỘ: maxMs (ghi) + ~13s (Groq qua background) + buffer.
+        // Không cần dài như trước vì đã bỏ Web Speech song song (hết treo getUserMedia).
+        const guardMs = maxMs + 16000;
         res = await Promise.race([
           recPromise,
           new Promise((_, rej) => setTimeout(() => rej(new Error('score-timeout')), guardMs)),

@@ -19,7 +19,12 @@
   async function ensure() {
     if (stream && stream.active && stream.getAudioTracks().some((t) => t.readyState === 'live')) return true;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('media-devices-unavailable');
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    // Chống TREO: nếu getUserMedia không trả trong 8s (mic bận / xung đột) → ném lỗi
+    // để luồng báo "cần quyền micro" thay vì kẹt mãi gây score-timeout.
+    stream = await Promise.race([
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('getusermedia-timeout')), 8000)),
+    ]);
     return true;
   }
   function release() { try { if (stream) stream.getTracks().forEach((t) => t.stop()); } catch (e) {} stream = null; }
@@ -200,21 +205,17 @@
       return { transcript: txt, words: [], pitch: [], spokenMs: Date.now() - started, engine: 'webspeech (trang)' };
     }
 
-    // Whisper: ghi âm trên trang + Web Speech SONG SONG (dự phòng) -> Side Panel chấm.
-    const parallel = pageWebSpeech(opts);
-    let data;
-    try { data = await recordRaw(opts); }
-    catch (e) { if (parallel) parallel.stop(); throw e; }
-    let backup = '';
-    if (parallel) { try { await new Promise((r) => setTimeout(r, 250)); backup = parallel.get(); } catch (e) {} parallel.stop(); }
+    // Whisper: CHỈ ghi âm (getUserMedia) rồi gửi Groq chấm. KHÔNG chạy Web Speech
+    // song song nữa: SpeechRecognition và getUserMedia tranh chấp micro trên Windows
+    // → getUserMedia có thể TREO suốt → score-timeout (đây là lỗi "ghi xong không ra
+    // điểm"). Groq đã nhanh (~250ms) & chính xác nên không cần backup webspeech.
+    const data = await recordRaw(opts);
 
     if (engine === 'whisper') {
       let groqErrReason = '';
-      // CHẶN ẢO GIÁC TRÊN IM LẶNG: nếu VAD không phát hiện tiếng nói (mic thu im lặng)
-      // VÀ Web Speech song song cũng không bắt được gì → audio trống. KHÔNG gửi Groq vì
-      // Whisper sẽ "bịa" ra "Vielen Dank."/"Untertitel" trên audio trống. Trả rỗng để
-      // báo trung thực "Không nghe thấy" thay vì chấm điểm trên câu bịa.
-      if (!data.spoke && !(backup && backup.trim())) {
+      // CHẶN ẢO GIÁC TRÊN IM LẶNG: VAD không thấy tiếng nói (mic thu im lặng) → audio
+      // trống → KHÔNG gửi Groq (Whisper bịa "Vielen Dank."). Báo trung thực "no-voice".
+      if (!data.spoke) {
         return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (no-voice: mic thu im lặng)' };
       }
       // 1. Groq Whisper (nhanh, chính xác, qua Cloudflare Worker → round-robin 5 keys).
@@ -223,7 +224,6 @@
       if (groq && !groq._err && groq.text != null) {
         const txt = groq.text.trim();
         if (txt) return { transcript: txt, words: groq.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'groq-whisper (trang)' };
-        if (backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech↔groq (trang)', fallback: true };
       }
       // 2. Groq thất bại → offline Whisper (Side Panel, model ấm sẵn).
       const result = await transcribeViaSidePanel(data.audio16k, opts);
@@ -231,12 +231,9 @@
         const txt = (result.text || '').trim();
         const V = root.ShadowValidate;
         const bad = !!(txt && V && V.classifyTranscript && V.classifyTranscript(txt) === 'bad');
-        if ((!txt || bad) && backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech↔whisper (trang)', fallback: true };
         return { transcript: txt, words: result.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'whisper:' + (result.modelShort || '?') + ' (trang)', lowConfidence: bad };
       }
-      // 3. Web Speech backup (bắt song song lúc ghi âm).
-      if (backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech (fallback cuối)', fallback: true };
-      // 4. Tất cả thất bại → trả rỗng; đính kèm lý do Groq để UI hiển thị.
+      // 3. Tất cả thất bại → trả rỗng; đính kèm lý do Groq để UI hiển thị.
       return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (groq:' + (groqErrReason || 'empty') + ')' };
     }
     // 'server' engine không hỗ trợ tại trang -> để speech.js fallback về Side Panel.
