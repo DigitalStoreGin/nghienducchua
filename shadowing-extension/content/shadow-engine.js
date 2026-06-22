@@ -135,14 +135,17 @@
     async recordOnlyAt(i) {
       if (this.busy) { this.runId++; this.busy = false; }
       this.busy = true; this.idx = i; this.rep = 0;
+      this._recordOnly = true; // skip runRep retry — user pressed Chấm điểm, not shadow
       this.setCurrent(i);
       const runId = ++this.runId;
-      const s = this.sentences[i]; if (!s) { this.busy = false; return; }
+      const s = this.sentences[i]; if (!s) { this.busy = false; this._recordOnly = false; return; }
       try { V().pause(); } catch (e) {}
       await this.recordAndScore(s, (s.endMs - s.startMs) / 1000, runId);
+      this._recordOnly = false;
     },
 
     async recordAndScore(s, refSec, runId) {
+      const recordOnly = !!this._recordOnly;
       // --- State: recording ---
       this.emit('state', { state: 'recording', idx: this.idx, rep: this.rep });
       const maxMs = Math.min(12000, Math.max(2500, Math.round(refSec * 1000 * 1.8 + 1200)));
@@ -164,9 +167,8 @@
           serverUrl: this.settings?.serverUrl || 'http://localhost:8000',
           vad: { silero: !!this.settings?.useSileroVad },
         });
-        // Guard cho TOÀN BỘ quá trình recognize = maxMs (ghi) + ~8s (Groq) + buffer
-        // để fallback offline Whisper kịp khởi động. Quá mốc này coi như treo → báo lỗi.
-        const guardMs = maxMs + 12000;
+        // Guard cho TOÀN BỘ: maxMs (ghi) + 10s (Groq) + 20s (Whisper load) + buffer.
+        const guardMs = maxMs + 35000;
         res = await Promise.race([
           recPromise,
           new Promise((_, rej) => setTimeout(() => rej(new Error('score-timeout')), guardMs)),
@@ -175,21 +177,31 @@
       finally { clearInterval(keepPaused); }
       if (runId !== this.runId || !this.busy) return;
 
+      // Báo trạng thái "đang xử lý" sau khi ghi xong, trước khi có kết quả.
+      this.emit('state', { state: 'transcribing', idx: this.idx });
+
       // Error handling
       if (!res || res.error) {
         this.emit('feedback', { error: (res && res.error) || 'unknown' });
-        this.busy = false; this.emit('state', { state: 'idle' }); return;
+        this.busy = false; this._recordOnly = false;
+        this.emit('state', { state: 'idle' }); return;
       }
 
-      // Empty transcript → friendly message, khong tinh diem
+      // Empty transcript (không nghe thấy gì)
       if (!res.transcript || res.transcript.trim() === '') {
-        this.emit('feedback', { error: 'empty-transcript' });
-        this.rep++;
-        if (this.rep < (this.settings?.repeat || 3)) {
-          setTimeout(() => { if (runId === this.runId && this.busy) this.runRep(runId); }, 900);
+        this.emit('feedback', { error: 'empty-transcript', engine: res.engine });
+        if (recordOnly) {
+          // "Chấm điểm" — không phát lại audio gốc, chỉ hiện lỗi cho user biết.
+          this.busy = false; this._recordOnly = false;
+          this.emit('state', { state: 'idle', idx: this.idx });
         } else {
-          this.busy = false;
-          this.advanceToNext(runId);
+          this.rep++;
+          if (this.rep < (this.settings?.repeat || 3)) {
+            setTimeout(() => { if (runId === this.runId && this.busy) this.runRep(runId); }, 900);
+          } else {
+            this.busy = false;
+            this.advanceToNext(runId);
+          }
         }
         return;
       }
@@ -200,7 +212,7 @@
         pitch: res.pitch || [], spokenMs: res.spokenMs, refMs: (s.endMs - s.startMs),
       });
       score.engine = res.engine;
-      score.lowConfidence = !!res.lowConfidence; // Whisper trả kết quả "ảo giác" -> UI nhắc nói lại
+      score.lowConfidence = !!res.lowConfidence;
       this.emit('feedback', { score, sentence: s, rep: this.rep });
       root.SD.storage.addAttempt({
         text: s.text, transcript: res.transcript,
@@ -208,12 +220,18 @@
         intonation: score.intonation, overall: score.overall, engine: res.engine,
       });
 
-      this.rep++;
-      if (this.rep < (this.settings?.repeat || 3)) {
-        setTimeout(() => { if (runId === this.runId && this.busy) this.runRep(runId); }, 900);
+      if (recordOnly) {
+        // "Chấm điểm" — chỉ chấm 1 lần, không tiếp tục loop shadow.
+        this.busy = false; this._recordOnly = false;
+        this.emit('state', { state: 'idle', idx: this.idx });
       } else {
-        this.busy = false;
-        this.advanceToNext(runId);
+        this.rep++;
+        if (this.rep < (this.settings?.repeat || 3)) {
+          setTimeout(() => { if (runId === this.runId && this.busy) this.runRep(runId); }, 900);
+        } else {
+          this.busy = false;
+          this.advanceToNext(runId);
+        }
       }
     },
 

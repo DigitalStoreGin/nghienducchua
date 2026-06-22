@@ -139,23 +139,22 @@
   // Gửi audio blob lên Cloudflare Worker -> Groq Whisper Large v3 Turbo.
   // Trả null nếu thất bại (network, quota, timeout) -> caller fallback sang offline.
   async function transcribeViaGroq(blob, lang) {
-    if (!blob) return null;
+    if (!blob) return { _err: 'no-blob' };
     const form = new FormData();
     const ext = (blob.type || 'audio/webm').includes('ogg') ? 'ogg' : 'webm';
     form.append('file', blob, 'recording.' + ext);
     form.append('lang', lang || 'de');
     try {
-      // Timeout 8s: đây là ĐƯỜNG CHÍNH (Groq nhanh & chính xác). Groq thường trả
-      // trong ~1-2s; 8s chỉ là lưới an toàn để KHÔNG cắt sớm khi mạng/upload chậm,
-      // tránh rơi xuống fallback rồi trả rỗng (gây "không chấm được").
+      // Timeout 10s: Groq thường trả ~1-2s; 10s là lưới an toàn cho mạng chậm/upload lớn.
       const resp = await Promise.race([
         fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 8000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
       ]);
-      if (!resp.ok) return null;
+      if (!resp.ok) return { _err: 'http-' + resp.status };
       const data = await resp.json();
-      return data.error ? null : data;
-    } catch (_) { return null; }
+      if (data.error) return { _err: 'groq-api:' + data.error };
+      return data; // { text, words, ... }
+    } catch (e) { return { _err: (e && e.message) || 'groq-error' }; }
   }
 
   async function recognize(opts) {
@@ -198,14 +197,16 @@
     if (parallel) { try { await new Promise((r) => setTimeout(r, 250)); backup = parallel.get(); } catch (e) {} parallel.stop(); }
 
     if (engine === 'whisper') {
-      // 1. Groq Whisper (nhanh, chính xác, qua Worker -> round-robin 5 keys).
+      let groqErrReason = '';
+      // 1. Groq Whisper (nhanh, chính xác, qua Cloudflare Worker → round-robin 5 keys).
       const groq = await transcribeViaGroq(data.blob, opts.lang2 || 'de');
-      if (groq && groq.text != null) {
+      if (groq && groq._err) groqErrReason = groq._err; // lưu lý do để debug
+      if (groq && !groq._err && groq.text != null) {
         const txt = groq.text.trim();
         if (txt) return { transcript: txt, words: groq.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'groq-whisper (trang)' };
         if (backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech↔groq (trang)', fallback: true };
       }
-      // 2. Groq thất bại -> offline Whisper (Side Panel, model đang ấm sẵn).
+      // 2. Groq thất bại → offline Whisper (Side Panel, model ấm sẵn).
       const result = await transcribeViaSidePanel(data.audio16k, opts);
       if (result && result.text != null) {
         const txt = (result.text || '').trim();
@@ -214,10 +215,10 @@
         if ((!txt || bad) && backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech↔whisper (trang)', fallback: true };
         return { transcript: txt, words: result.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'whisper:' + (result.modelShort || '?') + ' (trang)', lowConfidence: bad };
       }
-      // 3. Web Speech backup (bắt song song lúc ghi âm) -> không cần nói lại.
+      // 3. Web Speech backup (bắt song song lúc ghi âm).
       if (backup) return { transcript: backup, words: [], pitch: [], spokenMs: data.spokenMs, engine: 'webspeech (fallback cuối)', fallback: true };
-      // 4. Tất cả thất bại -> trả rỗng, không hiện lỗi mic.
-      return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (fallback)' };
+      // 4. Tất cả thất bại → trả rỗng; đính kèm lý do Groq để UI hiển thị.
+      return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (groq:' + (groqErrReason || 'empty') + ')' };
     }
     // 'server' engine không hỗ trợ tại trang -> để speech.js fallback về Side Panel.
     throw new Error('page-mic-unsupported-engine');

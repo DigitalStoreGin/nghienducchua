@@ -228,7 +228,8 @@
     const map = {
       playing: '▶️ Playing…',
       paused: '⏸ Paused',
-      recording: '🎤 Listening… (speak then it will score)',
+      recording: '🎤 Listening…',
+      transcribing: '⏳ Đang xử lý giọng nói…',
       scoring: '🧮 Scoring…',
       ad: '📺 Waiting for ad to end…',
     };
@@ -239,15 +240,16 @@
     const dot = $('#record-listening-dot');
     const stxt = $('#record-status-text');
     const isRec = st.state === 'recording';
+    const isTranscribing = st.state === 'transcribing';
     const isScore = st.state === 'scoring';
-    if (dot) dot.classList.toggle('active', isRec);
-    if (stxt) stxt.textContent = isRec ? 'Listening…' : isScore ? 'Đang chấm…' : 'Sẵn sàng';
+    if (dot) dot.classList.toggle('active', isRec || isTranscribing);
+    if (stxt) stxt.textContent = isRec ? 'Listening…' : isTranscribing ? 'Đang xử lý…' : isScore ? 'Đang chấm…' : 'Sẵn sàng';
     // Show record panel when recording starts
     if (isRec) {
       const el = $('#you-said-text'); if (el) el.textContent = '';
       showRecordPanel(true);
       startWaveform();
-    } else {
+    } else if (!isTranscribing && !isScore) {
       stopWaveform();
     }
     // Mic activity indicator: pulse speak button + mic dot when recording
@@ -423,7 +425,11 @@
       else if (/whisper-unavailable/.test(f.error)) { m = 'Whisper chưa sẵn sàng — đang dùng Web Speech tạm. Thử lại sau giây lát.'; shortMsg = 'Đang tải model…'; }
       else if (/score-timeout/.test(f.error)) { m = '⏱️ Chấm quá lâu (mạng chậm hoặc model đang tải). Hãy thử lại — nói rõ, gần micro.'; shortMsg = 'Hết thời gian — thử lại'; hint = 'Nhấn 🎤 Chấm điểm để thử lại.'; }
       else if (/^mic|not-allowed|denied|audio-capture/.test(f.error)) { m = 'Cần quyền micro. Bấm 🔒/🎤 cạnh thanh địa chỉ của tab video → Microphone → Allow, rồi bấm Chấm điểm lại.'; micFix = true; shortMsg = 'Cần quyền micro'; hint = 'Cấp quyền micro rồi thử lại.'; }
-      else if (/empty-transcript|silent/.test(f.error)) { m = '🤔 Không nghe thấy gì. Nói to hơn, gần micro, rồi bấm 🎤 Chấm điểm.'; shortMsg = 'Không nghe thấy'; hint = 'Nói to & rõ hơn rồi bấm 🎤 Chấm điểm.'; }
+      else if (/empty-transcript|silent/.test(f.error)) {
+        const eng = f.engine || '';
+        const groqHint = eng.includes('groq:') ? ' (' + eng.replace(/.*groq:/, 'Groq: ') + ')' : '';
+        m = '🤔 Không nghe thấy gì' + groqHint + '. Nói to hơn, gần micro, rồi bấm 🎤 Chấm điểm.'; shortMsg = 'Không nghe thấy'; hint = 'Nói to & rõ hơn rồi bấm 🎤 Chấm điểm.';
+      }
       box.innerHTML = '<div class="err">⚠️ ' + m + (micFix ? ' <button class="mini sh" id="micfix">🎤 Cấp quyền micro</button>' : '') + '</div>';
       if (micFix) $('#micfix').onclick = () => openMicPermissionPage();
       // Cập nhật record panel để KHÔNG bị "đứng hình" — người dùng thấy ngay lý do.
