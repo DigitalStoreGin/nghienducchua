@@ -148,7 +148,9 @@
       const recordOnly = !!this._recordOnly;
       // --- State: recording ---
       this.emit('state', { state: 'recording', idx: this.idx, rep: this.rep });
-      const maxMs = Math.min(12000, Math.max(2500, Math.round(refSec * 1000 * 1.8 + 1200)));
+      // Cap 7s: đủ cho 1 câu, không để "Listening…" kéo dài như treo. VAD tự dừng sớm
+      // khi người dùng ngừng nói; nút "⏹ Dừng & chấm" cho dừng thủ công bất cứ lúc nào.
+      const maxMs = Math.min(7000, Math.max(2500, Math.round(refSec * 1000 * 1.5 + 1000)));
       // GIỮ video DỪNG suốt lúc ghi âm: chống tiếng video lẫn vào mic (echo) gây
       // "Nothing heard"/chấm sai. Watchdog pause lại mỗi 150ms nếu YouTube tự phát.
       try { V().pause(); } catch (e) {}

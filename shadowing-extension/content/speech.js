@@ -22,14 +22,17 @@
   function setProgress(cb) { onProgress = cb; }
   async function recognize(opts) {
     opts = opts || {};
-    // Ghi âm NGAY trên trang nếu được (dùng quyền micro của youtube.com, không mở tab).
-    // Lỗi (chưa cấp quyền / engine không hỗ trợ) -> rơi xuống ghi âm tại Side Panel.
+    // Ghi âm NGAY trên trang YouTube (dùng quyền micro của trang). Whisper/Groq engine:
+    // dùng page-mic → background → Groq (đường đã được self-test xác nhận hoạt động).
+    // KHÔNG rơi xuống Side Panel cho whisper: Side Panel ghi âm bằng micro RIÊNG, dễ đụng
+    // độ / treo. Lỗi page-mic → trả lỗi rõ ràng để UI hiển thị, không "ghi mãi không xong".
     if (root.SD.pageMic && opts.usePageMic !== false && (opts.engine || 'whisper') !== 'server') {
       try { return await root.SD.pageMic.recognize(opts); }
       catch (e) {
         const m = (e && e.message) || String(e);
         if (/recording-aborted/.test(m)) return { error: m }; // user bấm Dừng -> tôn trọng
-        // các lỗi khác -> thử lại bằng Side Panel bên dưới
+        if ((opts.engine || 'whisper') === 'whisper') return { error: 'rec:' + m };
+        // webspeech engine: thử lại bằng Side Panel bên dưới
       }
     }
     try { return (await request('recognize', opts)).result; }

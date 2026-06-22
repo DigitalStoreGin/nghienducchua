@@ -252,6 +252,9 @@
     } else if (!isTranscribing && !isScore) {
       stopWaveform();
     }
+    // Nút "Chấm điểm" đổi thành "⏹ Dừng & chấm" khi đang ghi → cho dừng thủ công.
+    const rescoreBtn = $('#btn-rescore');
+    if (rescoreBtn) rescoreBtn.innerHTML = isRec ? '⏹ Dừng &amp; chấm' : '🎤 Chấm điểm';
     // Mic activity indicator: pulse speak button + mic dot when recording
     const speakBtn = $('#try-card-speak');
     if (speakBtn) speakBtn.classList.toggle('recording', isRec);
@@ -1525,6 +1528,8 @@
   // lỗi sẽ hiện "Cần quyền micro" để xử lý.
   { const b = $('#btn-rescore'); if (b) b.onclick = () => {
     if (!sentences.length) return;
+    // Đang ghi → nút này là "⏹ Dừng & chấm": dừng ghi ngay & chấm phần đã nói.
+    if (recState === 'recording') { pageMicSignal('finalize'); return; }
     const el = $('#you-said-text'); if (el) el.textContent = '';
     setRecordScore(null);
     const stxt = $('#record-status-text'); if (stxt) stxt.textContent = 'Đang chuẩn bị…';

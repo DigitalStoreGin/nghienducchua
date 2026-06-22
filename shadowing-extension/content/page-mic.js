@@ -205,36 +205,29 @@
       return { transcript: txt, words: [], pitch: [], spokenMs: Date.now() - started, engine: 'webspeech (trang)' };
     }
 
-    // Whisper: CHỈ ghi âm (getUserMedia) rồi gửi Groq chấm. KHÔNG chạy Web Speech
-    // song song nữa: SpeechRecognition và getUserMedia tranh chấp micro trên Windows
-    // → getUserMedia có thể TREO suốt → score-timeout (đây là lỗi "ghi xong không ra
-    // điểm"). Groq đã nhanh (~250ms) & chính xác nên không cần backup webspeech.
-    const data = await recordRaw(opts);
+    // Whisper/Groq: CHỈ ghi âm trên trang rồi gửi Groq chấm (đơn giản & bền vững,
+    // đúng đường self-test đã xác nhận). Không Web Speech song song, không Whisper offline.
+    let data;
+    try { data = await recordRaw(opts); }
+    catch (e) {
+      const m = (e && e.message) || String(e);
+      if (/recording-aborted/.test(m)) throw e; // user bấm Dừng
+      return { transcript: '', words: [], pitch: [], spokenMs: 0, engine: 'error', error: 'rec:' + m };
+    }
 
     if (engine === 'whisper') {
-      let groqErrReason = '';
-      // CHẶN ẢO GIÁC TRÊN IM LẶNG: VAD không thấy tiếng nói (mic thu im lặng) → audio
-      // trống → KHÔNG gửi Groq (Whisper bịa "Vielen Dank."). Báo trung thực "no-voice".
+      // VAD không thấy tiếng nói → audio trống → báo "no-voice" (không gửi Groq để
+      // tránh Whisper bịa "Vielen Dank.").
       if (!data.spoke) {
         return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (no-voice: mic thu im lặng)' };
       }
-      // 1. Groq Whisper (nhanh, chính xác, qua Cloudflare Worker → round-robin 5 keys).
+      // Groq Whisper qua background (round-robin 5 keys). ~250ms.
       const groq = await transcribeViaGroq(data.blob, opts.lang2 || 'de');
-      if (groq && groq._err) groqErrReason = groq._err; // lưu lý do để debug
-      if (groq && !groq._err && groq.text != null) {
-        const txt = groq.text.trim();
-        if (txt) return { transcript: txt, words: groq.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'groq-whisper (trang)' };
+      if (groq && !groq._err && (groq.text || '').trim()) {
+        return { transcript: groq.text.trim(), words: groq.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'groq-whisper' };
       }
-      // 2. Groq thất bại → offline Whisper (Side Panel, model ấm sẵn).
-      const result = await transcribeViaSidePanel(data.audio16k, opts);
-      if (result && result.text != null) {
-        const txt = (result.text || '').trim();
-        const V = root.ShadowValidate;
-        const bad = !!(txt && V && V.classifyTranscript && V.classifyTranscript(txt) === 'bad');
-        return { transcript: txt, words: result.words || [], pitch: [], spokenMs: data.spokenMs, engine: 'whisper:' + (result.modelShort || '?') + ' (trang)', lowConfidence: bad };
-      }
-      // 3. Tất cả thất bại → trả rỗng; đính kèm lý do Groq để UI hiển thị.
-      return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (groq:' + (groqErrReason || 'empty') + ')' };
+      // Groq lỗi/rỗng → báo rõ lý do (KHÔNG fallback lằng nhằng gây treo).
+      return { transcript: '', words: [], pitch: [], spokenMs: data.spokenMs, engine: 'silent (groq:' + ((groq && groq._err) || 'empty') + ')' };
     }
     // 'server' engine không hỗ trợ tại trang -> để speech.js fallback về Side Panel.
     throw new Error('page-mic-unsupported-engine');
