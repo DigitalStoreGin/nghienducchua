@@ -44,7 +44,8 @@
   async function recordRaw(opts) {
     const minMs = 600;
     const hangMs = (opts.vad && opts.vad.silenceHangMs) || 600;
-    const noSpeechMs = 2000;
+    const noSpeechMs = opts.noSpeechMs || 3000; // cho người dùng ~3s để bắt đầu nói
+    const noVadStop = !!opts.noVadStop;          // self-test: ghi đủ maxMs để đo mức âm
     const maxMs = opts.maxMs || 7000;
     await ensure();
     const ac = new AudioContext();
@@ -58,11 +59,12 @@
     const stopped = new Promise((res, rej) => { recorder.onstop = res; recorder.onerror = (e) => rej(e.error || new Error('media-recorder-error')); });
     recorder.start(200);
 
-    let silenceMs = 0, spoke = false, frames = 0, noiseSum = 0, noiseN = 0, thresh = 0.02;
+    let silenceMs = 0, spoke = false, frames = 0, noiseSum = 0, noiseN = 0, thresh = 0.02, peakRms = 0;
     const FRAME = 50;
     const monitor = setInterval(() => {
       analyser.getFloatTimeDomainData(sample);
       let rms = 0; for (let i = 0; i < sample.length; i++) rms += sample[i] * sample[i]; rms = Math.sqrt(rms / sample.length);
+      if (rms > peakRms) peakRms = rms; // đỉnh âm lượng (để chẩn đoán mic im lặng)
       frames++; const elapsed = frames * FRAME;
       if (elapsed <= 400) { noiseSum += rms; noiseN++; thresh = Math.min(0.12, Math.max(0.02, (noiseSum / noiseN) * 2.5 + 0.006)); }
       else if (rms > thresh) { spoke = true; silenceMs = 0; }
@@ -75,6 +77,7 @@
         if (root.SD.pageMic._finalize) { clearInterval(timer); resolve(); return; }
         const elapsed = Date.now() - started;
         if (elapsed >= maxMs) { clearInterval(timer); resolve(); return; }
+        if (noVadStop) return; // self-test: ghi đủ maxMs, không dừng sớm theo VAD
         if (spoke && silenceMs >= hangMs && elapsed >= minMs) { clearInterval(timer); resolve(); return; }
         if (!spoke && elapsed >= noSpeechMs) { clearInterval(timer); resolve(); return; }
       }, 50);
@@ -90,7 +93,7 @@
     const decoded = await ac.decodeAudioData(await blob.arrayBuffer());
     const audio16k = downsampleTo16k(decoded.getChannelData(0), decoded.sampleRate);
     await ac.close();
-    return { audio16k, blob, spokenMs, spoke };
+    return { audio16k, blob, spokenMs, spoke, peakRms, thresh };
   }
 
   // Web Speech NGAY trên trang (origin youtube.com) — continuous để bắt cả câu.
@@ -272,16 +275,22 @@
       add('Worker /health qua background', !!(r && r.ok), (r && (r.detail || r.err)) + (r && r.ms != null ? ' · ' + r.ms + 'ms' : ''));
     } catch (e) { add('Worker /health qua background', false, String(e)); }
 
-    // 6. Ghi âm thật 3.5s + Groq qua background
+    // 6. Ghi âm thật (ghi đủ window, không dừng sớm) + đo mức âm + Groq qua background
     if (gumOk && opts.record !== false) {
       try {
         root.SD.pageMic._abort = false; root.SD.pageMic._finalize = false;
-        const data = await recordRaw({ maxMs: opts.recMs || 3500, vad: {} });
-        add('Ghi âm ~3.5s', !!(data && data.blob && data.blob.size), 'blob ' + (data && data.blob ? data.blob.size : 0) + ' bytes · có tiếng nói=' + (data && data.spoke));
+        const data = await recordRaw({ maxMs: opts.recMs || 4000, noVadStop: true, vad: {} });
+        const peak = data && data.peakRms != null ? data.peakRms : 0;
+        // peak < 0.01 ≈ im lặng (sai mic / mic tắt tiếng). > 0.03 = có thu được tiếng.
+        const micOk = peak >= 0.02;
+        add('Mức âm mic thu được', micOk,
+          'đỉnh=' + peak.toFixed(3) + (micOk ? ' (tốt)' : ' (QUÁ NHỎ — kiểm tra thiết bị mic / mic tắt tiếng trong Windows)') +
+          ' · ngưỡng=' + (data && data.thresh != null ? data.thresh.toFixed(3) : '?') +
+          ' · blob=' + (data && data.blob ? data.blob.size : 0) + 'B');
         const t0 = Date.now();
         const groq = await transcribeViaGroq(data.blob, opts.lang || 'de');
         if (groq && groq._err) add('Groq chấm (qua background)', false, groq._err + ' · ' + (Date.now() - t0) + 'ms');
-        else add('Groq chấm (qua background)', !!(groq && groq.text != null), 'nghe được: "' + ((groq && groq.text) || '(rỗng)') + '" · ' + (Date.now() - t0) + 'ms');
+        else add('Groq chấm (qua background)', !!(groq && (groq.text || '').trim()), 'nghe được: "' + ((groq && groq.text) || '').trim() + '" · ' + (Date.now() - t0) + 'ms');
       } catch (e) { add('Ghi âm + Groq', false, (e && (e.name + ': ' + e.message)) || String(e)); }
       finally { try { release(); } catch (_) {} }
     }

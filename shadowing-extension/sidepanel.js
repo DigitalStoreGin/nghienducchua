@@ -1360,9 +1360,9 @@
       row(r.vsubs, 'Overlay phụ đề video');
 
     // Self-test sâu: ghi âm thật + Groq (mất ~4-5s, cần nói vài tiếng).
-    html += '<div class="hintline">🎤 Đang chạy kiểm tra ghi âm + chấm điểm — <b>hãy nói “xin chào test” trong ~3 giây</b>…</div>';
+    html += '<div class="hintline">🎤 Đang ghi âm 4 giây — <b>HÃY NÓI TO “một hai ba bốn năm” NGAY BÂY GIỜ</b>…</div>';
     box.innerHTML = html;
-    const st = await pageMicRequest('selftest', { record: true, recMs: 3500 });
+    const st = await pageMicRequest('selftest', { record: true, recMs: 4000 });
     const report = st && st.ok && st.report ? st.report : null;
     if (report && report.steps) {
       report.steps.forEach((s) => { html += row(s.ok, s.name, s.detail); });
