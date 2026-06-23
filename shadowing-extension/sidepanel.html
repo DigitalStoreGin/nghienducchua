@@ -337,11 +337,23 @@
         <div class="you-said-label">YOU SAID</div>
         <canvas id="waveform-canvas" class="waveform-canvas" width="280" height="36"></canvas>
         <div class="you-said-text" id="you-said-text"></div>
+        <!-- Word detail card: bấm bất kỳ từ nào để xem cách phát âm -->
+        <div id="word-detail" class="word-detail" hidden>
+          <div class="word-detail-header">
+            <span class="word-detail-w" id="word-detail-w"></span>
+            <span class="word-detail-status" id="word-detail-status"></span>
+            <button class="word-detail-close" id="word-detail-close" aria-label="Đóng">&#10005;</button>
+          </div>
+          <div class="word-detail-hints" id="word-detail-hints"></div>
+          <div class="word-detail-sim" id="word-detail-sim"></div>
+          <button class="word-detail-speak" id="word-detail-speak">&#128266; Nghe ph&#225;t &#226;m &#273;&#250;ng</button>
+        </div>
       </div>
       <!-- Footer: always pinned at bottom of panel -->
       <div class="record-panel-footer">
         <button class="record-action-btn" id="btn-listen">&#128266; Nghe m&#7851;u</button>
         <button class="record-action-btn" id="btn-replay" disabled>&#128257; Nghe l&#7841;i</button>
+        <div class="footer-sep"></div>
         <button class="record-action-btn record-action-btn--primary" id="btn-rescore">&#127908; Ch&#7845;m &#273;i&#7875;m</button>
       </div>
     </div>

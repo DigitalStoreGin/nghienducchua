@@ -581,17 +581,19 @@
     } else if (aiBox) {
       aiBox.hidden = true;
     }
-    // Update record panel — YOU SAID: colored word spans. Từ sai (de) bấm được để "Nghe đúng".
+    // Update record panel — YOU SAID: colored word spans. Bấm bất kỳ từ nào để xem cách phát âm.
+    _lastScoreWords = sc.words || [];
+    { const wd = $('#word-detail'); if (wd) wd.hidden = true; }
     const ys = $('#you-said-text');
     if (ys) {
       if (sc.words && sc.words.length) {
-        const isDe = (settings.targetLang || 'de') === 'de';
-        ys.innerHTML = sc.words.map((w) => {
-          const say = isDe && w.status !== 'correct';
-          return '<span class="fw ' + w.status + (say ? ' fw-say' : '') + '" data-w="' + esc(w.text) +
-            '" title="' + esc(wordTitle(w)) + '">' + esc(w.text) + (say ? ' 🔊' : '') + '</span>';
-        }).join('');
-        ys.querySelectorAll('.fw-say').forEach((el) => { el.onclick = () => speakText(el.dataset.w); });
+        ys.innerHTML = sc.words.map((w) =>
+          '<span class="fw ' + w.status + ' fw-say" data-w="' + esc(w.text) +
+          '" title="' + esc(wordTitle(w)) + '">' + esc(w.text) + '</span>'
+        ).join('');
+        ys.querySelectorAll('.fw-say').forEach((el) => {
+          el.onclick = (e) => { e.stopPropagation(); showWordDetail(el.dataset.w); };
+        });
       } else {
         ys.textContent = sc.transcript || '–';
       }
@@ -1724,6 +1726,7 @@
   // ───────────────────────────────────────────────────────────────────────
   let panelRecording = false;
   let replayAudio = null; // Audio đang phát lại bản ghi của người dùng
+  let _lastScoreWords = null; // Từ cuối cùng được chấm điểm — dùng cho word detail popup
   function setPanelRecUI(on) {
     const dot = $('#record-listening-dot'); if (dot) dot.classList.toggle('active', on);
     const st = $('#record-status-text'); if (st) st.textContent = on ? 'Listening…' : 'Đang chấm…';
@@ -1776,6 +1779,50 @@
     renderFeedback({ score, sentence: s });
   }
   { const b = $('#btn-rescore'); if (b) b.onclick = () => scoreNow(); }
+
+  // Word detail popup — bấm từ trong YOU SAID để xem phát âm
+  function showWordDetail(word) {
+    const popup = $('#word-detail');
+    if (!popup) return;
+    const wData = (_lastScoreWords || []).find((w) => w.text === word);
+    const wEl = $('#word-detail-w');
+    if (wEl) wEl.textContent = word;
+    const stEl = $('#word-detail-status');
+    if (stEl) {
+      const statusMap = { correct: '✓ Đúng', near: '~ Gần đúng', wrong: '✗ Sai', missing: '— Thiếu' };
+      const st = wData ? wData.status : '';
+      stEl.textContent = wData ? (statusMap[st] || '') : '';
+      stEl.className = 'word-detail-status ' + st;
+    }
+    const hintsEl = $('#word-detail-hints');
+    if (hintsEl) {
+      const isDe = (settings.targetLang || 'de') === 'de';
+      const hints = isDe ? germanHints(word) : [];
+      if (hints.length) {
+        hintsEl.innerHTML = hints.map((h) =>
+          '<span class="wdh-row"><b>' + esc(h.cluster) + '</b> → ' + esc(h.hint) + '</span>'
+        ).join('');
+        hintsEl.hidden = false;
+      } else {
+        hintsEl.innerHTML = '';
+        hintsEl.hidden = true;
+      }
+    }
+    const simEl = $('#word-detail-sim');
+    if (simEl) {
+      if (wData && wData.sim != null) {
+        const heard = wData.heard ? ' · Nghe: "' + wData.heard + '"' : '';
+        simEl.textContent = 'Giống ' + Math.round(wData.sim * 100) + '%' + heard;
+        simEl.hidden = false;
+      } else {
+        simEl.hidden = true;
+      }
+    }
+    const speakEl = $('#word-detail-speak');
+    if (speakEl) speakEl.onclick = () => speakText(word);
+    popup.hidden = false;
+  }
+  { const b = $('#word-detail-close'); if (b) b.onclick = () => { const p = $('#word-detail'); if (p) p.hidden = true; }; }
 
   // Queue Complete modal
   { const b = $('#modal-close'); if (b) b.onclick = () => { const m = $('#modal-backdrop'); if (m) m.hidden = true; }; }

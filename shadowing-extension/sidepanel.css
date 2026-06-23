@@ -917,6 +917,99 @@ body.dark .weak-word-chip { background: rgba(234,67,53,.12); border-color: rgba(
 body.dark .weak-word-chip:hover { background: rgba(234,67,53,.22); }
 body.dark .weak-empty { color: var(--text2); }
 
+/* ===== FOOTER SEPARATOR (giữa Nghe mẫu/Nghe lại và Chấm điểm) ===== */
+.footer-sep {
+  flex: 0 0 100%;
+  height: 1px;
+  background: #dadce0;
+  margin: 6px 0 2px;
+}
+body.dark .footer-sep { background: var(--border); }
+
+/* ===== WORD DETAIL POPUP (bấm từ trong YOU SAID để xem cách phát âm) ===== */
+.word-detail {
+  background: #f0f4ff;
+  border: 1.5px solid #c5d3f8;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  animation: slide-up-sm .15s ease;
+}
+@keyframes slide-up-sm {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.word-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.word-detail-w {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a1a2e;
+  flex: 1;
+}
+.word-detail-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.word-detail-status.correct { background: #e6f4ea; color: #1e7e34; }
+.word-detail-status.near    { background: #fff8e1; color: #b06000; }
+.word-detail-status.wrong,
+.word-detail-status.missing { background: #fce8e6; color: #c5221f; }
+.word-detail-close {
+  background: none; border: none; cursor: pointer;
+  color: #80868b; font-size: 14px; padding: 2px 6px;
+  border-radius: 6px; line-height: 1; flex-shrink: 0;
+}
+.word-detail-close:hover { background: #e8eaed; color: #333; }
+.word-detail-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.wdh-row {
+  font-size: 12.5px;
+  color: #333;
+  background: rgba(26,115,232,.07);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.wdh-row b { color: #1a73e8; }
+.word-detail-sim {
+  font-size: 12px;
+  color: #5f6368;
+  margin-bottom: 10px;
+}
+.word-detail-speak {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid #1a73e8;
+  border-radius: 20px;
+  background: #fff;
+  color: #1a73e8;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s;
+}
+.word-detail-speak:hover { background: #e8f0fe; }
+body.dark .word-detail { background: rgba(100,130,255,.1); border-color: rgba(100,130,255,.3); }
+body.dark .word-detail-w { color: var(--text); }
+body.dark .wdh-row { background: rgba(100,130,255,.12); color: var(--text); }
+body.dark .wdh-row b { color: var(--accent); }
+body.dark .word-detail-sim { color: var(--text2); }
+body.dark .word-detail-speak { background: var(--bg2); border-color: var(--accent); color: var(--accent); }
+body.dark .word-detail-speak:hover { background: var(--accent-light); }
+body.dark .word-detail-close { color: var(--text2); }
+body.dark .word-detail-close:hover { background: var(--bg2); }
+
 /* ===== BOTTOM TOOLBAR ===== */
 .bottom-toolbar {
   position: fixed;
