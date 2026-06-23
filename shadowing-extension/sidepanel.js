@@ -419,6 +419,64 @@
     } catch { if (aiBox && aiBox.isConnected) aiBox.hidden = true; }
   }
 
+  // ===== 🗣️ GỢI Ý PHÁT ÂM TIẾNG ĐỨC (cho từ phát âm sai) =====
+  // Bảng tra cụm chữ → âm vị + cách đọc thân thiện tiếng Việt. Quét cụm DÀI trước.
+  const DE_PHONEME_HINTS = [
+    ['tsch', "đọc như 'ch' tiếng Anh (church)"],
+    ['sch',  "/ʃ/ — đọc như 'sờ'"],
+    ['chs',  "/ks/ — đọc như 'x'"],
+    ['ei',   "đọc như 'ai'"],
+    ['ie',   "đọc như 'i' kéo dài"],
+    ['eu',   "đọc như 'oi'"],
+    ['äu',   "đọc như 'oi'"],
+    ['au',   "đọc như 'au'"],
+    ['ch',   "/x/–/ç/ — 'kh' nhẹ ở cổ họng"],
+    ['qu',   "/kv/ — đọc 'kv'"],
+    ['ng',   "âm mũi 'ng'"],
+    ['pf',   "bật 'p' rồi 'f' liền nhau"],
+    ['ß',    "/s/ — 's' xì"],
+    ['z',    "/ts/ — đọc 'ts'"],
+    ['v',    "/f/ — đọc như 'ph'"],
+    ['w',    "/v/ — đọc như 'v'"],
+    ['ä',    "'e' mở rộng"],
+    ['ö',    "tròn môi như 'ơ'"],
+    ['ü',    "tròn môi như 'uy'"],
+    ['r',    "âm 'r' rung ở cổ họng"],
+  ];
+  // Trả về tối đa 2 gợi ý nổi bật cho 1 từ (không trùng cụm).
+  function germanHints(word) {
+    const w = String(word || '').toLowerCase();
+    const found = [];
+    if (/^st/.test(w)) found.push({ cluster: 'st-', hint: "đầu từ đọc 'sht'" });
+    if (/^sp/.test(w)) found.push({ cluster: 'sp-', hint: "đầu từ đọc 'shp'" });
+    for (const [cluster, hint] of DE_PHONEME_HINTS) {
+      if (found.length >= 2) break;
+      if (w.includes(cluster) && !found.some((f) => f.cluster === cluster)) found.push({ cluster, hint });
+    }
+    return found.slice(0, 2);
+  }
+  // Cụm âm bị sai nhiều nhất trong các từ (cho gợi ý "Tập trung vào…").
+  function topPhoneme(words) {
+    const counts = {};
+    (words || []).forEach((wd) => {
+      if (wd.status === 'correct') return;
+      germanHints(wd.text).forEach((h) => { counts[h.cluster] = (counts[h.cluster] || 0) + 1; });
+    });
+    let best = null, bestN = 0;
+    for (const c in counts) if (counts[c] > bestN) { bestN = counts[c]; best = c; }
+    return best;
+  }
+  // Tooltip cho 1 từ: nghe được gì + % giống + gợi ý phát âm (nếu sai).
+  function wordTitle(w) {
+    const parts = [w.heard ? 'Nghe: ' + w.heard : 'Không nghe'];
+    if (w.sim != null) parts.push('Giống: ' + Math.round(w.sim * 100) + '%');
+    if (w.status !== 'correct' && (settings.targetLang || 'de') === 'de') {
+      const h = germanHints(w.text);
+      if (h.length) parts.push('💡 ' + h.map((x) => x.hint).join(' · '));
+    }
+    return parts.join(' · ');
+  }
+
   function triggerCelebration(tier) {
     const wrap = $('#record-score-circle-wrap') || document.querySelector('.record-score-circle-wrap');
     if (!wrap) return;
@@ -476,6 +534,7 @@
       const dot = $('#record-listening-dot'); if (dot) dot.classList.remove('active');
       const ys = $('#you-said-text'); if (ys) ys.textContent = hint || m.replace(/<[^>]+>/g, '');
       const tm = $('#score-tier-msg'); if (tm) tm.hidden = true;
+      const pfe = $('#phoneme-focus'); if (pfe) pfe.hidden = true;
       setRecordScore(null);
       stopWaveform();
       return;
@@ -486,6 +545,7 @@
       recordPractice(sc.overall);
       const curSent = sentences[current];
       if (curSent) autoUpdateStatus(curSent.text, sc.overall);
+      recordWeakWords(sc.words);
     }
     // Animated score rings (like ELSA Speak)
     const ring = (label, val) => {
@@ -506,31 +566,46 @@
         <div class="score-ring-lbl">${label}</div>
       </div>`;
     };
-    const words = sc.words.map((w) => '<span class="fw ' + w.status + '" title="heard: ' + esc(w.heard || '—') + '">' + esc(w.text) + '</span>').join(' ');
+    const words = sc.words.map((w) => '<span class="fw ' + w.status + '" data-w="' + esc(w.text) + '" title="' + esc(wordTitle(w)) + '">' + esc(w.text) + '</span>').join(' ');
     box.innerHTML = '<div class="score-ring-wrap" style="position:relative">' +
       ring('Overall', sc.overall) + ring('Pronunc.', sc.pronunciation) +
       ring('Fluency', sc.fluency) + ring('Intonation', sc.intonation) + '</div>' +
       '<div class="words">' + words + '</div>' +
       '<div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>' +
       (sc.lowConfidence ? '<div class="err" style="margin-top:6px">🤔 Nhận diện chưa chắc chắn — thử nói lại rõ hơn để chấm chính xác.</div>' : '') +
-      '<div class="ai-score ai-score--loading">⏳ Đang chấm bằng Claude AI…</div>';
-    // Async: Claude AI scores in background, updates UI when ready
+      '<div class="ai-score ai-score--loading">⏳ Đang chấm bằng AI…</div>';
+    // Async: AI (Groq Llama) scores in background, updates UI when ready
     const aiBox = box.querySelector('.ai-score');
     if (aiBox && sc.transcript && f.sentence && f.sentence.text) {
       claudeScoreAsync(f.sentence.text, sc.transcript, aiBox);
     } else if (aiBox) {
       aiBox.hidden = true;
     }
-    // Update record panel — YOU SAID: colored word spans when available
+    // Update record panel — YOU SAID: colored word spans. Từ sai (de) bấm được để "Nghe đúng".
     const ys = $('#you-said-text');
     if (ys) {
       if (sc.words && sc.words.length) {
-        ys.innerHTML = sc.words.map((w) =>
-          '<span class="fw ' + w.status + '" title="' + (w.heard ? 'Nghe: ' + esc(w.heard) : 'Không nghe') + '">' + esc(w.text) + '</span>'
-        ).join('');
+        const isDe = (settings.targetLang || 'de') === 'de';
+        ys.innerHTML = sc.words.map((w) => {
+          const say = isDe && w.status !== 'correct';
+          return '<span class="fw ' + w.status + (say ? ' fw-say' : '') + '" data-w="' + esc(w.text) +
+            '" title="' + esc(wordTitle(w)) + '">' + esc(w.text) + (say ? ' 🔊' : '') + '</span>';
+        }).join('');
+        ys.querySelectorAll('.fw-say').forEach((el) => { el.onclick = () => speakText(el.dataset.w); });
       } else {
         ys.textContent = sc.transcript || '–';
       }
+    }
+    // 🎯 Gợi ý âm cần tập trung (từ cụm sai nhiều nhất) — chỉ tiếng Đức.
+    const pfEl = $('#phoneme-focus');
+    if (pfEl) {
+      const top = (settings.targetLang || 'de') === 'de' ? topPhoneme(sc.words) : null;
+      if (top) {
+        const ent = DE_PHONEME_HINTS.find((x) => x[0] === top.replace(/-$/, ''));
+        const hint = top === 'st-' ? "đầu từ đọc 'sht'" : top === 'sp-' ? "đầu từ đọc 'shp'" : (ent ? ent[1] : '');
+        pfEl.innerHTML = "🎯 Tập trung vào âm <b>'" + esc(top.replace(/-$/, '')) + "'</b>" + (hint ? ' — ' + esc(hint) : '');
+        pfEl.hidden = false;
+      } else { pfEl.hidden = true; }
     }
     // Score tier message + celebration
     const tm = $('#score-tier-msg');
@@ -557,6 +632,8 @@
     setRecordScore(sc.overall != null ? sc.overall : null);
     const stxt = $('#record-status-text'); if (stxt) stxt.textContent = 'Sẵn sàng';
     const dot = $('#record-listening-dot'); if (dot) dot.classList.remove('active');
+    // Bật nút "Nghe lại" nếu có bản ghi để phát lại.
+    { const rb = $('#btn-replay'); if (rb) rb.disabled = !(window.ShadowMic && window.ShadowMic.getLastBlob && window.ShadowMic.getLastBlob()); }
     showRecordPanel(true);
     // Update score gauges in practice view
     const so = $('#score-overall'); if (so) so.textContent = sc.overall ?? '–';
@@ -958,6 +1035,44 @@
   function renderStreak() {
     const sc = $('#streak-count'); if (sc) sc.textContent = '🔥 ' + (streakData.streak || 0);
     const xc = $('#xp-count'); if (xc) xc.textContent = '⭐ ' + (streakData.xp || 0);
+  }
+
+  // ===== 📉 TỪ YẾU CÁ NHÂN (theo dõi từ phát âm sai qua nhiều phiên) =====
+  const WEAK_KEY = 'se_weak_words_v1';
+  let weakWords = {}; // { lemma: { word, miss, attempts, updatedAt } }
+
+  async function loadWeakWords() {
+    try { const r = await chrome.storage.local.get(WEAK_KEY); if (r[WEAK_KEY]) weakWords = r[WEAK_KEY]; } catch (_) {}
+    renderWeakWords();
+  }
+  // Cập nhật danh sách từ yếu: từ sai/thiếu -> tăng miss; đọc đúng -> giảm dần.
+  function recordWeakWords(scoreWords) {
+    if ((settings.targetLang || 'de') !== 'de') return; // hiện chỉ hỗ trợ tiếng Đức
+    let changed = false;
+    (scoreWords || []).forEach((wd) => {
+      const key = String(wd.text || '').toLowerCase();
+      if (!key) return;
+      const e = weakWords[key] || { word: wd.text, miss: 0, attempts: 0, updatedAt: 0 };
+      e.attempts++;
+      if (wd.status === 'wrong' || wd.status === 'missing') { e.miss++; changed = true; }
+      else if (wd.status === 'correct' && e.miss > 0) { e.miss--; changed = true; } // đã đọc đúng -> bớt yếu
+      e.word = wd.text; e.updatedAt = Date.now();
+      weakWords[key] = e;
+    });
+    // Dọn từ đã thành thạo (miss <= 0) cho danh sách gọn.
+    Object.keys(weakWords).forEach((k) => { if (weakWords[k].miss <= 0) delete weakWords[k]; });
+    if (changed) { try { chrome.storage.local.set({ [WEAK_KEY]: weakWords }); } catch (_) {} renderWeakWords(); }
+  }
+  function renderWeakWords() {
+    const box = $('#weak-words-list'); if (!box) return;
+    const arr = Object.values(weakWords).filter((e) => e.miss > 0)
+      .sort((a, b) => b.miss - a.miss || b.updatedAt - a.updatedAt).slice(0, 40);
+    if (!arr.length) { box.innerHTML = '<div class="weak-empty">Chưa có từ yếu — luyện thêm để theo dõi! 💪</div>'; return; }
+    box.innerHTML = arr.map((e) =>
+      '<button class="weak-word-chip" data-w="' + esc(e.word) + '" title="Sai ' + e.miss + ' lần — bấm để nghe phát âm đúng">' +
+      esc(e.word) + ' <span class="weak-word-count">×' + e.miss + '</span> 🔊</button>'
+    ).join('');
+    box.querySelectorAll('.weak-word-chip').forEach((b) => { b.onclick = () => speakText(b.dataset.w); });
   }
 
   // ===== 🏷️ SENTENCE STATUS (LingQ-style: new/learning/known) =====
@@ -1561,6 +1676,21 @@
   { const b = $('#btn-shadow-fav'); if (b) b.onclick = async () => { if (!settings.autoRecord || await enableMic({ silent: true })) cmd('shadowFav', { target: settings.targetLang, native: settings.nativeLang }); }; }
   { const b = $('#btn-blur'); if (b) b.onclick = startRecall; }
   { const b = $('#btn-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) speakText(s.text); }; }
+  // 🔁 Nghe lại bản ghi của chính mình (blob cuối cùng từ mic-service).
+  {
+    const b = $('#btn-replay');
+    if (b) b.onclick = () => {
+      try {
+        const blob = window.ShadowMic && window.ShadowMic.getLastBlob && window.ShadowMic.getLastBlob();
+        if (!blob) { setStatus('Chưa có bản ghi để nghe lại — hãy nói & chấm trước.', 'warn'); return; }
+        if (replayAudio) { try { replayAudio.pause(); URL.revokeObjectURL(replayAudio.src); } catch (_) {} }
+        replayAudio = new Audio(URL.createObjectURL(blob));
+        b.classList.add('playing');
+        replayAudio.onended = replayAudio.onerror = () => { b.classList.remove('playing'); try { URL.revokeObjectURL(replayAudio.src); } catch (_) {} };
+        replayAudio.play().catch(() => { b.classList.remove('playing'); });
+      } catch (_) {}
+    };
+  }
   { const b = $('#btn-load-auto'); if (b) b.onclick = () => cmd('loadAuto', { target: settings.targetLang, native: settings.nativeLang }); }
   { const b = $('#btn-load-live'); if (b) b.onclick = async () => { const r = await cmd('live'); if (r) b.classList.toggle('on', !!r.running); }; }
 
@@ -1593,6 +1723,7 @@
   // video. Bỏ hẳn content-script recording / Web Speech / Whisper offline.
   // ───────────────────────────────────────────────────────────────────────
   let panelRecording = false;
+  let replayAudio = null; // Audio đang phát lại bản ghi của người dùng
   function setPanelRecUI(on) {
     const dot = $('#record-listening-dot'); if (dot) dot.classList.toggle('active', on);
     const st = $('#record-status-text'); if (st) st.textContent = on ? 'Listening…' : 'Đang chấm…';
@@ -1610,6 +1741,8 @@
     setRecordScore(null);
     { const el = $('#you-said-text'); if (el) el.textContent = ''; }
     { const tm = $('#score-tier-msg'); if (tm) tm.hidden = true; }
+    { const pfe = $('#phoneme-focus'); if (pfe) pfe.hidden = true; }
+    { const rb = $('#btn-replay'); if (rb) rb.disabled = true; }
     const fb = $('#fb'); if (fb) fb.hidden = true;
     // Tạm dừng video trên trang để tiếng video không lẫn vào mic (echo).
     cmd('holdPause', { ms: 9000 });
@@ -1921,6 +2054,7 @@
   // Load persistent data
   loadStreak();
   loadSentStatus();
+  loadWeakWords();
   loadDarkMode();
   initOnboardingUI();
   initUpgradeUI();

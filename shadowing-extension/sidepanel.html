@@ -332,6 +332,7 @@
           </div>
           <div class="record-score-label">Match %</div>
           <div class="score-tier-msg" id="score-tier-msg" hidden></div>
+          <div class="phoneme-focus" id="phoneme-focus" hidden></div>
         </div>
         <div class="you-said-label">YOU SAID</div>
         <canvas id="waveform-canvas" class="waveform-canvas" width="280" height="36"></canvas>
@@ -339,7 +340,8 @@
       </div>
       <!-- Footer: always pinned at bottom of panel -->
       <div class="record-panel-footer">
-        <button class="record-action-btn" id="btn-listen">&#128266; Listen</button>
+        <button class="record-action-btn" id="btn-listen">&#128266; Nghe m&#7851;u</button>
+        <button class="record-action-btn" id="btn-replay" disabled>&#128257; Nghe l&#7841;i</button>
         <button class="record-action-btn record-action-btn--primary" id="btn-rescore">&#127908; Ch&#7845;m &#273;i&#7875;m</button>
       </div>
     </div>
@@ -643,6 +645,14 @@
       <div class="menu-section-body">
         <!-- id="progress-chart-area" used by new spec -->
         <div id="progress-chart-area" class="progress-chart-area"></div>
+      </div>
+    </details>
+
+    <!-- WEAK WORDS SECTION — từ phát âm sai nhiều, bấm để nghe đúng -->
+    <details class="menu-section" id="section-weak">
+      <summary class="menu-section-title" id="tab-weak">T&#7915; y&#7871;u c&#7911;a b&#7841;n</summary>
+      <div class="menu-section-body">
+        <div id="weak-words-list" class="weak-words-list"></div>
       </div>
     </details>
 

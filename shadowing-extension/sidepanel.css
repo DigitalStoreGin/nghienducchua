@@ -607,6 +607,25 @@ body.hide-text .current-text.revealed { filter: none; }
 .fw.near    { background: #fef3cd; color: #856404; }
 .fw.wrong   { background: #fad2cf; color: #b31412; text-decoration: underline wavy #ea4335; }
 .fw.missing { background: #fce8e6; color: #ea4335; text-decoration: line-through; opacity: .75; }
+/* Từ sai bấm được để "Nghe đúng" (TTS) */
+.fw-say { cursor: pointer; }
+.fw-say:hover { transform: scale(1.1); box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+
+/* 🎯 Gợi ý âm cần tập trung — dưới vòng điểm */
+.phoneme-focus {
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  color: #5f6368;
+  background: #e8f0fe;
+  border-radius: 10px;
+  padding: 5px 12px;
+  margin: 6px auto 2px;
+  max-width: 260px;
+}
+.phoneme-focus b { color: #1a73e8; }
+body.dark .phoneme-focus { background: var(--accent-light); color: var(--text); }
+body.dark .phoneme-focus b { color: var(--accent); }
 
 /* Score tier message — shown in record panel below circle */
 .score-tier-msg {
@@ -872,6 +891,31 @@ body.dark .record-status-text { color: var(--text); }
 body.dark .record-action-btn { background: var(--bg2); border-color: var(--border); color: var(--accent); }
 body.dark .record-action-btn:hover { background: var(--accent-light); }
 body.dark .record-action-btn--primary { background: var(--accent); color: #fff; }
+/* 3 nút trong footer: Nghe mẫu + Nghe lại chia 1 hàng, Chấm điểm chiếm trọn hàng dưới */
+.record-panel-footer { flex-wrap: wrap; }
+.record-action-btn { min-width: 78px; }
+.record-action-btn--primary { flex: 1 1 100%; }
+/* Nút "Nghe lại" đang phát — nhấp nháy nhẹ */
+.record-action-btn.playing { background: #e6f4ea; border-color: #34a853; color: #1e7e34; animation: replay-pulse 1s ease-in-out infinite; }
+@keyframes replay-pulse { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
+body.dark .record-action-btn.playing { background: rgba(52,168,83,.18); border-color: #34a853; color: #81c995; }
+
+/* ===== 📉 TỪ YẾU CỦA BẠN ===== */
+.weak-words-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.weak-word-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: 16px;
+  border: 1.5px solid #f6c6c2; background: #fff5f5; color: #b31412;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: transform .08s, background .12s;
+}
+.weak-word-chip:hover { background: #fad2cf; transform: translateY(-1px); }
+.weak-word-chip:active { transform: scale(.96); }
+.weak-word-count { font-size: 11px; opacity: .7; }
+.weak-empty { font-size: 12px; color: #80868b; padding: 4px 2px; }
+body.dark .weak-word-chip { background: rgba(234,67,53,.12); border-color: rgba(234,67,53,.4); color: #f28b82; }
+body.dark .weak-word-chip:hover { background: rgba(234,67,53,.22); }
+body.dark .weak-empty { color: var(--text2); }
 
 /* ===== BOTTOM TOOLBAR ===== */
 .bottom-toolbar {

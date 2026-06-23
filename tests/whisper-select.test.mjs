@@ -5,47 +5,47 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const WS = require('../shadowing-extension/lib/whisper-select.js');
 
-describe('pickWhisperModel — chọn model theo % RAM máy khách (trần 2GB)', () => {
-  it('máy rất mạnh (≥8GB báo, ≥8 nhân) → medium (~1.5GB, model lớn nhất ≤2GB)', () => {
-    // deviceMemory bị chặn ở 8; ≥8 nhân -> suy ra RAM thực ~16GB -> medium chiếm ~12.5%.
-    expect(WS.pickWhisperModel({ mem: 8, cores: 8 }).short).toBe('medium');
-    expect(WS.pickWhisperModel({ mem: 16, cores: 12 }).short).toBe('medium');
+describe('pickWhisperModel — chọn model theo % RAM máy khách (sàn base, trần small, ngưỡng 30%)', () => {
+  it('máy rất mạnh (≥8GB báo, ≥8 nhân) → small (trần auto; medium bị loại theo chính sách)', () => {
+    // deviceMemory bị chặn ở 8; ≥8 nhân -> suy ra RAM thực ~16GB -> small chiếm ~6%.
+    expect(WS.pickWhisperModel({ mem: 8, cores: 8 }).short).toBe('small');
+    expect(WS.pickWhisperModel({ mem: 16, cores: 12 }).short).toBe('small');
   });
 
-  it('máy mạnh vừa (8GB, 4 nhân) → small (medium chiếm 25% nên bị loại)', () => {
+  it('máy mạnh vừa (8GB, 4 nhân) → small (small chiếm ~12.5% ≤30%, đủ 4 nhân)', () => {
     expect(WS.pickWhisperModel({ mem: 8, cores: 4 }).short).toBe('small');
   });
 
-  it('máy phổ thông (6GB, 4 nhân) → base (small chiếm ~17% >15% nên bị loại)', () => {
-    expect(WS.pickWhisperModel({ mem: 6, cores: 4 }).short).toBe('base');
+  it('máy phổ thông (6GB, 4 nhân) → small (small chiếm ~17% ≤30%, đủ 4 nhân)', () => {
+    expect(WS.pickWhisperModel({ mem: 6, cores: 4 }).short).toBe('small');
   });
 
-  it('máy 4GB → base (small chiếm 25%, base chỉ ~12.5%)', () => {
-    expect(WS.pickWhisperModel({ mem: 4, cores: 4 }).short).toBe('base');
-    expect(WS.pickWhisperModel({ mem: 4, cores: 8 }).short).toBe('base');
+  it('máy 4GB, ≥4 nhân → small (small chiếm 25% ≤30%); 2 nhân → base (thiếu nhân cho small)', () => {
+    expect(WS.pickWhisperModel({ mem: 4, cores: 4 }).short).toBe('small');
+    expect(WS.pickWhisperModel({ mem: 4, cores: 8 }).short).toBe('small');
     expect(WS.pickWhisperModel({ mem: 4, cores: 2 }).short).toBe('base');
   });
 
-  it('máy yếu (≤2GB) → tiny (base chiếm ≥25% nên chỉ chạy 75MB)', () => {
-    expect(WS.pickWhisperModel({ mem: 2, cores: 2 }).short).toBe('tiny');
-    expect(WS.pickWhisperModel({ mem: 1, cores: 1 }).short).toBe('tiny');
+  it('máy yếu (≤2GB) → base (small chiếm >30%; không bao giờ xuống tiny trong auto)', () => {
+    expect(WS.pickWhisperModel({ mem: 2, cores: 2 }).short).toBe('base');
+    expect(WS.pickWhisperModel({ mem: 1, cores: 1 }).short).toBe('base');
   });
 
-  it('không bao giờ vượt trần 2GB', () => {
+  it('không bao giờ vượt trần small (~1GB) trong auto', () => {
     for (const hw of [{ mem: 16, cores: 16 }, { mem: 8, cores: 32 }]) {
-      expect(WS.pickWhisperModel(hw).ramGB).toBeLessThanOrEqual(2.0);
+      expect(WS.pickWhisperModel(hw).ramGB).toBeLessThanOrEqual(1.0);
     }
   });
 
-  it('override ép tay luôn được tôn trọng', () => {
+  it('override ép tay luôn được tôn trọng (kể cả tiny/medium ngoài auto)', () => {
     expect(WS.pickWhisperModel({ mem: 2, cores: 1 }, 'small').short).toBe('small');
     expect(WS.pickWhisperModel({ mem: 16, cores: 16 }, 'tiny').short).toBe('tiny');
     expect(WS.pickWhisperModel({ mem: 8, cores: 8 }, 'medium').short).toBe('medium');
   });
 
-  it('override "auto" hoặc giá trị lạ → quay về tự động', () => {
-    expect(WS.pickWhisperModel({ mem: 8, cores: 8 }, 'auto').short).toBe('medium');
-    expect(WS.pickWhisperModel({ mem: 8, cores: 8 }, 'nonsense').short).toBe('medium');
+  it('override "auto" hoặc giá trị lạ → quay về tự động (small cho máy mạnh)', () => {
+    expect(WS.pickWhisperModel({ mem: 8, cores: 8 }, 'auto').short).toBe('small');
+    expect(WS.pickWhisperModel({ mem: 8, cores: 8 }, 'nonsense').short).toBe('small');
   });
 
   it('mỗi model có id HuggingFace hợp lệ', () => {
