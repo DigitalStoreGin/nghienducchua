@@ -288,6 +288,8 @@
         if (t) { s.trans = t; if ($('#nowDe').textContent === s.text) { $('#nowTr').textContent = t; if (trEl) trEl.textContent = t; } }
       }).catch(() => {});
     }
+    // Panel luyện (Chép/Điền/Ẩn chữ) đang mở → đồng bộ sang câu mới.
+    refreshActivePanel();
   }
   function markCur(i) { document.querySelectorAll('.row').forEach((r) => r.classList.toggle('cur', +r.dataset.i === i)); const r = document.querySelector('.row[data-i="' + i + '"]'); if (r) r.scrollIntoView({ block: 'nearest' }); }
 
@@ -1412,9 +1414,29 @@
 
   // ===== GĐ2: chép chính tả (dictation) =====
   function norm(t) { return (t || '').toLowerCase().replace(/[^a-zäöüß0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean); }
-  function startDictation() {
+
+  // Panel luyện đang mở (Chép/Điền/Ẩn chữ) — để đồng bộ theo câu khi bấm Trước/Sau.
+  let activePanel = null; // { type:'dict'|'cloze'|'recall', diff?:'easy'|'medium'|'hard' }
+  function closeActivePanel() { activePanel = null; const b = $('#dictbox'); if (b) b.hidden = true; }
+  // Khi đổi câu (prev/next/select): nếu panel đang mở thì vẽ lại theo câu mới (không tự đọc).
+  function refreshActivePanel() {
+    if (!activePanel) return;
+    const box = $('#dictbox');
+    if (!box || box.hidden) { activePanel = null; return; }
+    if (!sentences[current]) return;
+    if (activePanel.idx === current) return; // cùng câu → không vẽ lại (tránh mất chữ đang gõ)
+    if (activePanel.type === 'dict') startDictation(true);
+    else if (activePanel.type === 'recall') startRecall(true);
+    else if (activePanel.type === 'cloze') {
+      if (activePanel.diff) runCloze(sentences[current], activePanel.diff, box, true);
+      else startCloze(true);
+    }
+  }
+
+  function startDictation(silent) {
     const s = sentences[current]; if (!s) { setStatus('Chưa có câu.', 'warn'); return; }
-    speakText(s.text);
+    if (!silent) speakText(s.text);
+    activePanel = { type: 'dict', idx: current };
     const box = $('#dictbox');
     box.className = 'dictbox as-panel';
     box.hidden = false;
@@ -1434,7 +1456,7 @@
       '</div>';
     $('#dictin').focus();
     $('#dictplay').onclick = () => speakText(s.text);
-    $('#dictclose').onclick = () => { box.hidden = true; };
+    $('#dictclose').onclick = () => closeActivePanel();
     $('#dictcheck').onclick = () => {
       const ref = norm(s.text), hyp = norm($('#dictin').value);
       const hset = hyp.slice();
@@ -1452,34 +1474,40 @@
     };
   }
 
-  // ===== Ẩn chữ — kết hợp: Nghe → Ẩn → Tự nói hoặc Gõ → Hiện đáp án =====
-  function startRecall() {
+  // ===== Ẩn chữ — luồng: Nghe → Gõ lại câu → Hiện đáp án =====
+  function startRecall(silent) {
     const s = sentences[current]; if (!s) { setStatus('Chưa có câu.', 'warn'); return; }
-    speakText(s.text);
+    if (!silent) speakText(s.text);
+    activePanel = { type: 'recall', idx: current };
     const box = $('#dictbox');
     box.className = 'dictbox as-panel';
     box.hidden = false;
     box.innerHTML =
       '<div class="dp-header">' +
-        '<span class="dp-title">🙈 Nghe → Nhớ → Luyện</span>' +
+        '<span class="dp-title">🙈 Nghe → Gõ → Hiện</span>' +
         '<button class="dp-close" id="recallClose">&#10005;</button>' +
       '</div>' +
       '<div class="dp-body">' +
+        // Bước 1: Nghe
         '<div class="recall-step">' +
-          '<div class="recall-step-label"><span class="recall-step-num">1</span> Nghe câu</div>' +
+          '<div class="recall-step-label"><span class="recall-step-num">1</span> Nghe c&#226;u</div>' +
           '<button class="dp-btn" id="recallPlay">&#128266; Nghe l&#7841;i</button>' +
         '</div>' +
+        // Bước 2: Gõ lại câu (trước là bước 3)
         '<div class="recall-step">' +
-          '<div class="recall-step-label"><span class="recall-step-num">2</span> C&#226;u g&#7889;c (b&#7845;m &#273;&#7875; hi&#7879;n)</div>' +
-          '<div class="recall-hidden res" id="recallText" style="cursor:pointer;font-size:14px;line-height:1.6;padding:8px 10px;border-radius:10px;background:#f8f9fa">' + esc(s.text) + '</div>' +
+          '<div class="recall-step-label"><span class="recall-step-num">2</span> G&#245; l&#7841;i c&#226;u</div>' +
+          '<div class="recall-type-area"><textarea id="recallTypeIn" placeholder="G&#245; l&#7841;i to&#224;n b&#7897; c&#226;u b&#7841;n v&#7915;a nghe&#8230;"></textarea></div>' +
+          '<div class="recall-type-res" id="recallTypeRes"></div>' +
         '</div>' +
+        // Bước 3: Câu gốc — bấm/Kiểm tra để hiện (trước là bước 2)
         '<div class="recall-step">' +
-          '<div class="recall-step-label"><span class="recall-step-num">3</span> Luy&#7879;n — ch&#7885;n c&#225;ch</div>' +
-          '<div class="recall-actions" id="recallActions"></div>' +
+          '<div class="recall-step-label"><span class="recall-step-num">3</span> C&#226;u g&#7889;c (b&#7845;m &#273;&#7875; hi&#7879;n)</div>' +
+          '<div class="recall-hidden res" id="recallText" style="cursor:pointer;font-size:14px;line-height:1.6;padding:8px 10px;border-radius:10px;background:#f8f9fa">' + esc(s.text) + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="dp-footer">' +
         '<button class="dp-btn" id="recallReveal">&#128065; Hi&#7879;n &#273;&#225;p &#225;n</button>' +
+        '<button class="dp-btn dp-btn--primary" id="recallCheck">Ki&#7875;m tra</button>' +
       '</div>';
 
     const txt = $('#recallText');
@@ -1489,62 +1517,34 @@
       void txt.offsetWidth;
       txt.classList.add('recall-reveal-anim');
     };
+    const reveal = () => { if (txt) { txt.classList.remove('recall-hidden'); revealAnim(); } };
 
     $('#recallPlay').onclick = () => speakText(s.text);
-    $('#recallClose').onclick = () => { box.hidden = true; };
-    if (txt) txt.onclick = () => { txt.classList.remove('recall-hidden'); revealAnim(); };
+    $('#recallClose').onclick = () => closeActivePanel();
+    if (txt) txt.onclick = reveal;
+    $('#recallReveal').onclick = reveal;
 
-    $('#recallReveal').onclick = () => {
-      if (txt) { txt.classList.remove('recall-hidden'); revealAnim(); }
+    const inp = $('#recallTypeIn');
+    $('#recallCheck').onclick = () => {
+      const ref = norm(s.text), hyp = norm((inp && inp.value) || '');
+      const hset = hyp.slice();
+      const html = ref.map((w) => {
+        const i = hset.indexOf(w); if (i >= 0) { hset.splice(i, 1); return '<span class="fw correct">' + esc(w) + '</span>'; }
+        return '<span class="fw missing">' + esc(w) + '</span>';
+      }).join(' ');
+      const correct = ref.filter((w) => hyp.includes(w)).length;
+      const pct = Math.round(correct / (ref.length || 1) * 100);
+      const cls = pct >= 80 ? 'hi' : pct >= 50 ? 'mid' : 'lo';
+      const msg = pct >= 80 ? '&#127881; Tuy&#7879;t v&#7901;i!' : pct >= 50 ? '&#128077; Kh&#225; t&#7889;t!' : '&#128170; Th&#7917; l&#7841;i nh&#233;!';
+      const resEl = $('#recallTypeRes');
+      resEl.innerHTML =
+        '<div class="dict-res-line"><span class="dict-res-pct ' + cls + '">' + pct + '%</span>' +
+        '<span class="dict-res-msg ' + cls + '">' + msg + '</span></div>' +
+        '<div class="res-words">' + html + '</div>';
+      animateWords(resEl);
+      reveal(); // luôn hiện đáp án sau khi kiểm tra để so sánh
+      if (pct >= 80) miniConfetti(resEl, 16);
     };
-
-    // 2 chế độ luyện: "Nói & chấm" (mở record panel) hoặc "Gõ toàn câu" (textarea ngay đây).
-    const actEl = $('#recallActions');
-
-    function renderActionsDefault() {
-      if (!actEl) return;
-      actEl.innerHTML =
-        '<button class="dp-btn dp-btn--primary" id="recallSpeak">&#127908; N&#243;i &amp; ch&#7845;m</button>' +
-        '<button class="dp-btn" id="recallType">&#9997;&#65039; G&#245; to&#224;n c&#226;u</button>';
-      $('#recallSpeak').onclick = () => { box.hidden = true; showRecordPanel(true); scoreNow(); };
-      $('#recallType').onclick  = renderTypeMode;
-    }
-
-    function renderTypeMode() {
-      if (!actEl) return;
-      actEl.innerHTML =
-        '<div class="recall-type-area">' +
-          '<textarea id="recallTypeIn" placeholder="G&#245; l&#7841;i to&#224;n b&#7897; c&#226;u b&#7841;n v&#7915;a nghe&#8230;"></textarea>' +
-          '<div style="display:flex;gap:8px">' +
-            '<button class="dp-btn dp-btn--primary" id="recallTypeCheck">Ki&#7875;m tra</button>' +
-            '<button class="dp-btn" id="recallRetry">&#8635; L&#224;m l&#7841;i</button>' +
-          '</div>' +
-          '<div class="recall-type-res" id="recallTypeRes"></div>' +
-        '</div>';
-      const inp = $('#recallTypeIn'); if (inp) inp.focus();
-      $('#recallRetry').onclick = renderActionsDefault;
-      $('#recallTypeCheck').onclick = () => {
-        const ref = norm(s.text), hyp = norm((inp && inp.value) || '');
-        const hset = hyp.slice();
-        const html = ref.map((w) => {
-          const i = hset.indexOf(w); if (i >= 0) { hset.splice(i, 1); return '<span class="fw correct">' + esc(w) + '</span>'; }
-          return '<span class="fw missing">' + esc(w) + '</span>';
-        }).join(' ');
-        const correct = ref.filter((w) => hyp.includes(w)).length;
-        const pct = Math.round(correct / (ref.length || 1) * 100);
-        const cls = pct >= 80 ? 'hi' : pct >= 50 ? 'mid' : 'lo';
-        const msg = pct >= 80 ? '&#127881; Tuy&#7879;t v&#7901;i!' : pct >= 50 ? '&#128077; Kh&#225; t&#7889;t!' : '&#128170; Th&#7917; l&#7841;i nh&#233;!';
-        const resEl = $('#recallTypeRes');
-        resEl.innerHTML =
-          '<div class="dict-res-line"><span class="dict-res-pct ' + cls + '">' + pct + '%</span>' +
-          '<span class="dict-res-msg ' + cls + '">' + msg + '</span></div>' +
-          '<div class="res-words">' + html + '</div>';
-        animateWords(resEl);
-        if (pct >= 80) { if (txt) { txt.classList.remove('recall-hidden'); revealAnim(); } miniConfetti(resEl, 16); }
-      };
-    }
-
-    renderActionsDefault();
   }
 
   // ===== GĐ2: Flashcard SRS (legacy pane — kept for tab compatibility) =====
@@ -1718,8 +1718,9 @@
   }
 
   // ===== Fill-in-the-blank (cloze) =====
-  function startCloze() {
+  function startCloze(silent) {
     const s = sentences[current]; if (!s) { setStatus('Chưa có câu.', 'warn'); return; }
+    activePanel = { type: 'cloze', diff: null, idx: current };
     const box = $('#dictbox');
     box.className = 'dictbox as-panel';
     box.hidden = false;
@@ -1738,13 +1739,14 @@
           '<button class="dp-diff-btn" data-diff="hard">&#128997;<br>Kh&#243;<small>~75% t&#7915;</small></button>' +
         '</div>' +
       '</div>';
-    $('#czclosesel').onclick = () => { box.hidden = true; };
+    $('#czclosesel').onclick = () => closeActivePanel();
     box.querySelectorAll('.dp-diff-btn').forEach((btn) => {
       btn.onclick = () => runCloze(s, btn.dataset.diff, box);
     });
   }
 
-  function runCloze(s, difficulty, box) {
+  function runCloze(s, difficulty, box, silent) {
+    activePanel = { type: 'cloze', diff: difficulty, idx: current };
     const toks = s.text.split(/(\s+)/);
     // Tỷ lệ và độ dài từ tối thiểu theo cấp độ
     const pctMap    = { easy: 0.27, medium: 0.50, hard: 0.75 };
@@ -1784,9 +1786,9 @@
         '<button class="dp-btn" id="czplay">&#128266; Nghe</button>' +
         '<button class="dp-btn dp-btn--primary" id="czcheck">Ki&#7875;m tra</button>' +
       '</div>';
-    speakText(s.text);
+    if (!silent) speakText(s.text);
     const firstInp = box.querySelector('.cz'); if (firstInp) firstInp.focus();
-    $('#czclose').onclick = () => { box.hidden = true; };
+    $('#czclose').onclick = () => closeActivePanel();
     $('#czplay').onclick  = () => speakText(s.text);
     // Enter key trên ô cuối → kiểm tra
     box.querySelectorAll('.cz').forEach((inp, idx, all) => {
@@ -1872,7 +1874,7 @@
   { const b = $('#btn-cloze'); if (b) b.onclick = () => startCloze(); }
   { const b = $('#btn-hint'); if (b) b.onclick = () => { const s = sentences[current]; if (s && s.trans) setStatus(s.trans, 'ok'); else if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => { if (t) { s.trans = t; setStatus(t, 'ok'); } }); }; }
   { const b = $('#btn-shadow-fav'); if (b) b.onclick = async () => { if (!settings.autoRecord || await enableMic({ silent: true })) cmd('shadowFav', { target: settings.targetLang, native: settings.nativeLang }); }; }
-  { const b = $('#btn-blur'); if (b) b.onclick = startRecall; }
+  { const b = $('#btn-blur'); if (b) b.onclick = () => startRecall(); }
   { const b = $('#btn-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) speakText(s.text); }; }
   // 🔁 Nghe lại bản ghi của chính mình (blob cuối cùng từ mic-service).
   {
