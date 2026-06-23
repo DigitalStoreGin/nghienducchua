@@ -509,6 +509,37 @@
     setTimeout(() => wrap.classList.remove('score-bounce', 'score-pulse'), 800);
   }
 
+  // Confetti nhỏ dùng chung — nổ từ tâm phần tử anchor (Chép/Điền khi đạt điểm cao).
+  function miniConfetti(anchor, n) {
+    if (!anchor) return;
+    n = n || 18;
+    if (getComputedStyle(anchor).position === 'static') anchor.style.position = 'relative';
+    const colors = ['#34a853', '#fbbc04', '#ea4335', '#1a73e8', '#9c27b0', '#ff9800', '#00bcd4'];
+    for (let i = 0; i < n; i++) {
+      const p = document.createElement('span');
+      p.className = 'confetti-piece';
+      const angle = (i / n) * 2 * Math.PI + (Math.random() - .5) * .6;
+      const dist  = 30 + Math.random() * 42;
+      p.style.cssText =
+        '--cx:' + (Math.cos(angle) * dist).toFixed(0) + 'px;' +
+        '--cy:' + (Math.sin(angle) * dist - 16).toFixed(0) + 'px;' +
+        '--cr:' + Math.round(Math.random() * 540 - 270) + 'deg;' +
+        'background:' + colors[i % colors.length] + ';' +
+        'animation-delay:' + (i * 0.022).toFixed(3) + 's;' +
+        'border-radius:' + (Math.random() > .5 ? '50%' : '2px') + ';';
+      anchor.appendChild(p);
+    }
+    setTimeout(() => anchor.querySelectorAll('.confetti-piece').forEach((el) => el.remove()), 1500);
+  }
+  // Hiện từng từ .fw trong container lần lượt với hiệu ứng "bật".
+  function animateWords(container) {
+    if (!container) return;
+    container.querySelectorAll('.fw').forEach((el, i) => {
+      el.style.animationDelay = (i * 0.045).toFixed(3) + 's';
+      el.classList.add('fw-anim');
+    });
+  }
+
   function renderFeedback(f) {
     const box = $('#fb'); box.hidden = false;
     if (f.error) {
@@ -1397,7 +1428,15 @@
       const hset = hyp.slice();
       const html = ref.map((w) => { const i = hset.indexOf(w); if (i >= 0) { hset.splice(i, 1); return '<span class="fw correct">' + w + '</span>'; } return '<span class="fw missing">' + w + '</span>'; }).join(' ');
       const correct = ref.filter((w) => hyp.includes(w)).length;
-      $('#dictres').innerHTML = '<b>' + Math.round(correct / (ref.length || 1) * 100) + '%</b> đúng<br>' + html;
+      const pct = Math.round(correct / (ref.length || 1) * 100);
+      const cls = pct >= 80 ? 'hi' : pct >= 50 ? 'mid' : 'lo';
+      const msg = pct >= 80 ? '🎉 Tuyệt vời!' : pct >= 50 ? '👍 Khá tốt!' : '💪 Thử lại nhé!';
+      const resEl = $('#dictres');
+      resEl.innerHTML = '<div class="dict-res-line"><span class="dict-res-pct ' + cls + '">' + pct + '%</span>' +
+        '<span class="dict-res-msg ' + cls + '">' + msg + '</span></div>' +
+        '<div class="res-words">' + html + '</div>';
+      animateWords(resEl);
+      if (pct >= 80) miniConfetti(resEl, 20);
     };
   }
 
@@ -1413,9 +1452,10 @@
       '<button class="btn mic" id="recallShow">👁 Hiện đáp án</button>' +
       '<button class="btn" id="recallClose">Đóng</button></div>';
     const txt = $('#recallText');
+    const revealAnim = () => { if (!txt) return; txt.classList.remove('recall-reveal-anim'); void txt.offsetWidth; txt.classList.add('recall-reveal-anim'); };
     $('#recallPlay').onclick = () => speakText(s.text);
-    $('#recallShow').onclick = () => { if (txt) txt.classList.toggle('recall-hidden'); };
-    if (txt) txt.onclick = () => txt.classList.remove('recall-hidden');
+    $('#recallShow').onclick = () => { if (!txt) return; const hidden = txt.classList.toggle('recall-hidden'); if (!hidden) revealAnim(); };
+    if (txt) txt.onclick = () => { txt.classList.remove('recall-hidden'); revealAnim(); };
     $('#recallClose').onclick = () => { box.hidden = true; };
   }
 
@@ -1612,9 +1652,18 @@
         tot++; const ans = (inp.dataset.ans || '').toLowerCase().replace(/[^a-zäöüß]/g, '');
         const got = (inp.value || '').toLowerCase().replace(/[^a-zäöüß]/g, '');
         const good = ans === got; if (good) ok++;
-        inp.style.borderColor = good ? '#15803d' : '#b91c1c'; if (!good) inp.value = inp.dataset.ans;
+        inp.classList.remove('cz-ok', 'cz-bad');
+        void inp.offsetWidth; // restart animation
+        inp.classList.add(good ? 'cz-ok' : 'cz-bad');
+        if (!good) inp.value = inp.dataset.ans;
       });
-      $('#czres').innerHTML = '<b>' + ok + '/' + tot + '</b> đúng.';
+      const pct = Math.round(ok / (tot || 1) * 100);
+      const cls = pct >= 80 ? 'hi' : pct >= 50 ? 'mid' : 'lo';
+      const msg = (ok === tot && tot > 0) ? '🎉 Hoàn hảo!' : pct >= 50 ? '👍 Gần đúng!' : '💪 Thử lại nhé!';
+      const resEl = $('#czres');
+      resEl.innerHTML = '<div class="dict-res-line"><span class="dict-res-pct ' + cls + '">' + ok + '/' + tot + '</span>' +
+        '<span class="dict-res-msg ' + cls + '">' + msg + '</span></div>';
+      if (ok === tot && tot > 0) miniConfetti(resEl, 20);
     };
   }
 

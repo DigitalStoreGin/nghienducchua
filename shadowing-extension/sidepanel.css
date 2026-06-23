@@ -1173,6 +1173,73 @@ body.dark .word-detail-close:hover { background: var(--bg2); }
   font-size: 13px;
 }
 
+/* ===== HIỆU ỨNG KẾT QUẢ (Chép / Điền / Ẩn chữ) — đồng bộ với phần chấm điểm ===== */
+/* Khung trượt lên khi mở */
+.dictbox { animation: dictbox-in .24s cubic-bezier(.34,1.3,.64,1); }
+@keyframes dictbox-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+/* Từng từ "bật" lên lần lượt khi hiện kết quả (delay đặt inline theo index) */
+@keyframes fw-pop {
+  0%   { opacity: 0; transform: scale(.5) translateY(6px); }
+  60%  { transform: scale(1.12); }
+  100% { opacity: 1; transform: none; }
+}
+.fw-anim { animation: fw-pop .34s cubic-bezier(.34,1.56,.64,1) both; }
+
+/* Ô điền ĐÚNG — nháy xanh + nảy nhẹ */
+@keyframes cz-ok-flash {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.16); background: #d4f4dd; }
+  100% { transform: scale(1); }
+}
+.cz.cz-ok { border-color: #15803d !important; color: #15803d; background: #eafbef; animation: cz-ok-flash .5s ease; }
+
+/* Ô điền SAI — rung lắc */
+@keyframes cz-bad-shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+.cz.cz-bad { border-color: #b91c1c !important; color: #b91c1c; background: #fdecea; animation: cz-bad-shake .42s ease; }
+
+/* Dòng kết quả — số to nảy lên + lời nhắn */
+.dict-res-line { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.dict-res-pct {
+  display: inline-block;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  animation: tier-pop .4s cubic-bezier(.34,1.56,.64,1);
+}
+.dict-res-pct.hi  { color: #1e7e34; }
+.dict-res-pct.mid { color: #b06000; }
+.dict-res-pct.lo  { color: #b31412; }
+.dict-res-msg {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 16px;
+  animation: tier-pop .42s cubic-bezier(.34,1.56,.64,1);
+}
+.dict-res-msg.hi  { background: #ceead6; color: #1e7e34; }
+.dict-res-msg.mid { background: #fef3cd; color: #856404; }
+.dict-res-msg.lo  { background: #fce8e6; color: #b31412; }
+
+/* Ẩn chữ: hiện đáp án có hiệu ứng fade + scale */
+@keyframes recall-reveal { from { opacity: .25; transform: scale(.97); } to { opacity: 1; transform: none; } }
+.recall-reveal-anim { animation: recall-reveal .32s ease; }
+
+body.dark .cz.cz-ok  { background: rgba(52,168,83,.16); color: #81c995; }
+body.dark .cz.cz-bad { background: rgba(234,67,53,.16); color: #f28b82; }
+body.dark .dict-res-pct.hi  { color: #81c995; }
+body.dark .dict-res-pct.mid { color: #fdd663; }
+body.dark .dict-res-pct.lo  { color: #f28b82; }
+body.dark .dict-res-msg.hi  { background: rgba(52,168,83,.18); color: #81c995; }
+body.dark .dict-res-msg.mid { background: rgba(251,188,4,.18); color: #fdd663; }
+body.dark .dict-res-msg.lo  { background: rgba(234,67,53,.18); color: #f28b82; }
+
 /* Inline mini-buttons in dictbox */
 .btn {
   padding: 6px 12px;
