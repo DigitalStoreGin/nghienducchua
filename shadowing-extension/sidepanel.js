@@ -392,8 +392,7 @@
   }
   function mk(cls, txt, on) { const b = document.createElement('button'); b.className = cls; b.textContent = txt; b.onclick = on; return b; }
 
-  // Gửi transcript + câu mục tiêu lên Worker → Claude Haiku chấm điểm.
-  // Fire-and-forget: không bao giờ block UI. Nếu thành công → cập nhật aiBox.
+  // Gửi transcript + câu mục tiêu lên Worker → Groq Llama 3.3 70B chấm điểm (async, không block UI).
   async function claudeScoreAsync(target, transcript, aiBox) {
     try {
       const r = await Promise.race([
@@ -1854,11 +1853,14 @@
       const meter = $('#micLevel'); if (meter) meter.style.transform = 'scaleY(' + Math.max(.08, level).toFixed(2) + ')';
     });
     window.ShadowMic.setProgressListener((status, pct) => onProgress({ status, pct }));
-    // Nạp sẵn model Whisper khi mở panel: tiny trước (dùng ngay) -> nâng lên model
-    // phù hợp máy ở nền. Refresh UI vài lần để hiện trạng thái khi nâng cấp xong.
-    if (settings.engine === 'whisper' && window.ShadowMic.warmupWhisper) {
-      window.ShadowMic.warmupWhisper(settings.whisperModel);
-      let n = 0; const hwTimer = setInterval(() => { updateHwInfo(); if (++n >= 20) clearInterval(hwTimer); }, 1500);
+    // Luôn tải sẵn Whisper ở nền khi mở panel (chiến lược: Groq trước → Whisper sau khi tải xong).
+    // Nếu người dùng chọn engine 'whisper' → cũng refresh UI khi model sẵn sàng.
+    if (window.ShadowMic.warmupWhisper) {
+      const wModel = settings.engine === 'whisper' ? (settings.whisperModel || 'auto') : 'auto';
+      window.ShadowMic.warmupWhisper(wModel).catch(() => {});
+      if (settings.engine === 'whisper') {
+        let n = 0; const hwTimer = setInterval(() => { updateHwInfo(); if (++n >= 20) clearInterval(hwTimer); }, 1500);
+      }
     }
     updateHwInfo();
   }

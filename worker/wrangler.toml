@@ -14,7 +14,7 @@ compatibility_flags = ["nodejs_compat"]
 # GROQ_API_KEY_3      Groq Whisper key 3
 # GROQ_API_KEY_4      Groq Whisper key 4
 # GROQ_API_KEY_5      Groq Whisper key 5
-# ANTHROPIC_API_KEY   (tuỳ chọn — fallback cho /score-ai nếu OpenRouter thất bại)
+# GROQ_API_KEY_1..5 cũng được dùng cho /score-ai (Groq Llama 3.3 70B là primary)
 # RESEND_API_KEY      (tuỳ chọn — gửi email cảnh báo khi tất cả Groq keys hết quota)
 # ALERT_EMAIL         (tuỳ chọn — email nhận cảnh báo; mặc định email chủ tài khoản Resend)
 # ALERT_FROM          (tuỳ chọn — địa chỉ gửi sau khi xác thực domain ở Resend)

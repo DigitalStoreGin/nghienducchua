@@ -19,6 +19,8 @@
   let currentFinalize = false;   // co: user bam "Toi noi xong" -> dung & cham ngay
   let currentRecognition = null; // Web Speech recognition dang chay (de finalize/abort)
   let whisperReady = null;       // cache: vendor/transformers.min.js co ton tai khong
+  let _whisperEngineReady = false; // model đã warm trong worker → dùng Whisper thay Groq
+  let _lastBlob = null;            // blob ghi âm cuối → để replay
 
   function setLevelListener(cb) { onLevel = cb; }
   function setProgressListener(cb) { onProgress = cb; }
@@ -213,6 +215,9 @@
     return { audio16k, pitch, spokenMs, spoke, blob, peakRms };
   }
 
+  // Trả về blob ghi âm cuối cùng (để replay trong UI).
+  function getLastBlob() { return _lastBlob; }
+
   // ── Groq Whisper qua background SW (đường đã được self-test xác nhận: ~250ms) ──
   function blobToB64(blob) {
     return new Promise((resolve, reject) => {
@@ -258,6 +263,27 @@
     currentAbort = null;
     // VAD không thấy tiếng nói → mic im lặng → báo rõ (không gửi Groq để khỏi bịa).
     if (!data.spoke) return { transcript: '', spoke: false, peakRms: data.peakRms, spokenMs: data.spokenMs, engine: 'no-voice' };
+    _lastBlob = data.blob; // lưu để replay
+
+    // Chiến lược tuần tự — KHÔNG BAO GIỜ chạy cả 2 engine song song:
+    //   Giai đoạn 1 (whisper chưa ready): dùng Groq (250ms)
+    //   Giai đoạn 2 (whisper ready): dùng Whisper local (miễn phí)
+    //   Nếu Whisper lỗi: tắt flag, restart warmup nền, fallback về Groq lần này
+    if (_whisperEngineReady) {
+      try {
+        const lang = opts.lang2 === 'de' ? 'german' : (opts.lang2 || 'german');
+        const result = await transcribeAudio16k(data.audio16k, { language: lang });
+        if (result && result.text) {
+          return { transcript: result.text, words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, spoke: true, peakRms: data.peakRms, engine: 'whisper:' + (result.modelShort || 'local') };
+        }
+      } catch (_) {
+        // Whisper lỗi → tắt flag, restart warmup nền âm thầm, fall through về Groq
+        _whisperEngineReady = false;
+        _warmupStarted = false;
+        warmupWhisper('auto').catch(() => {});
+      }
+    }
+
     const groq = await groqTranscribe(data.blob, opts.lang2 || 'de');
     if (groq && !groq._err && (groq.text || '').trim()) {
       return { transcript: groq.text.trim(), words: groq.words || [], pitch: data.pitch, spokenMs: data.spokenMs, spoke: true, peakRms: data.peakRms, engine: 'groq-whisper' };
@@ -405,13 +431,14 @@
       // Model nhỏ đã sẵn sàng -> khách dùng được NGAY; nếu có đích, nạp đích Ở NỀN.
       if (msg.type === 'ready') {
         activeModelId = msg.model;
+        _whisperEngineReady = true; // bắt đầu dùng Whisper thay Groq từ lần ghi âm tiếp theo
         if (_pendingUpgrade && _pendingUpgrade.id !== msg.model) {
           try { worker.postMessage({ type: 'upgrade', model: _pendingUpgrade.id, numThreads: _pendingUpgrade.threads }); } catch (_) {}
         }
         _pendingUpgrade = null;
       }
       // Model phù hợp máy đã nạp xong (ở nền) -> từ giờ phiên dịch dùng model mạnh hơn.
-      if (msg.type === 'upgraded') activeModelId = msg.model;
+      if (msg.type === 'upgraded') { activeModelId = msg.model; _whisperEngineReady = true; }
     });
     return worker;
   }
@@ -637,5 +664,5 @@
     return true;
   });
 
-  root.ShadowMic = { ensureMic, recognize, transcribeAudio16k, recordAndTranscribe, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper, whisperStatus };
+  root.ShadowMic = { ensureMic, recognize, transcribeAudio16k, recordAndTranscribe, abortRecording, finalizeRecording, isWhisperAvailable, checkMicPermission, setLevelListener, setProgressListener, detectHardware, pickWhisperModel, warmupWhisper, whisperStatus, getLastBlob };
 })(window);
