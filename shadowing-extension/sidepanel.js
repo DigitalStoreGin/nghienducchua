@@ -1428,10 +1428,14 @@
   // Làm mờ phụ đề bên ngoài khi BẤT KỲ panel luyện nào đang mở (Chép/Điền/Ẩn chữ/Nói & chấm)
   // → buộc người dùng nhớ/đọc, không bị lộ đáp án.
   function updatePracticeBlur() {
-    const vp = $('#view-practice'); if (!vp) return;
     const dict = $('#dictbox'); const rec = $('#record-panel');
     const open = (dict && !dict.hidden) || (rec && !rec.hidden);
-    vp.classList.toggle('panel-active', open);
+    // Practice view (màn câu đang luyện)
+    const vp = $('#view-practice'); if (vp) vp.classList.toggle('panel-active', open);
+    // List view (màn danh sách + thẻ "Luyện câu này")
+    const vl = $('#view-list'); if (vl) vl.classList.toggle('panel-active', open);
+    // Overlay mờ nền trong list view
+    const ov = $('#blur-overlay'); if (ov) ov.hidden = !open;
   }
   // Khi đổi câu (prev/next/select): nếu panel đang mở thì vẽ lại theo câu mới (không tự đọc).
   function refreshActivePanel() {

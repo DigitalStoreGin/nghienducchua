@@ -404,11 +404,19 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
 
 /* ===== BLUR OVERLAY ===== */
 .blur-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 5;
+  bottom: var(--toolbar-h, 0px);
+  z-index: 35;
   pointer-events: none;
+  background: rgba(255,255,255,.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: opacity .22s ease;
 }
+body.dark .blur-overlay { background: rgba(18,18,20,.62); }
+/* list-view cần position:relative để overlay absolute không tràn ra ngoài */
+#view-list { position: relative; }
 body.hide-text .sentence-list .row .de,
 body.hide-text .current-text {
   filter: blur(6px);
