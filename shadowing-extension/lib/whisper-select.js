@@ -10,7 +10,7 @@
  *   - DỰ PHÒNG      : nếu small quá nặng → base
  *
  * Bảng nhanh (30 % ngưỡng):
- *   ≤ 3 GB RAM    → base  (small chiếm > 30 %)
+ *   ≤ 3.3 GB RAM  → base  (small chiếm > 30 %)
  *   4–7 GB RAM    → small (small ≈ 25 %)
  *   ≥ 8 GB RAM    → small (thoải mái; medium bị loại theo chính sách ceiling)
  *

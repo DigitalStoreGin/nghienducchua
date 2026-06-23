@@ -288,6 +288,10 @@
     if (groq && !groq._err && (groq.text || '').trim()) {
       return { transcript: groq.text.trim(), words: groq.words || [], pitch: data.pitch, spokenMs: data.spokenMs, spoke: true, peakRms: data.peakRms, engine: 'groq-whisper' };
     }
+    // Groq quota hết + local Whisper chưa sẵn → báo UI để người dùng hiểu
+    if (groq && groq._err === 'groq_exhausted' && !_whisperEngineReady) {
+      return { error: 'WHISPER_LOADING', spoke: false };
+    }
     return { transcript: '', spoke: true, peakRms: data.peakRms, spokenMs: data.spokenMs, engine: 'silent (groq:' + ((groq && groq._err) || 'empty') + ')' };
   }
 

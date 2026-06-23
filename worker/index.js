@@ -161,46 +161,48 @@ async function handleScoreAI(request, env) {
   const systemPrompt = `You are evaluating ${langName} pronunciation. Respond ONLY with a JSON object — no markdown, no explanation.`;
   const userPrompt = `Target: "${target}"\nStudent said: "${transcript}"\n\nReturn JSON only:\n{"pronunciation":0-100,"fluency":0-100,"overall":0-100,"feedback":"tip in Vietnamese ≤12 words"}`;
 
-  // Primary: Groq Llama 3.3 70B (276 tok/s, ~0.3s, free 500K tok/day)
+  // Primary: Groq free models (2 options, 5 keys each, random starting key để phân tải)
   const GROQ_KEYS = [
     env.GROQ_API_KEY_1, env.GROQ_API_KEY_2, env.GROQ_API_KEY_3,
     env.GROQ_API_KEY_4, env.GROQ_API_KEY_5,
   ].filter(Boolean);
+  const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
 
-  for (const key of GROQ_KEYS) {
-    try {
-      const resp = await Promise.race([
-        fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            max_tokens: 150,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
+  for (const model of GROQ_MODELS) {
+    const start = Math.floor(Math.random() * Math.max(1, GROQ_KEYS.length));
+    const shuffled = [...GROQ_KEYS.slice(start), ...GROQ_KEYS.slice(0, start)];
+    for (const key of shuffled) {
+      try {
+        const resp = await Promise.race([
+          fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model,
+              max_tokens: 150,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+            }),
           }),
-        }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000)),
-      ]);
-      if (resp.status === 429) continue; // quota exhausted on this key → try next
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      const raw = (data?.choices?.[0]?.message?.content || '').trim().replace(/^```json\n?|\n?```$/g, '').trim();
-      if (!raw) continue;
-      const score = JSON.parse(raw);
-      if (!score.overall) continue;
-      return json({ ...score, engine: 'groq-llama', transcript });
-    } catch (_) { /* try next key */ }
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000)),
+        ]);
+        if (resp.status === 429) continue; // quota exhausted on this key → try next
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const raw = (data?.choices?.[0]?.message?.content || '').trim().replace(/^```json\n?|\n?```$/g, '').trim();
+        if (!raw) continue;
+        const score = JSON.parse(raw);
+        if (!score.overall) continue;
+        return json({ ...score, engine: 'groq-' + model.split('-').slice(0, 3).join('-'), transcript });
+      } catch (_) { /* try next key */ }
+    }
   }
 
-  // Fallback: OpenRouter free models (Nemotron 3 Super → Gemma 4)
+  // Fallback: tất cả 4 OpenRouter free models (OR_MODELS whitelist)
   if (env.OPENROUTER_API_KEY) {
-    const SCORE_MODELS = [
-      'nvidia/nemotron-3-super-120b-a12b:free',
-      'google/gemma-4-31b-it:free',
-    ];
+    const SCORE_MODELS = [...OR_MODELS];
     for (const model of SCORE_MODELS) {
       try {
         const resp = await Promise.race([
@@ -307,7 +309,9 @@ async function handleTranscribe(request, env, ctx) {
 
   // Track whether every attempted key hit a quota limit (429) — if so, alert.
   let allQuota = true;
-  for (const key of GROQ_KEYS) {
+  const startIdx = Math.floor(Math.random() * GROQ_KEYS.length);
+  const shuffledKeys = [...GROQ_KEYS.slice(startIdx), ...GROQ_KEYS.slice(0, startIdx)];
+  for (const key of shuffledKeys) {
     try {
       const groqForm = new FormData();
       groqForm.append('file', file, 'recording.webm');

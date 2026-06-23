@@ -88,8 +88,11 @@ async function handleGroqTranscribe(msg) {
       fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
     ]);
-    if (!resp.ok) return { ok: false, _err: 'http-' + resp.status };
-    const data = await resp.json();
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      const errCode = (data && data.error) || ('http-' + resp.status);
+      return { ok: false, _err: errCode };
+    }
     if (data && data.error) return { ok: false, _err: 'groq-api:' + data.error };
     return { ok: true, data };
   } catch (e) { return { ok: false, _err: (e && e.message) || 'groq-error' }; }

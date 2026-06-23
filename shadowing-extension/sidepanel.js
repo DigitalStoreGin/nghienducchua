@@ -1755,6 +1755,11 @@
     cmd('releasePause');
     if (!res || res.error) {
       if (res && res.error === 'aborted') { const st = $('#record-status-text'); if (st) st.textContent = 'Sẵn sàng'; return; }
+      if (res && res.error === 'WHISPER_LOADING') {
+        const st = $('#record-status-text'); if (st) st.textContent = 'Sẵn sàng';
+        setStatus('⏳ Model phát âm offline đang tải (~2 phút). Hãy thử lại sau.', 'warn');
+        return;
+      }
       renderFeedback({ error: (res && res.error) || 'unknown' });
       return;
     }
