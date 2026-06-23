@@ -523,6 +523,27 @@ body.hide-text .current-text.revealed { filter: none; }
   word-break: break-word;
 }
 
+/* ===== LÀM MỜ PHỤ ĐỀ KHI ĐANG LUYỆN TRONG PANEL =====
+   Khi mở Chép / Điền / Ẩn chữ / Nói & chấm → làm mờ câu hiện tại + câu kế +
+   bản dịch để buộc người dùng tự nhớ/đọc, không bị lộ đáp án. */
+#view-practice .current-sentence-wrap,
+#view-practice .next-sentence-wrap,
+#view-practice .trans-text,
+#view-practice #nowTr { transition: filter .25s ease, opacity .25s ease; }
+#view-practice.panel-active .current-sentence-wrap,
+#view-practice.panel-active .next-sentence-wrap,
+#view-practice.panel-active .trans-text,
+#view-practice.panel-active #nowTr {
+  filter: blur(8px);
+  opacity: .45;
+  user-select: none;
+}
+/* Di chuột vào câu để hé lộ tạm thời khi cần kiểm chứng */
+#view-practice.panel-active .current-sentence-wrap:hover {
+  filter: blur(0);
+  opacity: 1;
+}
+
 /* ===== NEXT SENTENCE ===== */
 .next-sentence-wrap {
   padding: 0 16px 12px;
@@ -1278,6 +1299,13 @@ body.dark .word-detail-close:hover { background: var(--bg2); }
 }
 .recall-type-area textarea:focus { border-color: #1a73e8; outline: none; background: #fff; }
 .recall-type-res { margin-top: 6px; position: relative; }
+
+/* Ẩn chữ: ô gõ LẤP ĐẦY khung (không chỉ chiếm 1 nửa) */
+.dictbox.as-panel--fill { height: calc(100vh - var(--toolbar-h) - 8px); }
+.dp-body--fill { display: flex; flex-direction: column; }
+.recall-step--grow { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.recall-step--grow .recall-type-area--fill { flex: 1 1 auto; min-height: 0; }
+.recall-step--grow .recall-type-area--fill textarea { flex: 1 1 auto; height: 100%; min-height: 120px; }
 
 /* Dark mode overrides */
 body.dark .dictbox.as-panel { background: var(--bg); border-top-color: var(--border); }

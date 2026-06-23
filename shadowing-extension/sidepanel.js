@@ -290,6 +290,12 @@
     }
     // Panel luyện (Chép/Điền/Ẩn chữ) đang mở → đồng bộ sang câu mới.
     refreshActivePanel();
+    // Panel "Nói & chấm" đang mở mà ĐỔI câu → đóng lại để không chấm nhầm câu cũ.
+    const _rp = $('#record-panel');
+    if (_rp && !_rp.hidden && recordPanelIdx !== c.idx) {
+      try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {}
+      showRecordPanel(false);
+    }
   }
   function markCur(i) { document.querySelectorAll('.row').forEach((r) => r.classList.toggle('cur', +r.dataset.i === i)); const r = document.querySelector('.row[data-i="' + i + '"]'); if (r) r.scrollIntoView({ block: 'nearest' }); }
 
@@ -1417,7 +1423,16 @@
 
   // Panel luyện đang mở (Chép/Điền/Ẩn chữ) — để đồng bộ theo câu khi bấm Trước/Sau.
   let activePanel = null; // { type:'dict'|'cloze'|'recall', diff?:'easy'|'medium'|'hard' }
-  function closeActivePanel() { activePanel = null; const b = $('#dictbox'); if (b) b.hidden = true; }
+  let recordPanelIdx = null; // câu mà panel "Nói & chấm" đang mở cho — để đóng khi đổi câu
+  function closeActivePanel() { activePanel = null; const b = $('#dictbox'); if (b) b.hidden = true; updatePracticeBlur(); }
+  // Làm mờ phụ đề bên ngoài khi BẤT KỲ panel luyện nào đang mở (Chép/Điền/Ẩn chữ/Nói & chấm)
+  // → buộc người dùng nhớ/đọc, không bị lộ đáp án.
+  function updatePracticeBlur() {
+    const vp = $('#view-practice'); if (!vp) return;
+    const dict = $('#dictbox'); const rec = $('#record-panel');
+    const open = (dict && !dict.hidden) || (rec && !rec.hidden);
+    vp.classList.toggle('panel-active', open);
+  }
   // Khi đổi câu (prev/next/select): nếu panel đang mở thì vẽ lại theo câu mới (không tự đọc).
   function refreshActivePanel() {
     if (!activePanel) return;
@@ -1454,6 +1469,7 @@
         '<button class="dp-btn" id="dictplay">&#128266; Nghe l&#7841;i</button>' +
         '<button class="dp-btn dp-btn--primary" id="dictcheck">Ki&#7875;m tra</button>' +
       '</div>';
+    updatePracticeBlur();
     $('#dictin').focus();
     $('#dictplay').onclick = () => speakText(s.text);
     $('#dictclose').onclick = () => closeActivePanel();
@@ -1480,23 +1496,24 @@
     if (!silent) speakText(s.text);
     activePanel = { type: 'recall', idx: current };
     const box = $('#dictbox');
-    box.className = 'dictbox as-panel';
+    box.className = 'dictbox as-panel as-panel--fill';
     box.hidden = false;
+    updatePracticeBlur();
     box.innerHTML =
       '<div class="dp-header">' +
         '<span class="dp-title">🙈 Nghe → Gõ → Hiện</span>' +
         '<button class="dp-close" id="recallClose">&#10005;</button>' +
       '</div>' +
-      '<div class="dp-body">' +
+      '<div class="dp-body dp-body--fill">' +
         // Bước 1: Nghe
         '<div class="recall-step">' +
           '<div class="recall-step-label"><span class="recall-step-num">1</span> Nghe c&#226;u</div>' +
           '<button class="dp-btn" id="recallPlay">&#128266; Nghe l&#7841;i</button>' +
         '</div>' +
-        // Bước 2: Gõ lại câu (trước là bước 3)
-        '<div class="recall-step">' +
+        // Bước 2: Gõ lại câu — ô gõ lấp đầy khung
+        '<div class="recall-step recall-step--grow">' +
           '<div class="recall-step-label"><span class="recall-step-num">2</span> G&#245; l&#7841;i c&#226;u</div>' +
-          '<div class="recall-type-area"><textarea id="recallTypeIn" placeholder="G&#245; l&#7841;i to&#224;n b&#7897; c&#226;u b&#7841;n v&#7915;a nghe&#8230;"></textarea></div>' +
+          '<div class="recall-type-area recall-type-area--fill"><textarea id="recallTypeIn" placeholder="G&#245; l&#7841;i to&#224;n b&#7897; c&#226;u b&#7841;n v&#7915;a nghe&#8230;"></textarea></div>' +
           '<div class="recall-type-res" id="recallTypeRes"></div>' +
         '</div>' +
         // Bước 3: Câu gốc — bấm/Kiểm tra để hiện (trước là bước 2)
@@ -1740,6 +1757,7 @@
         '</div>' +
       '</div>';
     $('#czclosesel').onclick = () => closeActivePanel();
+    updatePracticeBlur();
     box.querySelectorAll('.dp-diff-btn').forEach((btn) => {
       btn.onclick = () => runCloze(s, btn.dataset.diff, box);
     });
@@ -1787,6 +1805,7 @@
         '<button class="dp-btn dp-btn--primary" id="czcheck">Ki&#7875;m tra</button>' +
       '</div>';
     if (!silent) speakText(s.text);
+    updatePracticeBlur();
     const firstInp = box.querySelector('.cz'); if (firstInp) firstInp.focus();
     $('#czclose').onclick = () => closeActivePanel();
     $('#czplay').onclick  = () => speakText(s.text);
@@ -1914,7 +1933,7 @@
     }; }
 
   // Record panel
-  function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) syncToolbarHeight(); p.hidden = !show; } }
+  function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) { syncToolbarHeight(); recordPanelIdx = current; } p.hidden = !show; } updatePracticeBlur(); }
   { const b = $('#btn-record-close'); if (b) b.onclick = () => { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {} showRecordPanel(false); }; }
 
   // ───────────────────────────────────────────────────────────────────────
