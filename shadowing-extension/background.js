@@ -98,10 +98,69 @@ async function handleGroqTranscribe(msg) {
   } catch (e) { return { ok: false, _err: (e && e.message) || 'groq-error' }; }
 }
 
+/* --- Dịch phụ đề kép trên video (Language Reactor style) ---
+ * Content script trên YouTube bị page-CSP chặn fetch sang domain dịch. Background SW
+ * có host_permissions nên gọi được. Ưu tiên: Microsoft -> Google -> MyMemory.
+ * (YouTube tlang đã được gán lúc fetch phụ đề; đây chỉ là dự phòng khi thiếu bản dịch.) */
+let _bgMsTok = null, _bgMsTokAt = 0;
+async function bgMsToken(force) {
+  if (force || !_bgMsTok || Date.now() - _bgMsTokAt > 9 * 60 * 1000) {
+    const r = await fetch('https://edge.microsoft.com/translate/auth');
+    if (!r.ok) throw new Error('ms-auth-' + r.status);
+    const t = (await r.text()).trim();
+    if (!t) throw new Error('ms-auth-empty');
+    _bgMsTok = t; _bgMsTokAt = Date.now();
+  }
+  return _bgMsTok;
+}
+async function bgMicrosoftTranslate(text, from, to) {
+  const url = 'https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=' +
+    encodeURIComponent(from || '') + '&to=' + encodeURIComponent(to);
+  const doFetch = async (tok) => fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+    body: JSON.stringify([{ Text: text }]),
+  });
+  let r = await doFetch(await bgMsToken(false));
+  if (r.status === 401) { _bgMsTok = null; r = await doFetch(await bgMsToken(true)); }
+  if (!r.ok) throw new Error('ms-' + r.status);
+  const j = await r.json();
+  return ((j[0] && j[0].translations && j[0].translations[0] && j[0].translations[0].text) || '').trim();
+}
+async function bgGoogleTranslate(text, from, to) {
+  const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' +
+    encodeURIComponent(from || 'auto') + '&tl=' + encodeURIComponent(to) + '&dt=t&q=' + encodeURIComponent(text);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('g-' + r.status);
+  const j = await r.json();
+  if (!j || !Array.isArray(j[0])) return '';
+  return j[0].map((seg) => (seg && seg[0]) || '').join('').trim();
+}
+async function bgMyMemoryTranslate(text, from, to) {
+  const r = await fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + from + '|' + to);
+  const j = await r.json();
+  return (j && j.responseData && j.responseData.translatedText) || '';
+}
+async function handleTranslate(msg) {
+  const text = (msg && msg.text) || '';
+  const from = (msg && msg.from) || 'de';
+  const to = (msg && msg.to) || 'vi';
+  if (!text) return { ok: false };
+  try { const t = await bgMicrosoftTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'ms' }; } catch (e) {}
+  try { const t = await bgGoogleTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'google' }; } catch (e) {}
+  try { const t = await bgMyMemoryTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'mymemory' }; } catch (e) {}
+  return { ok: false };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   // Groq STT relay (content script -> background -> Worker). Async reply.
   if (msg && msg.sd === 'groq-transcribe') {
     handleGroqTranscribe(msg).then(reply).catch((e) => reply({ ok: false, _err: String((e && e.message) || e) }));
+    return true;
+  }
+  // Dịch phụ đề kép cho overlay trên video. Async reply.
+  if (msg && msg.sd === 'translate') {
+    handleTranslate(msg).then(reply).catch(() => reply({ ok: false }));
     return true;
   }
   // Worker health check qua background (dùng cho self-test). Async reply.

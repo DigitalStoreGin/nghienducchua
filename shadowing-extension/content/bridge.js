@@ -15,6 +15,31 @@
   let pendingFetch = null; // { resolve, timer } cho fetchYouTubeTrack qua MAIN world
   function clearPending() { if (pendingFetch) { try { clearTimeout(pendingFetch.timer); } catch (e) {} pendingFetch = null; } }
 
+  // --- Tu dong tai phu de (khong con nut "Lay phu de") -----------------------
+  // Khi bat duoc tracklist cho 1 video, tu dong fetch phu de mot lan theo ngon ngu
+  // dang hoc trong Settings. Reset khi chuyen video (SPA navigation).
+  let autoLoadedFor = '';
+  let autoLoadTimer = null;
+  function scheduleAutoLoad() {
+    if (autoLoadTimer) return;
+    autoLoadTimer = setTimeout(() => { autoLoadTimer = null; maybeAutoLoad(); }, 600);
+  }
+  function maybeAutoLoad() {
+    try {
+      if (!location.hostname.includes('youtube')) return;
+      const vid = currentVideoId || '';
+      if (vid && autoLoadedFor === vid) return;
+      if (!lastTracklist || !lastTracklist.length) return;
+      const st = (root.SD.engine && root.SD.engine.settings) || {};
+      const target = st.targetLang || 'de';
+      const native = st.nativeLang || 'vi';
+      autoLoadedFor = vid;
+      fetchYouTubeTrack(target, native).then((s) => {
+        if (!s || !s.length) autoLoadedFor = ''; // that bai -> cho thu lai lan toi
+      }).catch(() => { autoLoadedFor = ''; });
+    } catch (e) {}
+  }
+
   function onSubtitles(cb) { listeners.push(cb); }
   function emitSentences(sentences, meta) {
     try { console.info('[Shadow] subtitles:', sentences.length, (meta && meta.source) || ''); } catch (e) {}
@@ -31,6 +56,7 @@
       if (d.videoId && d.videoId !== currentVideoId) {
         currentVideoId = d.videoId;
         lastTracklist = null;
+        autoLoadedFor = ''; // cho phep tu tai lai phu de cho video moi
         // Thong bao engine reset
         listeners.forEach((cb) => { try { cb([], { source: d.source, navigate: true }); } catch (e) {} });
       }
@@ -41,6 +67,7 @@
     if (d.format === 'tracklist') {
       lastTracklist = d.data;
       if (d.videoId) currentVideoId = d.videoId;
+      scheduleAutoLoad(); // tu dong tai phu de ngay khi co tracklist
       return;
     }
 
@@ -188,6 +215,7 @@
       if (vid !== currentVideoId) {
         currentVideoId = vid;
         lastTracklist = null;
+        autoLoadedFor = '';
         listeners.forEach((cb) => { try { cb([], { source: 'navigation', navigate: true }); } catch (e) {} });
       }
     }

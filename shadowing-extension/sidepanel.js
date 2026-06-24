@@ -180,7 +180,10 @@
     const p = msg.payload;
     switch (msg.evt) {
       case 'sentences': sentences = p || []; renderList(); break;
-      case 'current': current = p.idx; renderNow(p); markCur(p.idx); break;
+      case 'current':
+        // Bo qua su kien lac trong cua so chon thu cong (chong nhay ve cau cu).
+        if (Date.now() < manualSelectUntil && p.idx !== manualSelectIdx) break;
+        current = p.idx; renderNow(p); markCur(p.idx); break;
       case 'playstate': { const b = $('#btn-play-pause') || $('.cbtn.play'); if (b) { const ic = b.querySelector('.tb-ico') || b; ic.textContent = p.playing ? '⏸' : '▶'; const lb = b.querySelector('.tb-label'); if (lb) lb.textContent = p.playing ? 'Dừng' : 'Phát'; } break; }
       case 'loop': $('#loop').classList.toggle('on', p); break;
       case 'state': onState(p); break;
@@ -297,7 +300,10 @@
       showRecordPanel(false);
     }
   }
-  function markCur(i) { document.querySelectorAll('.row').forEach((r) => r.classList.toggle('cur', +r.dataset.i === i)); const r = document.querySelector('.row[data-i="' + i + '"]'); if (r) r.scrollIntoView({ block: 'nearest' }); }
+  function markCur(i) { document.querySelectorAll('.row').forEach((r) => r.classList.toggle('cur', +r.dataset.i === i)); const r = document.querySelector('.row[data-i="' + i + '"]'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+
+  // Anti snap-back guard cho dieu huong cau (xem selectRow + handleEvent 'current').
+  let manualSelectIdx = -1, manualSelectUntil = 0;
 
   function isFav(t) { return favorites.some((f) => f.text === t); }
 
@@ -307,6 +313,10 @@
   function selectRow(i) {
     if (i < 0 || i >= sentences.length) return;
     current = i;
+    // Chong "snap-back": khi vua chon thu cong, bo qua su kien 'current' lac (idx khac)
+    // tu engine trong ~750ms (luc playhead chua kip tua xong).
+    manualSelectIdx = i;
+    manualSelectUntil = Date.now() + 750;
     cmd('select', { i });            // tua + phat doan video cua cau nay (tu dung cuoi cau neu bat)
     markCur(i);                      // chi doi vien dong dang chon — khong ve lai ca danh sach
     updateTryCard();
@@ -323,6 +333,14 @@
     if (!has) return;
     const s = sentences[current] || sentences[0];
     const txt = $('#try-card-text'); if (txt) txt.textContent = s ? '”' + s.text + '”' : '—';
+    // Trạng thái nút ⭐ theo câu hiện tại
+    const favB = $('#try-fav-btn');
+    if (favB && s) {
+      const on = isFav(s.text);
+      favB.textContent = on ? '★' : '☆';
+      favB.classList.toggle('on', on);
+      favB.title = on ? 'Bỏ khỏi yêu thích' : 'Yêu thích câu này';
+    }
     // Show next 2 sentences as clickable preview rows
     const previews = $('#try-card-previews');
     if (previews) {
@@ -346,7 +364,7 @@
     // Show/hide filter bar + the luyen tap
     const filterBar = $('#status-filter'); if (filterBar) filterBar.hidden = !sentences.length;
     updateTryCard();
-    if (!sentences.length) { c.innerHTML = '<div class="empty">Chưa có phụ đề. Bấm "Lấy phụ đề" ở trên.</div>'; return; }
+    if (!sentences.length) { c.innerHTML = '<div class="empty">⏳ Đang tải phụ đề… Hãy mở một video tiếng Đức trên YouTube.</div>'; return; }
     if (!filtered.length) { c.innerHTML = '<div class="empty">Không có câu nào khớp bộ lọc.</div>'; return; }
     filtered.forEach((s) => {
       const i = sentences.indexOf(s);
@@ -378,16 +396,48 @@
       const transBtn = document.createElement('button'); transBtn.className = 'row-action-btn'; transBtn.title = 'Dịch câu'; transBtn.textContent = '🌐';
       transBtn.onclick = async (e) => {
         e.stopPropagation();
-        if (s.trans) { const trEl = body.querySelector('.tr'); if (trEl) { trEl.hidden = !trEl.hidden; } return; }
-        transBtn.disabled = true;
-        const t = await translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi');
-        transBtn.disabled = false;
-        if (t) { s.trans = t; const trEl = document.createElement('div'); trEl.className = 'tr'; trEl.textContent = t; body.appendChild(trEl); }
+        const existing = body.querySelector('.tr');
+        // Đã có bản dịch -> bật/tắt hiển thị.
+        if (s.trans && existing) { existing.hidden = !existing.hidden; return; }
+        if (transBtn.classList.contains('loading')) return;
+        transBtn.classList.add('loading'); transBtn.disabled = true; transBtn.textContent = '⏳';
+        try {
+          const t = await translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi');
+          if (t) {
+            s.trans = t;
+            let trEl = body.querySelector('.tr');
+            if (!trEl) { trEl = document.createElement('div'); trEl.className = 'tr'; body.appendChild(trEl); }
+            trEl.textContent = t; trEl.hidden = false;
+            trEl.classList.remove('tr--in'); void trEl.offsetWidth; trEl.classList.add('tr--in');
+          } else {
+            transBtn.classList.add('err');
+            setStatus('🌐 Không dịch được câu này — thử lại sau giây lát.', 'warn');
+            setTimeout(() => transBtn.classList.remove('err'), 1600);
+          }
+        } catch (_) {
+          setStatus('🌐 Lỗi dịch — thử lại sau.', 'warn');
+        } finally {
+          transBtn.classList.remove('loading'); transBtn.disabled = false; transBtn.textContent = '🌐';
+        }
       };
-      // Nut ≡+ — them vao yeu thich
-      const menuBtn = document.createElement('button'); menuBtn.className = 'row-action-btn'; menuBtn.title = 'Thêm vào yêu thích'; menuBtn.textContent = '≡+';
-      menuBtn.onclick = (e) => { e.stopPropagation(); cmd('favorite', { text: s.text }); menuBtn.textContent = '★'; setTimeout(() => { menuBtn.textContent = '≡+'; }, 1200); };
-      actions.appendChild(micBtn); actions.appendChild(transBtn); actions.appendChild(menuBtn);
+      // Nut ⭐ — them/bo yeu thich (đồng bộ trạng thái thực từ storage)
+      const favBtn = document.createElement('button'); favBtn.className = 'row-action-btn row-fav-btn';
+      const setFavUI = () => {
+        const on = isFav(s.text);
+        favBtn.textContent = on ? '★' : '☆';
+        favBtn.classList.toggle('on', on);
+        favBtn.title = on ? 'Bỏ khỏi yêu thích' : 'Thêm vào yêu thích';
+      };
+      setFavUI();
+      favBtn.onclick = async (e) => {
+        e.stopPropagation();
+        favBtn.classList.remove('fav-pop'); void favBtn.offsetWidth; favBtn.classList.add('fav-pop');
+        const r = await cmd('fav', { text: s.text });
+        if (r && r.favorites) favorites = r.favorites;
+        setFavUI();
+        if (typeof updateTryCard === 'function') updateTryCard();
+      };
+      actions.appendChild(micBtn); actions.appendChild(transBtn); actions.appendChild(favBtn);
       row.appendChild(actions);
       // Cham trang thai (nho, goc phai)
       const dot = document.createElement('span');
@@ -820,7 +870,7 @@
       try { port.postMessage({ _setTab: t.id }); } catch (e) {}
     }
     const r = await cmd('getState');
-    if (!r || !r.ok) { showNoHost(true); return; }
+    if (!r || !r.ok) { showNoHost(true); sentences = []; renderList(); return; }
     showNoHost(false);
     settings = Object.assign(settings, r.settings || {}); favorites = r.favorites || []; sentences = r.sentences || []; current = r.current || 0;
     applySettings(); renderList(); if (sentences[current]) renderNow({ idx: current, total: sentences.length, sentence: sentences[current] });
@@ -1008,11 +1058,9 @@
     if (!text) return '';
     const ck = from + '|' + to + '|' + text;
     if (transCache[ck]) return transCache[ck];
-    // LUÔN ưu tiên OpenRouter (AI) -> DeepL. Mỗi nguồn đều KIỂM TRA kết quả trước khi nhận;
-    // nếu rỗng/sai thì hạ xuống API miễn phí: Google -> Microsoft -> MyMemory (kiểu GTranslate).
-    for (const m of OR_MODELS) {
-      try { const t = await openrouterTranslate(text, from, to, m); if (validTrans(t, text, from, to)) { transCache[ck] = t; return t; } } catch (e) {}
-    }
+    // Ưu tiên cho dịch ĐOẠN + TỪ: DeepL → Google → Microsoft → MyMemory.
+    // Mỗi nguồn đều KIỂM TRA kết quả trước khi nhận; rỗng/sai thì hạ xuống nguồn kế.
+    // (DeepL cần đăng nhập; nếu chưa đăng nhập sẽ trả rỗng nhanh và nhảy sang Google.)
     try { const d = await deeplTranslate(text, from, to); if (validTrans(d, text, from, to)) { transCache[ck] = d; return d; } } catch (e) {}
     try { const g = await googleFreeTranslate(text, from, to); if (validTrans(g, text, from, to)) { transCache[ck] = g; return g; } } catch (e) {}
     try { const ms = await microsoftFreeTranslate(text, from, to); if (validTrans(ms, text, from, to)) { transCache[ck] = ms; return ms; } } catch (e) {}
@@ -1635,17 +1683,17 @@
   const I18N = {
     vi: { tab_practice:'Luyện', tab_vocab:'Từ vựng', tab_flash:'Thẻ', tab_progress:'Tiến độ',
       nohost:'Mở một video YouTube hoặc Netflix rồi quay lại đây.',
-      ob_title:'Bắt đầu nhanh', ob1:'Mở video tiếng Đức trên YouTube.', ob2:'Bấm "Phụ đề tự động" (hoặc nạp file SRT/VTT).', ob3:'Bấm "Bật mic", cho phép micro cho extension.', ob4:'Bấm một câu → nói lại → xem điểm.', ob_close:'Đã hiểu',
+      ob_title:'Bắt đầu nhanh', ob1:'Mở video tiếng Đức trên YouTube.', ob2:'Phụ đề tự tải sau vài giây — không cần thao tác.', ob3:'Bấm "Bật mic", cho phép micro cho extension.', ob4:'Bấm một câu → nói lại → xem điểm.', ob_close:'Đã hiểu',
       src_auto:'Lấy phụ đề', src_live:'Bắt trực tiếp', src_file:'Mở file', src_mic:'Bật mic', src_diag:'Kiểm tra',
-      status_init:'Mở video, lấy phụ đề để bắt đầu.',
+      status_init:'Mở video tiếng Đức trên YouTube — phụ đề sẽ tự tải.',
       set_speed:'Tốc độ', set_rep:'Lặp', set_autonext:'Auto next', set_autorec:'Auto ghi âm', set_vsubs:'Phụ đề trên video', set_engine:'Engine', set_silero:'Silero VAD', set_offset:'Offset', set_target:'Học', set_native:'Dịch sang', set_uilang:'Ngôn ngữ', set_server:'Server', set_deepl:'DeepL key', set_orkey:'OpenRouter key',
       t_prev:'Câu trước', t_play:'Phát/Dừng', t_loop:'Lặp 1 câu', t_next:'Câu sau', t_shadow:'Luyện', t_listen:'Nghe mẫu', t_dict:'Chép chính tả', t_cloze:'Điền chỗ trống', t_blur:'Ẩn chữ (tự kiểm tra)', kbd_hint:'⌨ Space: nói · ◀ ▶: câu · ▲ ▼: tốc độ · R: nghe · L: lặp · B: ẩn chữ',
       fav_run:'▶️ Tự luyện dòng ⭐', stop:'⏹ Dừng', finalize:'✅ Tôi nói xong → chấm' },
     en: { tab_practice:'Practice', tab_vocab:'Words', tab_flash:'Cards', tab_progress:'Progress',
       nohost:'Open a YouTube or Netflix video, then come back here.',
-      ob_title:'Quick start', ob1:'Open a German video on YouTube.', ob2:'Click "Auto subtitles" (or load an SRT/VTT file).', ob3:'Click "Enable mic" and allow microphone access for the extension.', ob4:'Click a line → speak it back → see your score.', ob_close:'Got it',
+      ob_title:'Quick start', ob1:'Open a German video on YouTube.', ob2:'Subtitles load automatically after a few seconds — no action needed.', ob3:'Click "Enable mic" and allow microphone access for the extension.', ob4:'Click a line → speak it back → see your score.', ob_close:'Got it',
       src_auto:'Get subtitles', src_live:'Live capture', src_file:'Open file', src_mic:'Enable mic', src_diag:'Self-test',
-      status_init:'Open a video and load subtitles to begin.',
+      status_init:'Open a German video on YouTube — subtitles load automatically.',
       set_speed:'Speed', set_rep:'Repeat', set_autonext:'Auto next', set_autorec:'Auto record', set_vsubs:'Subtitles on video', set_engine:'Engine', set_silero:'Silero VAD', set_offset:'Offset', set_target:'Learn', set_native:'Translate to', set_uilang:'Language', set_server:'Server', set_deepl:'DeepL key', set_orkey:'OpenRouter key',
       t_prev:'Previous', t_play:'Play/Pause', t_loop:'Loop one', t_next:'Next', t_shadow:'Practice', t_listen:'Listen', t_dict:'Dictation', t_cloze:'Fill blanks', t_blur:'Hide text (self-test)', kbd_hint:'⌨ Space: speak · ◀ ▶: line · ▲ ▼: speed · R: listen · L: loop · B: hide',
       fav_run:'▶️ Practice ⭐ lines', stop:'⏹ Stop', finalize:'✅ Done speaking → score' },
@@ -1891,8 +1939,8 @@
   // Toolbar buttons wiring
   { const b = $('#btn-play-pause'); if (b) b.onclick = () => cmd('togglePlay', { target: settings.targetLang, native: settings.nativeLang }); }
   { const b = $('#btn-shadow'); if (b) b.onclick = () => { showRecordPanel(true); scoreNow(); }; }
-  { const b = $('#btn-prev'); if (b) b.onclick = () => cmd('prev'); }
-  { const b = $('#btn-next'); if (b) b.onclick = () => { cmd('next'); if (sentences[current + 1]) openPractice(current + 1); }; }
+  { const b = $('#btn-prev'); if (b) b.onclick = () => { manualSelectIdx = Math.max(0, current - 1); manualSelectUntil = Date.now() + 750; cmd('prev'); }; }
+  { const b = $('#btn-next'); if (b) b.onclick = () => { manualSelectIdx = Math.min(sentences.length - 1, current + 1); manualSelectUntil = Date.now() + 750; cmd('next'); }; }
   { const b = $('#btn-dictation'); if (b) b.onclick = () => startDictation(); }
   { const b = $('#btn-cloze'); if (b) b.onclick = () => startCloze(); }
   { const b = $('#btn-hint'); if (b) b.onclick = () => { const s = sentences[current]; if (s && s.trans) setStatus(s.trans, 'ok'); else if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => { if (t) { s.trans = t; setStatus(t, 'ok'); } }); }; }
@@ -1914,13 +1962,22 @@
       } catch (_) {}
     };
   }
-  { const b = $('#btn-load-auto'); if (b) b.onclick = () => cmd('loadAuto', { target: settings.targetLang, native: settings.nativeLang }); }
-  { const b = $('#btn-load-live'); if (b) b.onclick = async () => { const r = await cmd('live'); if (r) b.classList.toggle('on', !!r.running); }; }
+  // (Đã bỏ nút "Lấy phụ đề"/"Bắt trực tiếp"/"Mở file" — phụ đề tự tải qua bridge.js.)
 
   // The "Luyện câu này" (ShadowEcho-style): Nghe mẫu / Nói & chấm / Câu sau
   { const b = $('#try-card-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) { cmd('select', { i: current }); speakText(s.text); } }; }
   { const b = $('#try-card-speak'); if (b) b.onclick = () => { if (!sentences.length) return; openPractice(current); showRecordPanel(true); scoreNow(); }; }
   { const b = $('#try-card-next'); if (b) b.onclick = () => { if (current + 1 < sentences.length) selectRow(current + 1); }; }
+  // Nút ⭐ trên thẻ "Luyện câu này" — thêm/bỏ yêu thích câu hiện tại.
+  { const b = $('#try-fav-btn'); if (b) b.onclick = async () => {
+      const s = sentences[current]; if (!s) return;
+      b.classList.remove('fav-pop'); void b.offsetWidth; b.classList.add('fav-pop');
+      const r = await cmd('fav', { text: s.text });
+      if (r && r.favorites) favorites = r.favorites;
+      updateTryCard();
+      renderList();
+      setStatus(isFav(s.text) ? '⭐ Đã thêm vào yêu thích.' : 'Đã bỏ khỏi yêu thích.', 'ok');
+    }; }
   // Nut "Tu dung" tren the luyen tap — bat/tat tu dung cuoi moi cau (segPause).
   function updatePauseToggle() {
     const b = $('#try-pause-toggle'); if (!b) return;
@@ -1937,7 +1994,27 @@
     }; }
 
   // Record panel
-  function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) { syncToolbarHeight(); recordPanelIdx = current; } p.hidden = !show; } updatePracticeBlur(); }
+  // Hiện câu đang luyện trong panel "Nói & chấm" (image 7) — để vừa nghe vừa nói theo.
+  function updateRecordTarget() {
+    const wrap = $('#record-target'); if (!wrap) return;
+    const s = sentences[current];
+    if (!s) { wrap.hidden = true; return; }
+    const de = $('#record-target-de'); if (de) de.textContent = s.text;
+    const tr = $('#record-target-tr');
+    if (tr) {
+      tr.textContent = s.trans || '';
+      tr.hidden = !s.trans;
+      if (!s.trans && s.text) {
+        translateText(s.text, settings.targetLang || 'de', settings.nativeLang || 'vi').then((t) => {
+          if (t && sentences[current] === s) { s.trans = t; if ($('#record-target-de') && $('#record-target-de').textContent === s.text) { tr.textContent = t; tr.hidden = false; } }
+        }).catch(() => {});
+      }
+    }
+    wrap.hidden = false;
+    // Hiệu ứng xuất hiện
+    wrap.classList.remove('record-target--in'); void wrap.offsetWidth; wrap.classList.add('record-target--in');
+  }
+  function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) { syncToolbarHeight(); recordPanelIdx = current; updateRecordTarget(); } p.hidden = !show; } updatePracticeBlur(); }
   { const b = $('#btn-record-close'); if (b) b.onclick = () => { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {} showRecordPanel(false); }; }
 
   // ───────────────────────────────────────────────────────────────────────

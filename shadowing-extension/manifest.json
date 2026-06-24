@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "NghienDe — Luyện Shadowing tiếng Đức (YouTube & Netflix)",
+  "name": "NghienDeutsch",
   "version": "2.3.1",
   "description": "Luyện shadowing chuyên nghiệp: phụ đề, ghi âm, chấm điểm ngữ âm, dịch AI, phân tích từ vựng. Chạy trên YouTube & Netflix.",
   "permissions": [
@@ -33,7 +33,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "NghienDe — Shadowing Deutsch",
+    "default_title": "NghienDeutsch — Shadowing Deutsch",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -98,6 +98,7 @@
     {
       "resources": [
         "vendor/*",
+        "icons/*",
         "whisper-worker.js"
       ],
       "matches": [

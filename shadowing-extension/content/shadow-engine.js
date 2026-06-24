@@ -46,7 +46,11 @@
     selectSegment(i, opts) {
       opts = opts || {};
       if (i < 0 || i >= this.sentences.length) return;
-      this.queue = null; this.current = i; this.setCurrent(i);
+      this.queue = null; this.current = i;
+      // Chong "snap-back": sau khi tua, playhead can vai chuc ms de cap nhat. Trong
+      // khoang nay monitor co the thay timestamp CU -> nhay ve cau cu. Khoa lai.
+      this._seekGuardUntil = Date.now() + 500;
+      this.setCurrent(i);
       const s = this.sentences[i]; V().setRate(this.settings?.rate || 1);
       V().seekTo(s.startMs / 1000 + this.off());
       if (opts.play !== false) {
@@ -336,11 +340,13 @@
         const v = V().el;
         if (!v) return;
         const tMs = (v.currentTime - this.off()) * 1000;
-        // cap nhat current theo playhead khi dang phat tu do
-        const i = this.sentences.findIndex((s) => tMs >= s.startMs - 40 && tMs <= s.endMs);
-        if (i >= 0 && i !== this.current && !v.paused) {
-          this.current = i;
-          this.emit('current', { idx: i, total: this.sentences.length, sentence: this.sentences[i] });
+        // cap nhat current theo playhead khi dang phat tu do — TRU khi vua tua (seek guard)
+        if (Date.now() >= (this._seekGuardUntil || 0)) {
+          const i = this.sentences.findIndex((s) => tMs >= s.startMs - 40 && tMs <= s.endMs);
+          if (i >= 0 && i !== this.current && !v.paused) {
+            this.current = i;
+            this.emit('current', { idx: i, total: this.sentences.length, sentence: this.sentences[i] });
+          }
         }
         this.emit('highlight', this.current);
         // auto-pause / loop tai cuoi cau hien tai

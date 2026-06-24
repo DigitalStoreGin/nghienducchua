@@ -8,17 +8,12 @@
 </head>
 <body>
 
-  <!-- ===== NO HOST NOTICE ===== -->
-  <div id="nohost" class="nohost-banner" hidden data-i18n="nohost">
-    Open a YouTube video then come back here.
-  </div>
-
   <!-- ===== AUTH VIEW (shown when not logged in) ===== -->
   <div id="view-auth" class="view view-auth" hidden>
     <div class="auth-wrap">
       <div class="auth-logo">
         <img src="icons/icon48.png" class="auth-logo-img" alt="">
-        <h1 class="auth-logo-name brand-wordmark">NghienD<span class="brand-e">e</span></h1>
+        <h1 class="auth-logo-name brand-wordmark">NghienDeutsch</h1>
         <p class="auth-logo-tagline">Luyện shadowing chuyên nghiệp</p>
       </div>
 
@@ -95,7 +90,7 @@
 
     <div class="onboard-page" id="onboard-page-1">
       <div class="onboard-emoji">🎙️</div>
-      <h1 class="onboard-title">Chào mừng đến<br><span class="brand-wordmark">NghienD<span class="brand-e">e</span></span></h1>
+      <h1 class="onboard-title">Chào mừng đến<br><span class="brand-wordmark">NghienDeutsch</span></h1>
       <p class="onboard-desc">Luyện phát âm theo phương pháp shadowing chuyên nghiệp.<br>Nghe — nói — nhận phản hồi tức thì.</p>
       <button class="onboard-btn-next" id="onboard-next-1">Bắt đầu →</button>
       <button class="onboard-skip" id="onboard-skip">Bỏ qua</button>
@@ -120,7 +115,7 @@
       <h1 class="onboard-title">Cách sử dụng</h1>
       <ol class="onboard-tips">
         <li><strong>Mở YouTube</strong> — chọn video ngôn ngữ bạn học</li>
-        <li><strong>Bấm "Lấy phụ đề"</strong> — lấy phụ đề có sẵn của video</li>
+        <li><strong>Phụ đề tự tải</strong> — không cần thao tác, chờ vài giây</li>
         <li><strong>Bấm "Bật mic"</strong> — cho phép micro ngay trên trang YouTube</li>
         <li><strong>Bấm một câu → Nói</strong> — xem điểm phát âm</li>
       </ol>
@@ -135,8 +130,8 @@
     <!-- Minimal top bar -->
     <div class="list-topbar">
       <div class="list-brand">
-        <img src="icons/icon32.png" class="brand-icon" alt="">
-        <span class="brand-name brand-wordmark">NghienD<span class="brand-e">e</span></span>
+        <img src="icons/icon48.png" class="brand-icon" alt="">
+        <span class="brand-name brand-wordmark">NghienDeutsch</span>
       </div>
       <div class="list-topbar-right">
         <!-- Streak + XP (gamification) -->
@@ -154,41 +149,31 @@
       </div>
     </div>
 
-    <!-- Source buttons — shown when no subtitles loaded.
-         Mỗi nút có nhãn rõ ràng + tooltip giải thích chức năng. -->
-    <div id="source-bar" class="source-bar">
-      <button class="src-btn src-btn--primary" id="btn-load-auto" data-cmd="loadAuto"
-              title="Lấy phụ đề có sẵn của video YouTube (nhanh nhất). Dùng cái này trước tiên.">
-        <span class="src-btn-icon">&#128229;</span>
-        <span class="src-btn-label" data-i18n="src_auto">Lấy phụ đề</span>
-      </button>
-      <button class="src-btn" id="btn-load-live" data-cmd="live"
-              title="Khi video KHÔNG cho tải phụ đề: bật nút CC trên trình phát rồi bấm đây — phụ đề sẽ được bắt khi video chạy.">
-        <span class="src-btn-icon">&#128308;</span>
-        <span class="src-btn-label" data-i18n="src_live">Bắt trực tiếp</span>
-      </button>
-      <label class="src-btn file-label"
-             title="Nạp file phụ đề có sẵn từ máy của bạn (SRT, VTT, …).">
-        <span class="src-btn-icon">&#128193;</span>
-        <span class="src-btn-label" data-i18n="src_file">Mở file</span>
-        <!-- id="file" is used by sidepanel.js -->
-        <input type="file" id="file" accept=".srt,.vtt,.json,.xml,.ttml,.dfxp" hidden>
-      </label>
-      <!-- id="micButton" is used by sidepanel.js -->
-      <button class="src-btn src-btn--mic" id="micButton" data-cmd="mic"
+    <!-- ===== TOP ACTION TOOLBAR — Bật mic + công cụ luyện (gọn, có hiệu ứng) ===== -->
+    <div class="action-toolbar" id="action-toolbar">
+      <!-- id="micButton" is used by sidepanel.js (enableMic visual states) -->
+      <button class="at-btn at-btn--mic" id="micButton" data-cmd="mic"
               title="Cho phép micro để chấm điểm phát âm. Trên YouTube sẽ hỏi quyền ngay tại trang, không mở tab mới.">
-        <span class="src-btn-icon">&#127908;</span>
-        <span class="src-btn-label" data-i18n="src_mic">Bật mic</span>
+        <span class="at-ico">&#127908;</span>
+        <span class="at-label">Bật mic</span>
         <span class="mic-dot"></span>
       </button>
-    </div>
-
-    <!-- Sentence status filter bar -->
-    <div class="status-filter" id="status-filter" hidden>
-      <button class="sf-btn sf-btn--active" data-sf="all">All</button>
-      <button class="sf-btn" data-sf="new">🔵 New</button>
-      <button class="sf-btn" data-sf="learning">🟡 Learning</button>
-      <button class="sf-btn" data-sf="known">🟢 Known</button>
+      <button class="at-btn" id="btn-dictation" data-cmd="dictate" title="Chép chính tả: nghe rồi gõ lại cả câu">
+        <span class="at-ico">&#9997;&#65039;</span>
+        <span class="at-label">Chép</span>
+      </button>
+      <button class="at-btn" id="btn-cloze" data-cmd="cloze" title="Điền từ còn thiếu vào chỗ trống">
+        <span class="at-ico">&#129513;</span>
+        <span class="at-label">Điền</span>
+      </button>
+      <button class="at-btn" id="btn-shadow-fav" data-cmd="shadowFav" title="Tự luyện liên tục các câu đã đánh dấu ⭐">
+        <span class="at-ico">&#9733;</span>
+        <span class="at-label">Câu</span>
+      </button>
+      <button class="at-btn at-btn--menu" id="btn-menu" title="Mở menu cài đặt">
+        <span class="at-ico">&#9776;</span>
+        <span class="at-label">Menu</span>
+      </button>
     </div>
 
     <!-- Status line — id="status" used by sidepanel.js -->
@@ -223,6 +208,7 @@
       <div class="try-card-head">
         <span class="try-card-title">Luyện câu này</span>
         <div class="try-card-head-right">
+          <button class="try-fav-btn" id="try-fav-btn" title="Yêu thích câu này">☆</button>
           <button class="try-pause-toggle" id="try-pause-toggle" title="Tự dừng cuối mỗi câu để bạn luyện">⏸ Tự dừng</button>
           <span class="try-card-next" id="try-card-next">Câu sau ›</span>
         </div>
@@ -320,8 +306,14 @@
         </div>
         <button class="record-close-btn" id="btn-record-close" aria-label="Close record panel">&#10005;</button>
       </div>
-      <!-- Scrollable body: score + waveform + you-said -->
+      <!-- Scrollable body: câu đang luyện + score + waveform + you-said -->
       <div class="record-panel-body">
+        <!-- Câu đang luyện — hiện rõ để vừa nghe vừa nói theo (image 7) -->
+        <div class="record-target" id="record-target" hidden>
+          <span class="record-target-label">Đang luyện</span>
+          <div class="record-target-de" id="record-target-de"></div>
+          <div class="record-target-tr" id="record-target-tr"></div>
+        </div>
         <div class="record-score-area">
           <div class="record-score-circle-wrap" id="record-score-circle-wrap">
             <svg class="record-score-svg" viewBox="0 0 80 80" width="80" height="80">
@@ -361,10 +353,8 @@
   </div><!-- /#view-practice -->
 
 
-  <!-- ===== BOTTOM TOOLBAR (always visible) — 2 hàng, có nhãn rõ ràng ===== -->
+  <!-- ===== BOTTOM TOOLBAR (always visible) — chỉ điều khiển phát ===== -->
   <div class="bottom-toolbar" id="bottom-toolbar">
-
-    <!-- Hàng 1: điều khiển phát & nói lại (chấm điểm) -->
     <div class="toolbar-row toolbar-row--main">
       <button class="tb-btn" id="btn-prev" data-cmd="prev" title="Câu trước (phím ←)">
         <span class="tb-ico">&#8249;</span><span class="tb-label">Trước</span>
@@ -376,42 +366,9 @@
       <button class="tb-btn" id="btn-next" data-cmd="next" title="Câu sau (phím →)">
         <span class="tb-ico">&#8250;</span><span class="tb-label">Sau</span>
       </button>
-      <button class="tb-btn" id="btn-loop" data-cmd="loop" title="Lặp lại 1 câu (phím L)">
+      <!-- Không đặt data-cmd ở đây: nút này uỷ quyền qua #loop (wire) để tránh toggle 2 lần. -->
+      <button class="tb-btn" id="btn-loop" title="Lặp lại 1 câu (phím L)">
         <span class="tb-ico">&#8635;</span><span class="tb-label">Lặp</span>
-      </button>
-      <!-- id="btn-shadow": nút chính — nói lại & chấm điểm (data-cmd="shadowCur") -->
-      <button class="tb-btn tb-btn--rec" id="btn-shadow" data-cmd="shadowCur" title="Nói lại câu này & chấm điểm phát âm (phím Space)">
-        <span class="tb-ico">&#127908;</span><span class="tb-label">Nói &amp; chấm</span>
-      </button>
-    </div>
-
-    <!-- Hàng 2: công cụ luyện tập -->
-    <div class="toolbar-row toolbar-row--tools">
-      <button class="tb-btn tb-btn--sm" id="btn-hint" title="Gợi ý: hiện bản dịch của câu">
-        <span class="tb-ico">&#128161;</span><span class="tb-label">Gợi ý</span>
-      </button>
-      <!-- id="btn-blur": legacy uses id="blurBtn" -->
-      <button class="tb-btn tb-btn--sm" id="btn-blur" title="Ẩn chữ để tự kiểm tra trí nhớ (phím B)">
-        <span class="tb-ico">&#128065;</span><span class="tb-label">Ẩn chữ</span>
-      </button>
-      <!-- id="btn-dictation": legacy data-cmd="dictate" -->
-      <button class="tb-btn tb-btn--sm" id="btn-dictation" data-cmd="dictate" title="Chép chính tả: nghe rồi gõ lại cả câu">
-        <span class="tb-ico">&#9997;&#65039;</span><span class="tb-label">Chép</span>
-      </button>
-      <!-- id="btn-cloze": legacy data-cmd="cloze" -->
-      <button class="tb-btn tb-btn--sm" id="btn-cloze" data-cmd="cloze" title="Điền từ còn thiếu vào chỗ trống">
-        <span class="tb-ico">&#129513;</span><span class="tb-label">Điền</span>
-      </button>
-      <!-- id="btn-shadow-fav": legacy data-cmd="shadowFav" -->
-      <button class="tb-btn tb-btn--sm" id="btn-shadow-fav" data-cmd="shadowFav" title="Tự luyện liên tục các câu đã đánh dấu ⭐">
-        <span class="tb-ico">&#9733;</span><span class="tb-label">Câu ⭐</span>
-      </button>
-      <!-- id="btn-finish": acts as finalizeBtn -->
-      <button class="tb-btn tb-btn--sm" id="btn-finish" title="Kết thúc & xem tổng kết buổi luyện">
-        <span class="tb-ico">&#127937;</span><span class="tb-label">Xong</span>
-      </button>
-      <button class="tb-btn tb-btn--sm tb-btn--menu" id="btn-menu" title="Mở menu cài đặt">
-        <span class="tb-ico">&#9776;</span><span class="tb-label">Menu</span>
       </button>
     </div>
   </div>
@@ -421,10 +378,19 @@
   <!-- btn-mic-toggle alias: same element as #micButton -->
   <span id="btn-mic-toggle" hidden></span>
 
-  <!-- Legacy loop/blurBtn/finalizeBtn — visible toolbar buttons delegate to these -->
+  <!-- Legacy hidden elements — JS references these IDs; kept to avoid null errors.
+       (Các nút Gợi ý / Ẩn chữ / Xong / Nói&chấm đã gỡ khỏi UI nhưng hàm xử lý vẫn còn.) -->
   <button id="loop" hidden data-cmd="loop"></button>
   <button id="blurBtn" hidden></button>
   <button id="finalizeBtn" hidden></button>
+  <button id="btn-shadow" hidden data-cmd="shadowCur"></button>
+  <button id="btn-hint" hidden></button>
+  <button id="btn-blur" hidden></button>
+  <button id="btn-finish" hidden></button>
+  <!-- File loader giữ ẩn (đã bỏ nút "Mở file") để JS không lỗi null. -->
+  <input type="file" id="file" accept=".srt,.vtt,.json,.xml,.ttml,.dfxp" hidden>
+  <!-- nohost stub: đã gỡ banner "Mở một video…"; giữ phần tử ẩn để JS không lỗi null. -->
+  <span id="nohost" hidden></span>
 
 
   <!-- ===== DICTATION / CLOZE POPUP ===== -->
