@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="stylesheet" href="sidepanel.css">
-  <title>NghienDe</title>
+  <title>NghienDeutsch</title>
 </head>
 <body>
 
@@ -153,26 +153,26 @@
     <div class="action-toolbar" id="action-toolbar">
       <!-- id="micButton" is used by sidepanel.js (enableMic visual states) -->
       <button class="at-btn at-btn--mic" id="micButton" data-cmd="mic"
-              title="Cho phép micro để chấm điểm phát âm. Trên YouTube sẽ hỏi quyền ngay tại trang, không mở tab mới.">
+              title="Cho phép micro để chấm điểm phát âm. Trên YouTube sẽ hỏi quyền ngay tại trang, không mở tab mới." data-i18n-title="tt_mic">
         <span class="at-ico">&#127908;</span>
-        <span class="at-label">Bật mic</span>
+        <span class="at-label" data-i18n="at_mic">Bật mic</span>
         <span class="mic-dot"></span>
       </button>
-      <button class="at-btn" id="btn-dictation" data-cmd="dictate" title="Chép chính tả: nghe rồi gõ lại cả câu">
+      <button class="at-btn" id="btn-dictation" data-cmd="dictate" title="Chép chính tả: nghe rồi gõ lại cả câu" data-i18n-title="tt_dict">
         <span class="at-ico">&#9997;&#65039;</span>
-        <span class="at-label">Chép</span>
+        <span class="at-label" data-i18n="at_dict">Chép</span>
       </button>
-      <button class="at-btn" id="btn-cloze" data-cmd="cloze" title="Điền từ còn thiếu vào chỗ trống">
+      <button class="at-btn" id="btn-cloze" data-cmd="cloze" title="Điền từ còn thiếu vào chỗ trống" data-i18n-title="tt_cloze">
         <span class="at-ico">&#129513;</span>
-        <span class="at-label">Điền</span>
+        <span class="at-label" data-i18n="at_cloze">Điền</span>
       </button>
-      <button class="at-btn" id="btn-shadow-fav" data-cmd="shadowFav" title="Tự luyện liên tục các câu đã đánh dấu ⭐">
-        <span class="at-ico">&#9733;</span>
-        <span class="at-label">Câu</span>
+      <button class="at-btn" id="btn-vocab" title="Từ vựng đã lưu &amp; từ phát âm yếu" data-i18n-title="tt_vocab">
+        <span class="at-ico">&#128218;</span>
+        <span class="at-label" data-i18n="at_vocab">Từ vựng</span>
       </button>
-      <button class="at-btn at-btn--menu" id="btn-menu" title="Mở menu cài đặt">
+      <button class="at-btn at-btn--menu" id="btn-menu" title="Mở menu cài đặt" data-i18n-title="tt_menu">
         <span class="at-ico">&#9776;</span>
-        <span class="at-label">Menu</span>
+        <span class="at-label" data-i18n="at_menu">Menu</span>
       </button>
     </div>
 
@@ -206,17 +206,17 @@
     <!-- The luyen tap (kieu "Try your first shadow") — hien cau dang chon + Nghe / Nói & chấm -->
     <div id="try-shadow-card" class="try-card" hidden>
       <div class="try-card-head">
-        <span class="try-card-title">Luyện câu này</span>
+        <span class="try-card-title" data-i18n="tc_title">Luyện câu này</span>
         <div class="try-card-head-right">
-          <button class="try-fav-btn" id="try-fav-btn" title="Yêu thích câu này">☆</button>
+          <button class="try-fav-btn" id="try-fav-btn" title="Yêu thích câu này" data-i18n-title="tc_fav">☆</button>
           <button class="try-pause-toggle" id="try-pause-toggle" title="Tự dừng cuối mỗi câu để bạn luyện">⏸ Tự dừng</button>
-          <span class="try-card-next" id="try-card-next">Câu sau ›</span>
+          <span class="try-card-next" id="try-card-next" data-i18n="tc_next">Câu sau ›</span>
         </div>
       </div>
       <div class="try-card-sentence" id="try-card-text">—</div>
       <div class="try-card-actions">
-        <button class="try-card-btn try-card-btn--listen" id="try-card-listen">▷ Nghe</button>
-        <button class="try-card-btn try-card-btn--speak" id="try-card-speak">🎤 Nói &amp; chấm</button>
+        <button class="try-card-btn try-card-btn--listen" id="try-card-listen" data-i18n="tc_listen">▷ Nghe</button>
+        <button class="try-card-btn try-card-btn--speak" id="try-card-speak" data-i18n="tc_speak">🎤 Nói &amp; chấm</button>
       </div>
       <div id="try-card-previews" class="try-card-previews"></div>
     </div>
@@ -239,9 +239,9 @@
 
     <!-- Top bar -->
     <div class="practice-topbar">
-      <button class="back-btn" id="btn-back-to-list">&#8592; Back</button>
+      <button class="back-btn" id="btn-back-to-list" data-i18n="pr_back">&#8592; Back</button>
       <div class="practice-tabs">
-        <span class="practice-tab practice-tab--active">Practice</span>
+        <span class="practice-tab practice-tab--active" data-i18n="tab_practice">Practice</span>
       </div>
     </div>
 
@@ -302,7 +302,7 @@
       <div class="record-panel-header">
         <div class="record-status-row">
           <span class="record-listening-dot" id="record-listening-dot"></span>
-          <span class="record-status-text" id="record-status-text">S&#7861;n s&#224;ng</span>
+          <span class="record-status-text" id="record-status-text" data-i18n="rp_ready">S&#7861;n s&#224;ng</span>
         </div>
         <button class="record-close-btn" id="btn-record-close" aria-label="Close record panel">&#10005;</button>
       </div>
@@ -310,7 +310,7 @@
       <div class="record-panel-body">
         <!-- Câu đang luyện — hiện rõ để vừa nghe vừa nói theo (image 7) -->
         <div class="record-target" id="record-target" hidden>
-          <span class="record-target-label">Đang luyện</span>
+          <span class="record-target-label" data-i18n="rp_target">Đang luyện</span>
           <div class="record-target-de" id="record-target-de"></div>
           <div class="record-target-tr" id="record-target-tr"></div>
         </div>
@@ -322,11 +322,11 @@
             </svg>
             <div class="record-score-num" id="record-score-num">&ndash;</div>
           </div>
-          <div class="record-score-label">Match %</div>
+          <div class="record-score-label" data-i18n="rp_match">Match %</div>
           <div class="score-tier-msg" id="score-tier-msg" hidden></div>
           <div class="phoneme-focus" id="phoneme-focus" hidden></div>
         </div>
-        <div class="you-said-label">YOU SAID</div>
+        <div class="you-said-label" data-i18n="rp_yousaid">YOU SAID</div>
         <canvas id="waveform-canvas" class="waveform-canvas" width="280" height="36"></canvas>
         <div class="you-said-text" id="you-said-text"></div>
         <!-- Word detail card: bấm bất kỳ từ nào để xem cách phát âm -->
@@ -338,15 +338,15 @@
           </div>
           <div class="word-detail-hints" id="word-detail-hints"></div>
           <div class="word-detail-sim" id="word-detail-sim"></div>
-          <button class="word-detail-speak" id="word-detail-speak">&#128266; Nghe ph&#225;t &#226;m &#273;&#250;ng</button>
+          <button class="word-detail-speak" id="word-detail-speak" data-i18n="wd_speak">&#128266; Nghe ph&#225;t &#226;m &#273;&#250;ng</button>
         </div>
       </div>
       <!-- Footer: always pinned at bottom of panel -->
       <div class="record-panel-footer">
-        <button class="record-action-btn" id="btn-listen">&#128266; Nghe m&#7851;u</button>
-        <button class="record-action-btn" id="btn-replay" disabled>&#128257; Nghe l&#7841;i</button>
+        <button class="record-action-btn" id="btn-listen" data-i18n="rp_listen">&#128266; Nghe m&#7851;u</button>
+        <button class="record-action-btn" id="btn-replay" disabled data-i18n="rp_replay">&#128257; Nghe l&#7841;i</button>
         <div class="footer-sep"></div>
-        <button class="record-action-btn record-action-btn--primary" id="btn-rescore">&#127908; Ch&#7845;m &#273;i&#7875;m</button>
+        <button class="record-action-btn record-action-btn--primary" id="btn-rescore" data-i18n="rescore_go">&#127908; Ch&#7845;m &#273;i&#7875;m</button>
       </div>
     </div>
 
@@ -356,19 +356,18 @@
   <!-- ===== BOTTOM TOOLBAR (always visible) — chỉ điều khiển phát ===== -->
   <div class="bottom-toolbar" id="bottom-toolbar">
     <div class="toolbar-row toolbar-row--main">
-      <button class="tb-btn" id="btn-prev" data-cmd="prev" title="Câu trước (phím ←)">
-        <span class="tb-ico">&#8249;</span><span class="tb-label">Trước</span>
+      <button class="tb-btn" id="btn-prev" data-cmd="prev" title="Câu trước (phím ←)" data-i18n-title="t_prev">
+        <span class="tb-ico">&#8249;</span><span class="tb-label" data-i18n="bt_prev">Trước</span>
       </button>
       <!-- id="btn-play-pause": legacy JS dùng .cbtn.play / data-cmd="togglePlay" -->
-      <button class="tb-btn tb-btn--play" id="btn-play-pause" data-cmd="togglePlay" title="Phát / Dừng video (Enter)">
-        <span class="tb-ico">&#9654;</span><span class="tb-label">Phát</span>
+      <button class="tb-btn tb-btn--play" id="btn-play-pause" data-cmd="togglePlay" title="Phát / Dừng video (Enter)" data-i18n-title="t_play">
+        <span class="tb-ico">&#9654;</span><span class="tb-label" data-i18n="bt_play">Phát</span>
       </button>
-      <button class="tb-btn" id="btn-next" data-cmd="next" title="Câu sau (phím →)">
-        <span class="tb-ico">&#8250;</span><span class="tb-label">Sau</span>
+      <button class="tb-btn" id="btn-next" data-cmd="next" title="Câu sau (phím →)" data-i18n-title="t_next">
+        <span class="tb-ico">&#8250;</span><span class="tb-label" data-i18n="bt_next">Sau</span>
       </button>
-      <!-- Không đặt data-cmd ở đây: nút này uỷ quyền qua #loop (wire) để tránh toggle 2 lần. -->
-      <button class="tb-btn" id="btn-loop" title="Lặp lại 1 câu (phím L)">
-        <span class="tb-ico">&#8635;</span><span class="tb-label">Lặp</span>
+      <button class="tb-btn" id="btn-loop" data-cmd="loop" title="Lặp lại 1 câu (phím L)" data-i18n-title="tt_loop">
+        <span class="tb-ico">&#8635;</span><span class="tb-label" data-i18n="bt_loop">Lặp</span>
       </button>
     </div>
   </div>
@@ -380,7 +379,6 @@
 
   <!-- Legacy hidden elements — JS references these IDs; kept to avoid null errors.
        (Các nút Gợi ý / Ẩn chữ / Xong / Nói&chấm đã gỡ khỏi UI nhưng hàm xử lý vẫn còn.) -->
-  <button id="loop" hidden data-cmd="loop"></button>
   <button id="blurBtn" hidden></button>
   <button id="finalizeBtn" hidden></button>
   <button id="btn-shadow" hidden data-cmd="shadowCur"></button>
@@ -403,7 +401,7 @@
   <div class="slide-menu" id="slide-menu" hidden>
 
     <div class="slide-menu-header">
-      <span class="slide-menu-title">Menu</span>
+      <span class="slide-menu-title" data-i18n="menu_title">Menu</span>
       <button class="slide-menu-close" id="btn-menu-close" aria-label="Close menu">&#10005;</button>
     </div>
 
@@ -414,134 +412,35 @@
         <div class="account-email" id="account-email">—</div>
         <div class="account-plan-badge" id="account-plan-badge">Free</div>
       </div>
-      <button class="btn-logout" id="btn-logout" title="Đăng xuất">&#8594;</button>
+      <button class="btn-logout" id="btn-logout" title="Đăng xuất" data-i18n-title="menu_logout">&#8594;</button>
     </div>
 
     <!-- USAGE METER -->
     <div class="usage-meter" id="usage-meter">
       <div class="usage-row">
-        <span class="usage-label">Dịch hôm nay</span>
+        <span class="usage-label" data-i18n="usage_trans">Dịch hôm nay</span>
         <span class="usage-count" id="usage-trans-count">0 / 20</span>
       </div>
       <div class="usage-bar-wrap"><div class="usage-bar-fill" id="usage-trans-bar" style="width:0%"></div></div>
       <div class="usage-row">
-        <span class="usage-label">AI hôm nay</span>
+        <span class="usage-label" data-i18n="usage_ai">AI hôm nay</span>
         <span class="usage-count" id="usage-ai-count">0 / 10</span>
       </div>
       <div class="usage-bar-wrap"><div class="usage-bar-fill usage-bar-fill--ai" id="usage-ai-bar" style="width:0%"></div></div>
-      <button class="btn-upgrade" id="btn-upgrade">&#9889; Nâng cấp Pro</button>
+      <button class="btn-upgrade" id="btn-upgrade" data-i18n="btn_upgrade">&#9889; Nâng cấp Pro</button>
     </div>
 
-    <!-- SETTINGS SECTION -->
+    <!-- SETTINGS SECTION — chỉ giữ 4 mục: Học / Dịch sang / Phụ đề trên video / Ngôn ngữ -->
     <details class="menu-section" id="section-settings" open>
-      <summary class="menu-section-title">Settings</summary>
+      <summary class="menu-section-title" data-i18n="sec_settings">Cài đặt</summary>
       <div class="menu-section-body">
-
-        <!-- Speed — id="rate", id="rate-val" used by sidepanel.js -->
-        <div class="setting-row">
-          <label class="setting-label" for="rate">Speed</label>
-          <div class="setting-input-group setting-input-group--inline">
-            <input type="range" id="rate" min="0.5" max="1.5" step="0.25" value="1" class="setting-slider">
-            <span class="setting-slider-val" id="rate-val">1x</span>
-          </div>
-        </div>
-
-        <!-- Repeat — id="rep" used by sidepanel.js -->
-        <div class="setting-row">
-          <label class="setting-label" for="rep">Repeat</label>
-          <input type="number" id="rep" min="1" max="5" value="3" class="setting-input setting-input--num">
-        </div>
-        <!-- New-spec alias -->
-        <span id="repeat" hidden></span>
-
-        <!-- Auto Next — id="autonext" used by sidepanel.js -->
-        <div class="setting-row setting-row--toggle">
-          <label class="setting-label" for="autonext">Auto Next</label>
-          <input type="checkbox" id="autonext" class="setting-toggle" checked>
-        </div>
-        <!-- New-spec alias -->
-        <span id="autoNext" hidden></span>
-
-        <!-- Auto Record — id="autorec" used by sidepanel.js -->
-        <div class="setting-row setting-row--toggle">
-          <label class="setting-label" for="autorec">Auto Record</label>
-          <input type="checkbox" id="autorec" class="setting-toggle" checked>
-        </div>
-        <!-- New-spec alias -->
-        <span id="autoRecord" hidden></span>
-
-        <!-- Auto Pause — tự dừng cuối mỗi câu để luyện -->
-        <div class="setting-row setting-row--toggle">
-          <label class="setting-label" for="segpause">Tự dừng câu</label>
-          <input type="checkbox" id="segpause" class="setting-toggle" checked>
-        </div>
-
-        <!-- Speech Engine — id="engine" used by sidepanel.js -->
-        <div class="setting-row">
-          <label class="setting-label" for="engine">Chấm phát âm</label>
-          <select id="engine" class="setting-select">
-            <option value="webspeech">Web Speech (nhanh — khuyên dùng)</option>
-            <option value="whisper">Whisper AI (chính xác hơn, phải tải model)</option>
-            <option value="server">Server riêng</option>
-          </select>
-        </div>
-
-        <!-- Whisper model — tự chọn theo cấu hình máy, có thể ép tay -->
-        <div class="setting-row">
-          <label class="setting-label" for="whisperModel">Model Whisper</label>
-          <select id="whisperModel" class="setting-select">
-            <option value="auto">Tự động (base ↔ small, ~30% RAM)</option>
-            <option value="base">Base — nhanh (~145MB, máy yếu)</option>
-            <option value="small">Small — tốt nhất (~480MB, ≥ 4GB RAM)</option>
-            <option value="medium">Medium — mạnh nhất (~1.5GB, ≥ 8GB RAM)</option>
-            <option value="tiny">Tiny — cực nhẹ (~75MB, chỉ ép tay)</option>
-          </select>
-        </div>
-        <!-- Hiển thị máy đã phát hiện + model đang chọn -->
-        <div class="setting-row setting-hw" id="hwInfoRow">
-          <span class="setting-hw-text" id="hwInfo">Đang kiểm tra cấu hình máy…</span>
-        </div>
-
-        <!-- Tự kiểm tra ghi âm + chấm điểm (gửi báo cáo cho support) -->
-        <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:6px">
-          <button class="btn-selftest" id="btn-selftest" style="width:100%;padding:10px;border:1.5px solid #1a73e8;border-radius:10px;background:#e8f0fe;color:#1a73e8;font-weight:600;cursor:pointer">🔧 Tự kiểm tra ghi âm &amp; chấm điểm</button>
-          <div id="selftest-box" class="diagbox" hidden></div>
-        </div>
-
-        <!-- Silero VAD — id="silerovad" used by sidepanel.js -->
-        <div class="setting-row setting-row--toggle">
-          <label class="setting-label" for="silerovad">Silero VAD</label>
-          <input type="checkbox" id="silerovad" class="setting-toggle">
-        </div>
-        <!-- New-spec alias -->
-        <span id="useSileroVad" hidden></span>
-
-        <!-- Offset ms — id="offset" used by sidepanel.js -->
-        <div class="setting-row">
-          <label class="setting-label" for="offset">Offset ms</label>
-          <input type="number" id="offset" step="100" value="0" class="setting-input setting-input--num">
-        </div>
-        <!-- New-spec alias -->
-        <span id="offsetMs" hidden></span>
-
-        <!-- Server URL — id="serverurl" used by sidepanel.js (shown when engine=server) -->
-        <div class="setting-row" id="serverurl-row">
-          <label class="setting-label" for="serverurl">Server URL</label>
-          <input type="text" id="serverurl" value="http://localhost:8000" class="setting-input setting-input--wide">
-        </div>
-        <!-- New-spec alias -->
-        <span id="serverUrl" hidden></span>
 
         <!-- Target Language — id="target" used by sidepanel.js -->
         <div class="setting-row">
-          <label class="setting-label" for="target">Target Language</label>
+          <label class="setting-label" for="target" data-i18n="set_target">Ngôn ngữ học</label>
           <select id="target" class="setting-select">
-            <option value="de" selected>German (de)</option>
-            <option value="en">English (en)</option>
-            <option value="fr">French (fr)</option>
-            <option value="es">Spanish (es)</option>
-            <option value="ja">Japanese (ja)</option>
-            <option value="ko">Korean (ko)</option>
+            <option value="de" selected>🇩🇪 Deutsch (de)</option>
+            <option value="en">🇬🇧 English (en)</option>
           </select>
         </div>
         <!-- New-spec alias -->
@@ -549,15 +448,25 @@
 
         <!-- Native Language — id="native" used by sidepanel.js -->
         <div class="setting-row">
-          <label class="setting-label" for="native">Native Language</label>
+          <label class="setting-label" for="native" data-i18n="set_native">Dịch sang</label>
           <select id="native" class="setting-select">
-            <option value="vi" selected>Vietnamese (vi)</option>
-            <option value="en">English (en)</option>
-            <option value="zh">Chinese (zh)</option>
-            <option value="ja">Japanese (ja)</option>
-            <option value="ko">Korean (ko)</option>
-            <option value="id">Indonesian (id)</option>
-            <option value="th">Thai (th)</option>
+            <option value="vi" selected>🇻🇳 Tiếng Việt (vi)</option>
+            <option value="en">🇬🇧 English (en)</option>
+            <option value="tr">🇹🇷 Türkçe (tr)</option>
+            <option value="uk">🇺🇦 Українська (uk)</option>
+            <option value="ru">🇷🇺 Русский (ru)</option>
+            <option value="pl">🇵🇱 Polski (pl)</option>
+            <option value="ar">🇸🇦 العربية (ar)</option>
+            <option value="ro">🇷🇴 Română (ro)</option>
+            <option value="it">🇮🇹 Italiano (it)</option>
+            <option value="es">🇪🇸 Español (es)</option>
+            <option value="fr">🇫🇷 Français (fr)</option>
+            <option value="hi">🇮🇳 हिन्दी (hi)</option>
+            <option value="zh">🇨🇳 中文 (zh)</option>
+            <option value="ko">🇰🇷 한국어 (ko)</option>
+            <option value="ja">🇯🇵 日本語 (ja)</option>
+            <option value="id">🇮🇩 Indonesia (id)</option>
+            <option value="th">🇹🇭 ไทย (th)</option>
           </select>
         </div>
         <!-- New-spec alias -->
@@ -565,41 +474,60 @@
 
         <!-- Video Subtitles — id="vsubs" used by sidepanel.js -->
         <div class="setting-row setting-row--toggle">
-          <label class="setting-label" for="vsubs">Subtitles on Video</label>
+          <label class="setting-label" for="vsubs" data-i18n="set_vsubs">Phụ đề trên video</label>
           <input type="checkbox" id="vsubs" class="setting-toggle" checked>
         </div>
 
         <!-- UI Language — id="uilang" used by sidepanel.js -->
         <div class="setting-row">
-          <label class="setting-label" for="uilang">UI Language</label>
+          <label class="setting-label" for="uilang" data-i18n="set_uilang">Ngôn ngữ giao diện</label>
           <select id="uilang" class="setting-select">
-            <option value="vi" selected>Tiếng Việt</option>
-            <option value="en">English</option>
+            <option value="vi" selected>🇻🇳 Tiếng Việt</option>
+            <option value="en">🇬🇧 English</option>
           </select>
         </div>
+
+        <!-- Hidden stubs: các cài đặt đã gỡ khỏi UI nhưng vẫn giữ giá trị mặc định cho engine.
+             (sidepanel.js vẫn tham chiếu các ID này; giữ ẩn để không lỗi null + hardcode default.) -->
+        <input type="hidden" id="rate" value="1">
+        <input type="hidden" id="rep" value="3">
+        <span id="repeat" hidden></span>
+        <input type="checkbox" id="autonext" hidden checked>
+        <span id="autoNext" hidden></span>
+        <input type="checkbox" id="autorec" hidden checked>
+        <span id="autoRecord" hidden></span>
+        <input type="checkbox" id="segpause" hidden checked>
+        <input type="hidden" id="engine" value="webspeech">
+        <input type="hidden" id="whisperModel" value="auto">
+        <input type="checkbox" id="silerovad" hidden>
+        <span id="useSileroVad" hidden></span>
+        <input type="hidden" id="offset" value="0">
+        <span id="offsetMs" hidden></span>
+        <input type="hidden" id="serverurl" value="http://localhost:8000">
+        <span id="serverUrl" hidden></span>
+        <span id="hwInfo" hidden></span>
+        <button id="btn-selftest" hidden></button>
+        <div id="selftest-box" hidden></div>
 
       </div>
     </details><!-- /#section-settings -->
 
-    <!-- VOCABULARY SECTION -->
-    <details class="menu-section" id="section-vocab">
-      <!-- id="tab-vocab" used by new spec as tab trigger -->
-      <summary class="menu-section-title" id="tab-vocab">Vocabulary</summary>
+    <!-- VOCABULARY SECTION — HAI BẢNG: từ đã lưu + từ phát âm yếu -->
+    <details class="menu-section" id="section-vocab" open>
+      <summary class="menu-section-title" id="tab-vocab" data-i18n="sec_vocab">Từ vựng</summary>
       <div class="menu-section-body">
-        <div class="vocab-actions">
-          <!-- id="anki-export", id="anki-sync" used by new spec -->
-          <button class="setting-btn" id="anki-export">&#11015;&#65039; Export Anki</button>
-          <button class="setting-btn" id="anki-sync">&#8594; Anki Sync</button>
-        </div>
-        <!-- id="vocab-list" used by new spec -->
+        <!-- Bảng 1: từ đã lưu -->
+        <div class="vocab-table-title" data-i18n="voc_saved_title">📚 Từ đã lưu</div>
         <div id="vocab-list" class="vocab-list"></div>
+        <!-- Bảng 2: từ phát âm yếu (đọc sai nhiều lần) -->
+        <div class="vocab-table-title" data-i18n="voc_weak_title">⚠️ Từ phát âm yếu</div>
+        <div id="weak-words-list" class="weak-words-list"></div>
       </div>
     </details>
 
-    <!-- FLASHCARDS SECTION -->
+    <!-- FLASHCARDS SECTION — thẻ từ CẢ CÂU đã yêu thích -->
     <details class="menu-section" id="section-flash">
-      <!-- id="tab-flash" used by new spec as tab trigger -->
-      <summary class="menu-section-title" id="tab-flash">Flashcards</summary>
+      <summary class="menu-section-title" id="tab-flash" data-i18n="sec_flash">Thẻ ghi nhớ</summary>
       <div class="menu-section-body">
         <!-- id="flash-info", id="flash-front", id="flash-back" used by new spec -->
         <div class="flash-info" id="flash-info"></div>
@@ -609,32 +537,18 @@
         </div>
         <!-- id="btn-hard", id="btn-good", id="btn-skip" used by new spec -->
         <div class="flash-actions">
-          <button class="flash-grade-btn flash-grade-btn--hard" id="btn-hard">Hard</button>
-          <button class="flash-grade-btn flash-grade-btn--good" id="btn-good">Good</button>
-          <button class="flash-grade-btn flash-grade-btn--skip" id="btn-skip">Skip</button>
+          <button class="flash-grade-btn flash-grade-btn--hard" id="btn-hard" data-i18n="fc_hard">Khó</button>
+          <button class="flash-grade-btn flash-grade-btn--good" id="btn-good" data-i18n="fc_good">Tốt</button>
+          <button class="flash-grade-btn flash-grade-btn--skip" id="btn-skip" data-i18n="fc_skip">Bỏ qua</button>
         </div>
       </div>
     </details>
 
-    <!-- PROGRESS SECTION -->
-    <details class="menu-section" id="section-progress">
-      <!-- id="tab-progress" used by new spec as tab trigger -->
-      <summary class="menu-section-title" id="tab-progress">Progress</summary>
-      <div class="menu-section-body">
-        <!-- id="progress-chart-area" used by new spec -->
-        <div id="progress-chart-area" class="progress-chart-area"></div>
-      </div>
-    </details>
-
-    <!-- WEAK WORDS SECTION — từ phát âm sai nhiều, bấm để nghe đúng -->
-    <details class="menu-section" id="section-weak">
-      <summary class="menu-section-title" id="tab-weak">T&#7915; y&#7871;u c&#7911;a b&#7841;n</summary>
-      <div class="menu-section-body">
-        <div id="weak-words-list" class="weak-words-list"></div>
-      </div>
-    </details>
-
   </div><!-- /#slide-menu -->
+  <!-- Legacy hidden stubs: JS may still reference these IDs (Anki/progress/weak summary). -->
+  <button id="anki-export" hidden></button>
+  <button id="anki-sync" hidden></button>
+  <span id="progress-chart-area" hidden></span>
 
 
   <!-- ===== QUEUE COMPLETE MODAL ===== -->
@@ -819,7 +733,6 @@
         toolbar.classList.toggle('active', legacy.classList.contains('on'));
       }).observe(legacy, { attributes: true, attributeFilter: ['class'] });
     }
-    wire('loop',        'btn-loop');
     wire('blurBtn',     'btn-blur');
     wire('finalizeBtn', 'btn-finish');
 

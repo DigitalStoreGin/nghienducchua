@@ -1730,6 +1730,58 @@ body.dark .dict-res-msg.lo  { background: rgba(234,67,53,.18); color: #f28b82; }
   font-size: 11px;
 }
 
+/* Vocabulary view: two tables (saved words + weak words) */
+.vocab-table-title {
+  margin: 12px 2px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #5f6368;
+}
+.vocab-table-title:first-child { margin-top: 2px; }
+.weak-words-list { display: flex; flex-direction: column; gap: 0; max-height: 240px; overflow-y: auto; }
+.voc-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "main actions" "hint actions" "ctx actions";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 8px 4px;
+  border-bottom: 1px solid #e8eaed;
+}
+.voc-main { grid-area: main; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.voc-w { font-size: 14px; font-weight: 700; color: #202124; }
+.voc-tr { font-size: 12px; color: #137333; }
+.voc-hint { grid-area: hint; font-size: 11px; color: #7a4b00; }
+.voc-hint-c { font-weight: 700; color: #b06000; }
+.voc-ctx { grid-area: ctx; font-size: 11px; color: #80868b; font-style: italic; }
+.voc-row-actions { grid-area: actions; display: flex; gap: 5px; align-items: center; }
+.voc-tts, .voc-del {
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid #dadce0; border-radius: 7px; background: #f8f9fa;
+  cursor: pointer; font-size: 13px; line-height: 1; transition: background .12s, transform .12s;
+}
+.voc-tts:hover { background: #e8f0fe; transform: scale(1.08); }
+.voc-del:hover { background: #fce8e6; transform: scale(1.08); }
+.voc-row--weak .weak-word-count {
+  font-size: 11px; font-weight: 700; color: #c5221f;
+  background: #fce8e6; border-radius: 8px; padding: 1px 6px;
+}
+.voc-empty { font-size: 12px; color: #80868b; padding: 8px 2px; }
+
+body.dark .vocab-table-title { color: var(--text2); }
+body.dark .voc-row { border-color: var(--border); }
+body.dark .voc-w { color: var(--text); }
+body.dark .voc-tr { color: #81c995; }
+body.dark .voc-hint { color: #f5cf86; }
+body.dark .voc-hint-c { color: #ffd966; }
+body.dark .voc-ctx { color: var(--text2); }
+body.dark .voc-tts, body.dark .voc-del { background: var(--bg2); border-color: var(--border); color: var(--text); }
+body.dark .voc-tts:hover { background: var(--accent-light); }
+body.dark .voc-del:hover { background: rgba(234,67,53,.18); }
+body.dark .voc-row--weak .weak-word-count { color: #f28b82; background: rgba(234,67,53,.16); }
+body.dark .voc-empty { color: var(--text2); }
+
 /* ===== FLASHCARDS ===== */
 .flash-info {
   font-size: 11px;
@@ -1897,6 +1949,32 @@ body.dark .dict-res-msg.lo  { background: rgba(234,67,53,.18); color: #f28b82; }
   cursor: pointer;
   font-size: 11px;
 }
+
+/* Word-lookup popup (image 11): translate + pronounce + phonetics + save */
+.pop--word { gap: 7px; min-width: 200px; max-width: 280px; padding: 12px; }
+.pop--word .pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pop--word .pop-word { font-size: 17px; font-weight: 700; color: #1a73e8; word-break: break-word; }
+.pop--word .pop-tts {
+  flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+  border-radius: 50%; border: 1px solid #d7e3ff; background: #eef4ff;
+  font-size: 14px; line-height: 1; cursor: pointer; transition: background .12s, transform .12s;
+}
+.pop--word .pop-tts:hover { background: #d7e6ff; transform: scale(1.08); }
+.pop--word .pop-trans { font-size: 13px; color: #137333; line-height: 1.35; min-height: 18px; }
+.pop--word .pop-phon { font-size: 11px; color: #7a4b00; line-height: 1.4; background: #fff7e6; border-radius: 6px; padding: 5px 7px; }
+.pop--word .pop-phon-c { font-weight: 700; color: #b06000; }
+.pop--word .pop-links { display: flex; gap: 10px; }
+.pop--word .pop-actions { display: flex; gap: 7px; }
+.pop--word .pop-save { flex: 1; font-weight: 600; }
+.pop--word .pop-save.saved { background: #e6f4ea; border-color: #a8d5b5; color: #137333; cursor: default; }
+body.dark .pop { background: var(--bg2, #1c1c22); border-color: var(--border, #33333d); color: var(--text, #e8eaed); }
+body.dark .pop button { background: var(--bg, #15151a); border-color: var(--border, #33333d); color: var(--text, #e8eaed); }
+body.dark .pop--word .pop-word { color: #8ab4f8; }
+body.dark .pop--word .pop-tts { background: rgba(100,130,255,.18); border-color: rgba(100,130,255,.4); color: #8ab4f8; }
+body.dark .pop--word .pop-trans { color: #81c995; }
+body.dark .pop--word .pop-phon { background: rgba(255,200,80,.1); color: #f5cf86; }
+body.dark .pop--word .pop-phon-c { color: #ffd966; }
+body.dark .pop--word .pop-save.saved { background: rgba(52,168,83,.18); border-color: #34a853; color: #81c995; }
 
 /* Old .card (flashcard rendered by JS in #flash pane) */
 .card {

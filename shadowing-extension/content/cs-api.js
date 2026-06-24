@@ -131,6 +131,7 @@
           reply({ n: s.length }); break;
         }
         case 'select': eng.selectSegment(msg.args.i, { play: msg.args.play !== false }); reply({ ok: true }); break;
+        case 'listenSeg': eng.listenSeg(msg.args && msg.args.i != null ? msg.args.i : eng.current); reply({ ok: true }); break;
         case 'togglePlay': eng.togglePlay(); reply({ ok: true }); break;
         case 'next': eng.nextSeg(); reply({ ok: true }); break;
         case 'prev': eng.prevSeg(); reply({ ok: true }); break;
@@ -148,13 +149,6 @@
         case 'releasePause':
           eng.releasePause();
           reply({ ok: true }); break;
-        case 'shadowFav': {
-          const favs = await S().getFavorites();
-          const idxs = lastSentences.map((s, i) => (favs.some((f) => f.text === s.text) ? i : -1)).filter((i) => i >= 0);
-          if (idxs.length) { eng.shadowList(idxs); status('Tự luyện ' + idxs.length + ' dòng đã thích…', 'ok'); }
-          else status('Chưa có dòng ⭐. Bấm ngôi sao ở dòng bạn thích.', 'warn');
-          reply({ n: idxs.length }); break;
-        }
         case 'stop':
           eng.stop();
           try { speechSynthesis.cancel(); } catch (e) {}
@@ -172,6 +166,13 @@
         case 'vsubs': {
           if (SD.videoSubs) SD.videoSubs.show(!!msg.args.on);
           reply({ ok: true }); break;
+        }
+        case 'extEnabled': {
+          const on = !!(msg.args && msg.args.on);
+          if (eng.setEnabled) eng.setEnabled(on);
+          try { await S().saveSettings({ extEnabled: on }); } catch (e) {}
+          if (SD.videoSubs && SD.videoSubs.setMaster) SD.videoSubs.setMaster(on);
+          reply({ extEnabled: on }); break;
         }
         case 'diag': {
           let mic = 'unknown';
@@ -200,6 +201,10 @@
         case 'saveWord': {
           const w = await S().saveWord({ word: msg.args.word, context: msg.args.context });
           status('Đã lưu từ: ' + msg.args.word, 'ok');
+          reply({ savedWords: w }); break;
+        }
+        case 'removeWord': {
+          const w = await S().removeWord(msg.args.word);
           reply({ savedWords: w }); break;
         }
         case 'mic': {

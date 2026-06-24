@@ -24,14 +24,14 @@
       'html.sd-hide-native .ytp-caption-window-container,' +
       'html.sd-hide-native .caption-window,' +
       'html.sd-hide-native .player-timedtext{opacity:0 !important;visibility:hidden !important;pointer-events:none !important}' +
-      /* Nút BẬT/TẮT (Language Reactor style) trong thanh điều khiển */
-      '#sd-toggle-btn.sd-toggle-btn{display:inline-flex !important;align-items:center;justify-content:center;gap:5px;width:auto !important;padding:0 9px;vertical-align:top;opacity:.95;transition:opacity .15s}' +
-      '#sd-toggle-btn.sd-toggle-btn:hover{opacity:1}' +
-      '#sd-toggle-btn .sd-toggle-logo{width:22px;height:22px;border-radius:50%;object-fit:cover;transition:transform .15s,filter .15s}' +
-      '#sd-toggle-btn:hover .sd-toggle-logo{transform:scale(1.14)}' +
-      '#sd-toggle-btn .sd-toggle-state{color:#fff;font-size:11px;font-weight:700;letter-spacing:.5px}' +
+      /* Khối điều khiển trong thanh YouTube: logo (mở panel) + chip BẬT/TẮT (master) */
+      '#sd-toggle-btn.sd-toggle-btn{display:inline-flex !important;align-items:center;justify-content:center;gap:6px;width:auto !important;padding:0 8px;vertical-align:top}' +
+      '#sd-toggle-btn .sd-toggle-logo{width:22px;height:22px;border-radius:50%;object-fit:cover;cursor:pointer;opacity:.95;transition:transform .15s,filter .15s,opacity .15s}' +
+      '#sd-toggle-btn .sd-toggle-logo:hover{transform:scale(1.14);opacity:1}' +
+      '#sd-toggle-btn .sd-toggle-state{cursor:pointer;color:#fff;font-size:11px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:9px;background:rgba(120,170,255,.28);transition:background .15s,color .15s}' +
+      '#sd-toggle-btn .sd-toggle-state:hover{background:rgba(120,170,255,.45)}' +
       '#sd-toggle-btn.sd-off .sd-toggle-logo{filter:grayscale(1) opacity(.55)}' +
-      '#sd-toggle-btn.sd-off .sd-toggle-state{color:#9aa0a6}';
+      '#sd-toggle-btn.sd-off .sd-toggle-state{color:#9aa0a6;background:rgba(150,150,150,.22)}';
     document.documentElement.appendChild(st);
 
     const ov = document.createElement('div'); ov.id = 'sd-vsubs';
@@ -44,13 +44,17 @@
     }
     attach(); setInterval(attach, 2000);
 
-    // Trạng thái bật/tắt — đọc theo cài đặt nếu đã có, mặc định BẬT.
-    let enabled = !(SD.engine.settings && SD.engine.settings.videoSubs === false);
+    // Hai cờ tách biệt:
+    //  - extEnabled: MASTER ON/OFF (chip trong trình phát). OFF = tắt hẳn extension trên video này.
+    //  - subsOn: tùy chọn "Phụ đề trên video" trong cài đặt (chỉ bật/tắt overlay khi master ON).
+    let extEnabled = !(SD.engine.settings && SD.engine.settings.extEnabled === false);
+    let subsOn = !(SD.engine.settings && SD.engine.settings.videoSubs === false);
     let lastSentence = null;
+    function overlayActive() { return extEnabled && subsOn; }
     // CHỈ ẩn phụ đề gốc khi overlay ĐANG hiện câu — nếu chưa tải được phụ đề thì
     // vẫn để phụ đề gốc của trình phát hiển thị (không bỏ trắng màn hình).
     function applyNativeHide() {
-      document.documentElement.classList.toggle('sd-hide-native', enabled && !!lastSentence);
+      document.documentElement.classList.toggle('sd-hide-native', overlayActive() && !!lastSentence);
     }
     applyNativeHide();
     function render(s) {
@@ -66,7 +70,7 @@
 
     SD.engine.listen('current', (c) => {
       const s = c.sentence; lastSentence = s;
-      if (!s || !enabled) { ov.style.display = 'none'; applyNativeHide(); return; }
+      if (!s || !overlayActive()) { ov.style.display = 'none'; applyNativeHide(); return; }
       render(s);
       applyNativeHide();
     });
@@ -85,7 +89,7 @@
           if (chrome.runtime.lastError) return;
           if (res && res.ok && res.text) {
             s.trans = res.text;
-            if (enabled && lastSentence === s) {
+            if (overlayActive() && lastSentence === s) {
               const tr = ov.querySelector('.sd-sub-tr');
               if (tr) { tr.textContent = res.text; tr.style.display = ''; }
             }
@@ -94,39 +98,77 @@
       } catch (e) {}
     }
 
-    // API cho cs-api ('vsubs') + nút toggle dùng chung.
+    // Áp dụng trạng thái master + overlay rồi cập nhật giao diện.
+    function applyState() {
+      applyNativeHide();
+      if (!overlayActive()) ov.style.display = 'none';
+      else if (lastSentence) render(lastSentence);
+      updateToggleBtn();
+    }
+
+    // API cho cs-api:
+    //  - show(b): tùy chọn "Phụ đề trên video" (overlay) trong cài đặt.
+    //  - setMaster(b): master ON/OFF (đồng bộ khi side panel đổi extEnabled).
     SD.videoSubs = {
-      show: (b) => {
-        enabled = !!b;
-        applyNativeHide();
-        if (!enabled) ov.style.display = 'none';
-        else if (lastSentence) render(lastSentence);
-        updateToggleBtn();
-      },
-      isEnabled: () => enabled,
+      show: (b) => { subsOn = !!b; applyState(); },
+      setMaster: (b) => { extEnabled = !!b; applyState(); },
+      isEnabled: () => overlayActive(),
+      isMaster: () => extEnabled,
     };
 
-    // ===== Nút BẬT/TẮT (Language Reactor style) trong thanh điều khiển YouTube =====
+    // Bật/tắt MASTER từ chip trong trình phát: tắt hẳn auto-pause/loop + overlay, lưu lại.
+    function setMasterFromUI(on) {
+      extEnabled = !!on;
+      try { if (SD.engine.setEnabled) SD.engine.setEnabled(extEnabled); } catch (e) {}
+      try { if (SD.storage) SD.storage.saveSettings({ extEnabled }); } catch (e) {}
+      if (SD.engine.settings) SD.engine.settings.extEnabled = extEnabled;
+      applyState();
+    }
+
+    // Cài đặt có thể được nạp sau khi start() chạy (main.js load async) -> đồng bộ lại
+    // cờ master/overlay từ storage để chip & engine phản ánh đúng trạng thái đã lưu.
+    try {
+      if (SD.storage) SD.storage.get().then((d) => {
+        const cfg = (d && d.settings) || {};
+        extEnabled = cfg.extEnabled !== false;
+        subsOn = cfg.videoSubs !== false;
+        try { if (SD.engine.setEnabled) SD.engine.setEnabled(extEnabled); } catch (e) {}
+        applyState();
+      });
+    } catch (e) {}
+
+    // ===== Khối điều khiển trong thanh YouTube: logo (mở panel) + chip BẬT/TẮT (master) =====
     function updateToggleBtn() {
       const btn = document.getElementById('sd-toggle-btn'); if (!btn) return;
       const stEl = btn.querySelector('.sd-toggle-state');
-      if (stEl) stEl.textContent = enabled ? 'ON' : 'OFF';
-      btn.classList.toggle('sd-off', !enabled);
+      if (stEl) stEl.textContent = extEnabled ? 'ON' : 'OFF';
+      btn.classList.toggle('sd-off', !extEnabled);
     }
     function placeToggleBtn() {
       // Chỉ thêm trên YouTube (thanh .ytp-right-controls).
       const controls = document.querySelector('.ytp-right-controls');
       if (!controls || document.getElementById('sd-toggle-btn')) return;
-      const btn = document.createElement('button');
+      const btn = document.createElement('span');
       btn.id = 'sd-toggle-btn';
-      btn.className = 'ytp-button sd-toggle-btn';
-      btn.title = 'NghienDeutsch — Bật/Tắt phụ đề kép';
+      btn.className = 'sd-toggle-btn';
       let logoUrl = '';
       try { logoUrl = chrome.runtime.getURL('icons/icon32.png'); } catch (e) {}
-      btn.innerHTML = '<img class="sd-toggle-logo" src="' + logoUrl + '" alt="ND"><span class="sd-toggle-state">ON</span>';
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        SD.videoSubs.show(!enabled);
+      btn.innerHTML =
+        '<img class="sd-toggle-logo" src="' + logoUrl + '" alt="ND" title="NghienDeutsch — Mở bảng điều khiển">' +
+        '<span class="sd-toggle-state" title="Bật/Tắt extension trên video này">ON</span>';
+      // Logo: MỞ side panel (Language Reactor style).
+      const logoEl = btn.querySelector('.sd-toggle-logo');
+      if (logoEl) logoEl.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        try {
+          chrome.runtime.sendMessage({ sd: 'openSidePanel' }, () => { if (chrome.runtime.lastError) {} });
+        } catch (err) {}
+      });
+      // Chip ON/OFF: master switch.
+      const stateEl = btn.querySelector('.sd-toggle-state');
+      if (stateEl) stateEl.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        setMasterFromUI(!extEnabled);
       });
       controls.insertBefore(btn, controls.firstChild);
       updateToggleBtn();

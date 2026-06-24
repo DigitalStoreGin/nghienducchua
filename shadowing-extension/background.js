@@ -163,6 +163,23 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     handleTranslate(msg).then(reply).catch(() => reply({ ok: false }));
     return true;
   }
+  // Mở Side Panel khi bấm logo trong trình phát YouTube (Language Reactor style).
+  // Phải gọi trong user gesture — click → content script → sendMessage → đây.
+  if (msg && msg.sd === 'openSidePanel') {
+    (async () => {
+      try {
+        const tabId = sender && sender.tab && sender.tab.id;
+        const windowId = sender && sender.tab && sender.tab.windowId;
+        if (tabId != null) { ports.spTabId = tabId; }
+        if (chrome.sidePanel && chrome.sidePanel.open) {
+          if (windowId != null) await chrome.sidePanel.open({ windowId });
+          else if (tabId != null) await chrome.sidePanel.open({ tabId });
+        }
+        reply({ ok: true });
+      } catch (e) { reply({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
   // Worker health check qua background (dùng cho self-test). Async reply.
   if (msg && msg.sd === 'worker-health') {
     (async () => {

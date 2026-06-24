@@ -17,6 +17,7 @@
   const engine = {
     sentences: [], idx: -1, rep: 0, settings: null, busy: false,
     queue: null, qpos: 0, current: 0, loopOne: false, playing: false,
+    enabled: true,     // master ON/OFF — OFF: khong tu dung cuoi cau, khong lap, khong overlay
     on: {}, runId: 0, // callbacks: state, feedback, highlight, sentences
     _abortRec: null,   // AbortController cho recording
 
@@ -24,7 +25,8 @@
     listen(name, cb) { (this.on[name] = this.on[name] || []).push(cb); },
 
     setSentences(s) { this.sentences = s || []; this.emit('sentences', this.sentences); },
-    setSettings(s) { this.settings = s; },
+    setSettings(s) { this.settings = s; if (s) this.enabled = s.extEnabled !== false; },
+    setEnabled(b) { this.enabled = !!b; if (!b) this.loopOne = false; },
 
     jumpTo(i) {
       const s = this.sentences[i]; if (!s) return;
@@ -75,7 +77,21 @@
       this.emit('playstate', { playing: this.playing });
     },
 
-    toggleLoop() { this.loopOne = !this.loopOne; this.emit('loop', this.loopOne); return this.loopOne; },
+    toggleLoop() {
+      this.loopOne = !this.loopOne;
+      this.emit('loop', this.loopOne);
+      // Bật loop -> tua về đầu câu hiện tại & phát NGAY để nghe vòng lặp liền (monitor
+      // sẽ tự tua lại ở cuối câu). Trước đây chỉ chờ monitor nên sau auto-pause như "chết".
+      if (this.loopOne) this.selectSegment(this.current, { play: true });
+      return this.loopOne;
+    },
+
+    // Phát lại đúng đoạn video của 1 câu (KHÔNG TTS) — dùng cho nút "Nghe".
+    listenSeg(i) {
+      const idx = (i == null) ? this.current : i;
+      try { speechSynthesis.cancel(); } catch (e) {}
+      this.selectSegment(idx, { play: true });
+    },
 
     async shadow(i) {
       // Preempt: neu dang ban (vd lan cham truoc treo), huy no roi bat dau lai
@@ -230,6 +246,7 @@
       // --- State: scoring ---
       this.emit('state', { state: 'scoring', idx: this.idx, rep: this.rep });
       const score = root.SD.phonetic.analyze(s.text, res.transcript || '', {
+        lang: this.settings?.targetLang || 'de',
         pitch: res.pitch || [], spokenMs: res.spokenMs, refMs: (s.endMs - s.startMs),
       });
       score.engine = res.engine;
@@ -349,9 +366,9 @@
           }
         }
         this.emit('highlight', this.current);
-        // auto-pause / loop tai cuoi cau hien tai
+        // auto-pause / loop tai cuoi cau hien tai — CHI khi extension dang BAT (master ON)
         const cur = this.sentences[this.current];
-        if (cur && !v.paused) {
+        if (this.enabled && cur && !v.paused) {
           const endSec = cur.endMs / 1000 + this.off();
           if (v.currentTime >= endSec - 0.03) {
             if (this.loopOne) { V().seekTo(cur.startMs / 1000 + this.off()); }
