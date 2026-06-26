@@ -2118,8 +2118,8 @@
       // Cài đặt
       sec_settings:'Cài đặt', set_target:'Ngôn ngữ học', set_native:'Dịch sang', set_vsubs:'Phụ đề trên video', set_uilang:'Ngôn ngữ giao diện',
       // Action toolbar
-      at_mic:'Bật mic', at_dict:'Chép', at_cloze:'Điền', at_vocab:'Từ vựng', at_menu:'Menu',
-      tt_mic:'Cho phép micro để chấm điểm phát âm', tt_dict:'Chép chính tả: nghe rồi gõ lại cả câu', tt_cloze:'Điền từ còn thiếu vào chỗ trống', tt_vocab:'Từ vựng đã lưu & từ phát âm yếu', tt_menu:'Mở menu cài đặt', tt_loop:'Lặp lại 1 câu (phím L)',
+      at_mic:'Bật mic', at_dict:'Chép', at_cloze:'Điền', at_vocab:'Từ vựng', at_menu:'Ôn tập',
+      tt_mic:'Cho phép micro để chấm điểm phát âm', tt_dict:'Chép chính tả: nghe rồi gõ lại cả câu', tt_cloze:'Điền từ còn thiếu vào chỗ trống', tt_vocab:'Từ vựng đã lưu & từ phát âm yếu', tt_menu:'Luyện tập & ôn tập', tt_loop:'Lặp lại 1 câu (phím L)',
       // Bottom toolbar
       bt_prev:'Trước', bt_play:'Phát', bt_pause:'Dừng', bt_next:'Sau', bt_loop:'Lặp',
       t_prev:'Câu trước', t_play:'Phát/Dừng', t_loop:'Lặp 1 câu', t_next:'Câu sau', t_shadow:'Luyện', t_listen:'Nghe', t_dict:'Chép chính tả', t_cloze:'Điền chỗ trống', t_blur:'Ẩn chữ (tự kiểm tra)',
@@ -2129,6 +2129,7 @@
       // Record panel
       rp_ready:'Sẵn sàng', rp_target:'Đang luyện', rp_match:'Độ khớp %', rp_yousaid:'BẠN ĐÃ NÓI',
       rp_listen:'🔊 Nghe mẫu', rp_replay:'🔁 Nghe lại', rescore_go:'🎤 Chấm điểm', rescore_stop:'⏹ Dừng & chấm', wd_speak:'🔊 Nghe phát âm đúng',
+      fab_speak:'Nói & chấm', tt_speak_fab:'Nói câu này rồi chấm điểm phát âm',
       // Slide menu
       menu_title:'Menu', menu_logout:'Đăng xuất', usage_trans:'Dịch hôm nay', usage_ai:'AI hôm nay', btn_upgrade:'⚡ Nâng cấp Pro',
       sec_vocab:'Từ vựng', sec_flash:'Thẻ ghi nhớ', voc_saved_title:'📚 Từ đã lưu', voc_weak_title:'⚠️ Từ phát âm yếu', fc_hard:'Khó', fc_good:'Tốt', fc_skip:'Bỏ qua', flash_empty:'⭐ Thêm câu yêu thích để bắt đầu luyện thẻ ghi nhớ!',
@@ -2155,14 +2156,15 @@
       ob_title:'Quick start', ob1:'Open a German video on YouTube.', ob2:'Subtitles load automatically after a few seconds — no action needed.', ob3:'Click "Enable mic" and allow microphone access for the extension.', ob4:'Click a line → speak it back → see your score.', ob_close:'Got it',
       status_init:'Open a video on YouTube — subtitles load automatically.',
       sec_settings:'Settings', set_target:'Target language', set_native:'Translate to', set_vsubs:'Subtitles on video', set_uilang:'UI language',
-      at_mic:'Enable mic', at_dict:'Dictation', at_cloze:'Fill', at_vocab:'Vocabulary', at_menu:'Menu',
-      tt_mic:'Allow microphone to score pronunciation', tt_dict:'Dictation: listen then type the whole sentence', tt_cloze:'Fill in the missing words', tt_vocab:'Saved words & weak pronunciation words', tt_menu:'Open settings menu', tt_loop:'Loop one sentence (key L)',
+      at_mic:'Enable mic', at_dict:'Dictation', at_cloze:'Fill', at_vocab:'Vocabulary', at_menu:'Review',
+      tt_mic:'Allow microphone to score pronunciation', tt_dict:'Dictation: listen then type the whole sentence', tt_cloze:'Fill in the missing words', tt_vocab:'Saved words & weak pronunciation words', tt_menu:'Practice & review', tt_loop:'Loop one sentence (key L)',
       bt_prev:'Prev', bt_play:'Play', bt_pause:'Pause', bt_next:'Next', bt_loop:'Loop',
       t_prev:'Previous', t_play:'Play/Pause', t_loop:'Loop one', t_next:'Next', t_shadow:'Practice', t_listen:'Listen', t_dict:'Dictation', t_cloze:'Fill blanks', t_blur:'Hide text (self-test)',
       kbd_hint:'⌨ Space: speak · ◀ ▶: line · ▲ ▼: speed · R: listen · L: loop · B: hide',
       tc_title:'Practice this sentence', tc_pause_on:'⏸ Auto-pause: On', tc_pause_off:'▶ Auto-pause: Off', tc_pause_msg_on:'⏸ Auto-pause at each sentence: ON', tc_pause_msg_off:'▶ Auto-pause at each sentence: OFF', tc_next:'Next ›', tc_listen:'▷ Listen', tc_speak:'🎤 Speak & score', tc_fav:'Favorite this sentence',
       rp_ready:'Ready', rp_target:'Practicing', rp_match:'Match %', rp_yousaid:'YOU SAID',
       rp_listen:'🔊 Listen', rp_replay:'🔁 Replay', rescore_go:'🎤 Score', rescore_stop:'⏹ Stop & score', wd_speak:'🔊 Hear correct pronunciation',
+      fab_speak:'Speak & score', tt_speak_fab:'Speak this sentence and score your pronunciation',
       menu_title:'Menu', menu_logout:'Log out', usage_trans:'Translations today', usage_ai:'AI today', btn_upgrade:'⚡ Upgrade to Pro',
       sec_vocab:'Vocabulary', sec_flash:'Flashcards', voc_saved_title:'📚 Saved words', voc_weak_title:'⚠️ Weak words', fc_hard:'Hard', fc_good:'Good', fc_skip:'Skip', flash_empty:'⭐ Add favorite sentences to start practicing flashcards!',
       pop_listen:'Listen', pop_save:'Save', pop_saved:'Saved', pop_loading:'… looking up', pop_nomean:'(no translation)', pop_pron:'Pronounce',
@@ -2185,14 +2187,15 @@
       ob_title:'Schnellstart', ob1:'Öffne ein deutsches Video auf YouTube.', ob2:'Untertitel laden automatisch nach ein paar Sekunden — nichts zu tun.', ob3:'Klicke „Mikro an" und erlaube den Mikrofonzugriff.', ob4:'Klicke einen Satz → sprich ihn nach → sieh deine Punktzahl.', ob_close:'Verstanden',
       status_init:'Öffne ein Video auf YouTube — Untertitel laden automatisch.',
       sec_settings:'Einstellungen', set_target:'Lernsprache', set_native:'Übersetzen nach', set_vsubs:'Untertitel im Video', set_uilang:'Oberflächensprache',
-      at_mic:'Mikro an', at_dict:'Diktat', at_cloze:'Lücken', at_vocab:'Wortschatz', at_menu:'Menü',
-      tt_mic:'Mikrofon erlauben, um die Aussprache zu bewerten', tt_dict:'Diktat: hören und den ganzen Satz tippen', tt_cloze:'Fehlende Wörter ergänzen', tt_vocab:'Gespeicherte & schwache Wörter', tt_menu:'Einstellungen öffnen', tt_loop:'Einen Satz wiederholen (Taste L)',
+      at_mic:'Mikro an', at_dict:'Diktat', at_cloze:'Lücken', at_vocab:'Wortschatz', at_menu:'Üben',
+      tt_mic:'Mikrofon erlauben, um die Aussprache zu bewerten', tt_dict:'Diktat: hören und den ganzen Satz tippen', tt_cloze:'Fehlende Wörter ergänzen', tt_vocab:'Gespeicherte & schwache Wörter', tt_menu:'Üben & Wiederholen', tt_loop:'Einen Satz wiederholen (Taste L)',
       bt_prev:'Zurück', bt_play:'Play', bt_pause:'Pause', bt_next:'Weiter', bt_loop:'Schleife',
       t_prev:'Vorheriger', t_play:'Play/Pause', t_loop:'Einen wiederholen', t_next:'Nächster', t_shadow:'Üben', t_listen:'Hören', t_dict:'Diktat', t_cloze:'Lücken füllen', t_blur:'Text verbergen (Selbsttest)',
       kbd_hint:'⌨ Leertaste: sprechen · ◀ ▶: Satz · ▲ ▼: Tempo · R: hören · L: Schleife · B: verbergen',
       tc_title:'Diesen Satz üben', tc_pause_on:'⏸ Auto-Pause: An', tc_pause_off:'▶ Auto-Pause: Aus', tc_pause_msg_on:'⏸ Auto-Pause nach jedem Satz: AN', tc_pause_msg_off:'▶ Auto-Pause nach jedem Satz: AUS', tc_next:'Weiter ›', tc_listen:'▷ Hören', tc_speak:'🎤 Sprechen & bewerten', tc_fav:'Diesen Satz favorisieren',
       rp_ready:'Bereit', rp_target:'Übung läuft', rp_match:'Übereinstimmung %', rp_yousaid:'DU SAGTEST',
       rp_listen:'🔊 Anhören', rp_replay:'🔁 Wiederholen', rescore_go:'🎤 Bewerten', rescore_stop:'⏹ Stopp & bewerten', wd_speak:'🔊 Richtige Aussprache hören',
+      fab_speak:'Sprechen & bewerten', tt_speak_fab:'Diesen Satz sprechen und Aussprache bewerten',
       menu_title:'Menü', menu_logout:'Abmelden', usage_trans:'Übersetzungen heute', usage_ai:'KI heute', btn_upgrade:'⚡ Auf Pro upgraden',
       sec_vocab:'Wortschatz', sec_flash:'Lernkarten', voc_saved_title:'📚 Gespeicherte Wörter', voc_weak_title:'⚠️ Schwache Wörter', fc_hard:'Schwer', fc_good:'Gut', fc_skip:'Überspringen', flash_empty:'⭐ Füge Lieblingssätze hinzu, um Lernkarten zu üben!',
       pop_listen:'Hören', pop_save:'Speichern', pop_saved:'Gespeichert', pop_loading:'… wird übersetzt', pop_nomean:'(keine Übersetzung)', pop_pron:'Aussprache',
@@ -2447,7 +2450,7 @@
   function openMenu() { const m = $('#slide-menu'), o = $('#menu-overlay'); if (m) m.hidden = false; if (o) o.hidden = false; const sv = $('#section-vocab'); if (sv && sv.open) renderVocabView(); }
   function closeMenu() { const m = $('#slide-menu'), o = $('#menu-overlay'); if (m) m.hidden = true; if (o) o.hidden = true; }
   { const b = $('#btn-open-menu'); if (b) b.onclick = openMenu; }
-  { const b = $('#btn-menu'); if (b) b.onclick = openMenu; }
+  { const b = $('#btn-menu'); if (b) b.onclick = () => openVocabGame({ mode: 'menu' }); }
   { const b = $('#btn-menu-close'); if (b) b.onclick = closeMenu; }
   { const o = $('#menu-overlay'); if (o) o.onclick = closeMenu; }
 
@@ -2488,6 +2491,8 @@
   // "Nghe" CHỈ phát lại đoạn video gốc của câu (không TTS chồng tiếng) — tránh xung đột âm.
   { const b = $('#try-card-listen'); if (b) b.onclick = () => { if (sentences[current]) cmd('listenSeg', { i: current }); }; }
   { const b = $('#try-card-speak'); if (b) b.onclick = () => { if (!sentences.length) return; openPractice(current); showRecordPanel(true); scoreNow(); }; }
+  // FAB tròn "Nói & chấm" trên trang luyện — mở panel luyện nói + bắt đầu chấm câu hiện tại.
+  { const b = $('#btn-speak-fab'); if (b) b.onclick = () => { if (!sentences.length) return; showRecordPanel(true); scoreNow(); }; }
   { const b = $('#try-card-next'); if (b) b.onclick = () => { if (current + 1 < sentences.length) selectRow(current + 1); }; }
   // Nút ⭐ trên thẻ "Luyện câu này" — thêm/bỏ yêu thích câu hiện tại.
   { const b = $('#try-fav-btn'); if (b) b.onclick = async () => {
