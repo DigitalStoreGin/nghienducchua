@@ -68,6 +68,12 @@ export default {
 
     const url = new URL(request.url);
 
+    // Phục vụ trang Admin SPA (static) cho GET trên trình duyệt. API là POST (+ /health, /me GET).
+    // Guard bằng env.ASSETS → nếu chưa bật binding thì hành vi như cũ (không đổi gì).
+    if (env.ASSETS && request.method === 'GET' && url.pathname !== '/health' && url.pathname !== '/me') {
+      return env.ASSETS.fetch(request);
+    }
+
     // Public health check
     if (url.pathname === '/health') {
       return json({ ok: true, version: '2.2.0', arch: 'supabase-jwt', features: ['ratelimit', 'error-log', 'log-ratelimit'] });
