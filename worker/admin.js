@@ -199,7 +199,10 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       await sbPatch(env, 'admin_sessions', `id=eq.${admin.jti}`, { revoked: true });
       return json({ success: true });
     }
-    case '/admin/me': return json({ email: admin.email, role: admin.role });
+    case '/admin/me': {
+      const meRows = await sbGet(env, `admin_users?id=eq.${admin.sub}&select=totp_enabled`);
+      return json({ email: admin.email, role: admin.role, totp_enabled: !!(meRows[0] && meRows[0].totp_enabled) });
+    }
     case '/admin/refresh': {
       const jti = crypto.randomUUID();
       const expSec = Math.floor(Date.now() / 1000) + 60 * 60;
@@ -228,14 +231,26 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       const secret = randomBase32(32);
       await sbPatch(env, 'admin_users', `id=eq.${admin.sub}`, { totp_secret: secret, totp_enabled: false });
       await audit(env, admin.sub, 'auth.2fa_enroll', 'admin', admin.sub, null, null, ip);
-      const label = encodeURIComponent('NghienDe Admin:' + admin.email);
-      return json({ secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=NghienDe` });
+      const label = encodeURIComponent('nghienducchua:' + admin.email);
+      return json({ secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=nghienducchua` });
     }
     case '/admin/2fa/verify': {
       const rows = await sbGet(env, `admin_users?id=eq.${admin.sub}&select=totp_secret`);
       if (!rows[0] || !await verifyTOTP(rows[0].totp_secret, body.totp)) return json({ error: 'invalid_totp' }, 400);
       await sbPatch(env, 'admin_users', `id=eq.${admin.sub}`, { totp_enabled: true });
       await audit(env, admin.sub, 'auth.2fa_enable', 'admin', admin.sub, null, null, ip);
+      return json({ success: true });
+    }
+    case '/admin/2fa/disable': {
+      // Tắt 2FA: yêu cầu xác thực lại bằng mật khẩu HOẶC mã TOTP hiện tại.
+      const rows = await sbGet(env, `admin_users?id=eq.${admin.sub}&select=totp_enabled,password_hash,totp_secret`);
+      const u0 = rows && rows[0];
+      if (!u0 || !u0.totp_enabled) return json({ success: true }); // đã tắt sẵn
+      const okPw = body.password && await verifyPassword(String(body.password), u0.password_hash);
+      const okTotp = body.totp && await verifyTOTP(u0.totp_secret, body.totp);
+      if (!okPw && !okTotp) return json({ error: 'reauth_required' }, 401);
+      await sbPatch(env, 'admin_users', `id=eq.${admin.sub}`, { totp_enabled: false, totp_secret: null });
+      await audit(env, admin.sub, 'auth.2fa_disable', 'admin', admin.sub, null, null, ip);
       return json({ success: true });
     }
 
