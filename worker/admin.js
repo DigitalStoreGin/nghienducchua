@@ -263,8 +263,9 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     // ───────── Users ─────────
     case '/admin/users/list': {
       const q = String(body.q || '').trim();
-      let query = 'profiles?select=id,email,full_name,plan,created_at,model_source,banned&order=created_at.desc&limit=100';
-      if (q) query = `profiles?select=id,email,full_name,plan,created_at,model_source,banned&email=ilike.*${encodeURIComponent(q)}*&limit=100`;
+      const sel = 'select=id,email,full_name,plan,created_at,model_source,banned,translation_provider,premium_translate';
+      let query = `profiles?${sel}&order=created_at.desc&limit=100`;
+      if (q) query = `profiles?${sel}&email=ilike.*${encodeURIComponent(q)}*&limit=100`;
       return json({ items: await sbGet(env, query) });
     }
     case '/admin/users/detail': {
@@ -417,6 +418,38 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       const pay = rows && rows[0];
       if (pay && pay.user_id && pay.plan) { await rpc(env, 'admin_set_plan', { p_user_id: pay.user_id, p_plan: pay.plan, p_months: 12 }); }
       await audit(env, admin.sub, 'payment.mark_paid', 'payment', pay && pay.id, null, { plan: pay && pay.plan }, ip);
+      return json({ success: true });
+    }
+
+    // ───────── Cấu hình dịch (provider mặc định cho gói trả phí) ─────────
+    case '/admin/settings/translation/get': {
+      const rows = await sbGet(env, "app_settings?key=eq.translation&select=value");
+      const value = (rows[0] && rows[0].value) || { paid_provider: 'gemini', free_source: 'free' };
+      // Kèm danh sách provider đang bật (dùng cho dropdown ở UI).
+      const providers = await sbGet(env, 'api_providers?select=id,display_name,enabled,kind&order=display_name.asc');
+      return json({ value, providers });
+    }
+    case '/admin/settings/translation/set': {
+      const value = {
+        paid_provider: String(body.paid_provider || 'gemini'),
+        free_source: String(body.free_source || 'free'),
+      };
+      await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings`, {
+        method: 'POST',
+        headers: { ...sbHeaders(env), Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({ key: 'translation', value, updated_at: new Date().toISOString() }),
+      });
+      await audit(env, admin.sub, 'settings.translation', 'config', 'translation', null, value, ip);
+      return json({ success: true, value });
+    }
+    case '/admin/users/translation': {
+      if (!isUuid(body.user_id)) return json({ error: 'bad_id' }, 400);
+      const patch = {};
+      // provider: '' / null = theo mặc định hệ thống.
+      if (body.translation_provider !== undefined) patch.translation_provider = body.translation_provider || null;
+      if (body.premium_translate !== undefined) patch.premium_translate = !!body.premium_translate;
+      await sbPatch(env, 'profiles', `id=eq.${body.user_id}`, patch);
+      await audit(env, admin.sub, 'user.translation', 'user', body.user_id, null, patch, ip);
       return json({ success: true });
     }
 

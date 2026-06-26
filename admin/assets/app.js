@@ -42,6 +42,10 @@
       reset_interval: 'Chu kỳ reset', interval_none: 'Không', interval_daily: 'Hàng ngày', interval_weekly: 'Hàng tuần',
       add_credit_req: 'Thêm bao nhiêu LƯỢT GỌI?', add_credit_tok: 'Thêm bao nhiêu TOKEN?', session_warning: 'Kết nối qua session (rủi ro ToS) — mặc định TẮT',
       groq_env: 'Groq keys (biến môi trường)', deepl: 'DeepL', openrouter: 'OpenRouter',
+      // translation settings
+      trans_settings: 'Cấu hình dịch (gói trả phí)', trans_paid_provider: 'API dịch cho gói TRẢ PHÍ', trans_free_source: 'Gói FREE dịch bằng',
+      trans_free_youtube: 'Miễn phí (YouTube/Google)', trans_note: 'User free luôn dùng dịch miễn phí. User trả phí dùng API chọn ở đây (lấy key từ pool bên dưới).',
+      trans_provider: 'API dịch', trans_default_sys: 'Theo hệ thống', premium_translate: 'Ép dịch API',
       // users
       search_user: 'Tìm theo email…', plan: 'Gói', model_source: 'Nguồn chấm', created: 'Ngày tạo', ban: 'Cấm', unban: 'Bỏ cấm',
       banned: 'Đã cấm', delete: 'Xoá', detail: 'Chi tiết', usage_30d: 'Sử dụng 30 ngày', src_server: 'Server (API)', src_local: 'Local (Whisper)', src_dedicated: 'API riêng',
@@ -68,6 +72,9 @@
       reset_interval: 'Reset-Intervall', interval_none: 'Keins', interval_daily: 'Täglich', interval_weekly: 'Wöchentlich',
       add_credit_req: 'Wie viele AUFRUFE hinzufügen?', add_credit_tok: 'Wie viele TOKEN hinzufügen?', session_warning: 'Session-Verbindung (ToS-Risiko) — standardmäßig AUS',
       groq_env: 'Groq-Schlüssel (Umgebung)', deepl: 'DeepL', openrouter: 'OpenRouter',
+      trans_settings: 'Übersetzung (zahlende Tarife)', trans_paid_provider: 'Übersetzungs-API (ZAHLEND)', trans_free_source: 'FREE übersetzt mit',
+      trans_free_youtube: 'Kostenlos (YouTube/Google)', trans_note: 'Free-Nutzer nutzen kostenlose Übersetzung. Zahlende nutzen die hier gewählte API (Schlüssel aus dem Pool unten).',
+      trans_provider: 'Übersetzungs-API', trans_default_sys: 'System-Standard', premium_translate: 'API erzwingen',
       search_user: 'Nach E-Mail suchen…', plan: 'Tarif', model_source: 'Bewertungsquelle', created: 'Erstellt', ban: 'Sperren', unban: 'Entsperren',
       banned: 'Gesperrt', delete: 'Löschen', detail: 'Details', usage_30d: 'Nutzung 30 Tage', src_server: 'Server (API)', src_local: 'Lokal (Whisper)', src_dedicated: 'Eigene API',
       payout_cfg: 'Zahlungsempfänger', beneficiary: 'Empfängername', iban: 'IBAN', bic: 'BIC', bank: 'Bankname',
@@ -238,9 +245,10 @@
     const keysPanel = h('div', { class: 'panel' }, h('h2', null, t('api_keys')));
     const provPanel = h('div', { class: 'panel' }, h('h2', null, t('providers')));
     const addPanel = h('div', { class: 'panel' }, h('h2', null, t('add_key')));
-    view.append(healthPanel, h('div', { class: 'grid2' }, keysPanel, provPanel), addPanel);
+    const transPanel = h('div', { class: 'panel' }, h('h2', null, t('trans_settings')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
+    view.append(healthPanel, transPanel, h('div', { class: 'grid2' }, keysPanel, provPanel), addPanel);
 
-    const [health, keys, provs] = await Promise.all([api('health', {}), api('keys/list', {}), api('providers/list', {})]);
+    const [health, keys, provs, transCfg] = await Promise.all([api('health', {}), api('keys/list', {}), api('providers/list', {}), api('settings/translation/get', {})]);
 
     // health render
     const dot = (ok) => h('span', { class: 'health-dot ' + (ok ? 'ok' : 'bad') });
@@ -277,6 +285,28 @@
       clear(keysPanel).append(h('h2', null, t('api_keys')), (items && items.length) ? h('div', { class: 'table-wrap' }, tb) : h('div', { class: 'empty' }, '—'));
     }
     renderKeys(keys.items);
+
+    // translation default (provider cho gói trả phí + nguồn gói free)
+    {
+      const TRANS_PROVS = ['gemini', 'deepl', 'openrouter', 'mistral'];
+      const tv = transCfg.value || { paid_provider: 'gemini', free_source: 'free' };
+      const provOpts = (transCfg.providers || []).filter((p) => TRANS_PROVS.includes(p.id));
+      const list = provOpts.length ? provOpts : TRANS_PROVS.map((id) => ({ id, display_name: id }));
+      const paidSel = h('select', null, ...list.map((p) => h('option', { value: p.id, selected: tv.paid_provider === p.id ? 'selected' : null }, p.display_name + (p.enabled === false ? ' (tắt)' : ''))));
+      const freeSel = h('select', null,
+        h('option', { value: 'free', selected: (tv.free_source || 'free') === 'free' ? 'selected' : null }, t('trans_free_youtube')),
+        ...list.map((p) => h('option', { value: p.id, selected: tv.free_source === p.id ? 'selected' : null }, p.display_name)));
+      clear(transPanel).append(
+        h('h2', null, t('trans_settings')),
+        h('div', { class: 'form-grid' },
+          h('div', { class: 'field' }, h('label', null, t('trans_paid_provider')), paidSel),
+          h('div', { class: 'field' }, h('label', null, t('trans_free_source')), freeSel)),
+        h('div', { class: 'muted', style: 'margin:8px 0' }, t('trans_note')),
+        h('button', { class: 'btn btn--primary', onclick: async () => {
+          await api('settings/translation/set', { paid_provider: paidSel.value, free_source: freeSel.value });
+          toast(t('saved'));
+        } }, t('save')));
+    }
 
     // providers
     const pv = h('div');
@@ -323,18 +353,26 @@
       clear(panel).append(h('div', { class: 'empty' }, h('span', { class: 'spin' })));
       const r = await api('users/list', { q: searchI.value.trim() });
       const tb = h('table', null, h('thead', null, h('tr', null,
-        h('th', null, t('email')), h('th', null, t('plan')), h('th', null, t('model_source')), h('th', null, t('created')), h('th', null, t('actions')))));
+        h('th', null, t('email')), h('th', null, t('plan')), h('th', null, t('model_source')), h('th', null, t('trans_provider')), h('th', null, t('created')), h('th', null, t('actions')))));
       const body = h('tbody');
+      const TRANS_PROVS = ['gemini', 'deepl', 'openrouter', 'mistral'];
       (r.items || []).forEach((u) => {
         const planSel = h('select', { class: 'select-inline', onchange: async (e) => { await api('users/set-plan', { user_id: u.id, plan: e.target.value }); toast(t('saved')); } },
           ...['free', 'basic', 'pro', 'lifetime'].map((p) => h('option', { value: p, selected: (u.plan || 'free') === p ? 'selected' : null }, p)));
         const srcSel = h('select', { class: 'select-inline', onchange: async (e) => { await api('users/model-source', { user_id: u.id, model_source: e.target.value }); toast(t('saved')); } },
           ...[['server', t('src_server')], ['local', t('src_local')], ['dedicated', t('src_dedicated')]].map((o) => h('option', { value: o[0], selected: (u.model_source || 'server') === o[0] ? 'selected' : null }, o[1])));
+        // API dịch cho riêng user (rỗng = theo hệ thống) + ép dịch API kể cả gói free.
+        const transSel = h('select', { class: 'select-inline', onchange: async (e) => { await api('users/translation', { user_id: u.id, translation_provider: e.target.value }); toast(t('saved')); } },
+          h('option', { value: '', selected: !u.translation_provider ? 'selected' : null }, t('trans_default_sys')),
+          ...TRANS_PROVS.map((p) => h('option', { value: p, selected: u.translation_provider === p ? 'selected' : null }, p)));
+        const premBox = h('input', { type: 'checkbox', title: t('premium_translate'), checked: u.premium_translate ? 'checked' : null, onchange: async (e) => { await api('users/translation', { user_id: u.id, premium_translate: e.target.checked }); toast(t('saved')); } });
         const banBtn = h('button', { class: 'btn btn--sm', onclick: async () => { await api('users/' + (u.banned ? 'unban' : 'ban'), { user_id: u.id }); toast(t('saved')); load(); } }, u.banned ? t('unban') : t('ban'));
         const delBtn = h('button', { class: 'btn btn--sm btn--danger', onclick: async () => { if (confirm(t('confirm_delete'))) { await api('users/delete', { user_id: u.id }); toast(t('saved')); load(); } } }, t('delete'));
         body.append(h('tr', null,
           h('td', null, u.banned ? h('span', { class: 'badge badge--bad' }, t('banned') + ' ') : null, u.email || u.id),
-          h('td', null, planSel), h('td', null, srcSel), h('td', null, fmtDate(u.created_at)),
+          h('td', null, planSel), h('td', null, srcSel),
+          h('td', null, h('div', { class: 'panel-row', style: 'gap:6px' }, transSel, h('label', { class: 'muted', style: 'display:flex;align-items:center;gap:3px;font-size:11px' }, premBox, t('premium_translate')))),
+          h('td', null, fmtDate(u.created_at)),
           h('td', null, h('div', { class: 'row-actions' }, banBtn, delBtn))));
       });
       tb.append(body);
