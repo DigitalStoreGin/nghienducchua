@@ -201,7 +201,7 @@
         case 'savedSentences': { const arr = await S().getSentences(); reply({ savedSentences: arr }); break; }
         case 'removeSentence': { const arr = await S().removeSentence(msg.args.text); reply({ savedSentences: arr }); break; }
         case 'saveWord': {
-          const w = await S().saveWord({ word: msg.args.word, context: msg.args.context });
+          const w = await S().saveWord({ word: msg.args.word, context: msg.args.context, lang: msg.args.lang });
           status('Đã lưu từ: ' + msg.args.word, 'ok');
           reply({ savedWords: w }); break;
         }

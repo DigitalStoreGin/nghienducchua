@@ -120,7 +120,8 @@ async function sbGet(env, pathQ) { try { const r = await fetch(`${env.SUPABASE_U
 async function sbInsert(env, table, row, prefer = 'return=representation') { const r = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}`, { method: 'POST', headers: { ...sbHeaders(env), Prefer: prefer }, body: JSON.stringify(row) }); return r.ok ? (await r.json().catch(() => [])) : null; }
 async function sbPatch(env, table, query, patch) { const r = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}?${query}`, { method: 'PATCH', headers: { ...sbHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify(patch) }); return r.ok ? (await r.json().catch(() => [])) : null; }
 async function sbDelete(env, table, query) { const r = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}?${query}`, { method: 'DELETE', headers: sbHeaders(env) }); return r.ok; }
-async function rpc(env, fn, args) { const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sbHeaders(env), body: JSON.stringify(args || {}) }); return r.ok ? (await r.json().catch(() => null)) : null; }
+// Trả truthy khi RPC thành công (kể cả hàm RETURNS VOID → body null/204), null khi lỗi.
+async function rpc(env, fn, args) { const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sbHeaders(env), body: JSON.stringify(args || {}) }); if (!r.ok) return null; const d = await r.json().catch(() => true); return d == null ? true : d; }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
@@ -215,8 +216,18 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       return json({ success: true });
     }
     case '/admin/2fa/enroll': {
+      const rows0 = await sbGet(env, `admin_users?id=eq.${admin.sub}&select=totp_enabled,password_hash,totp_secret`);
+      const u0 = rows0 && rows0[0];
+      // Nếu 2FA ĐANG BẬT → chặn re-enroll âm thầm (làm vô hiệu 2FA): yêu cầu xác thực lại
+      // bằng mật khẩu HOẶC mã TOTP hiện tại trước khi cấp secret mới.
+      if (u0 && u0.totp_enabled) {
+        const okPw = body.password && await verifyPassword(String(body.password), u0.password_hash);
+        const okTotp = body.totp && await verifyTOTP(u0.totp_secret, body.totp);
+        if (!okPw && !okTotp) return json({ error: 'reauth_required' }, 401);
+      }
       const secret = randomBase32(32);
       await sbPatch(env, 'admin_users', `id=eq.${admin.sub}`, { totp_secret: secret, totp_enabled: false });
+      await audit(env, admin.sub, 'auth.2fa_enroll', 'admin', admin.sub, null, null, ip);
       const label = encodeURIComponent('NghienDe Admin:' + admin.email);
       return json({ secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=NghienDe` });
     }
@@ -330,7 +341,7 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     }
     case '/admin/keys/credit': {
       // Thêm hạn mức (vd "Grok: +2000 request +40000 token") — dashboard tự cập nhật.
-      if (!body.id) return json({ error: 'bad_id' }, 400);
+      if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400);
       const rows = await sbGet(env, `api_keys?id=eq.${body.id}&select=credit_requests_total,credit_tokens_total`);
       if (!rows[0]) return json({ error: 'not_found' }, 404);
       const patch = {
@@ -343,7 +354,7 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       return json({ success: true });
     }
     case '/admin/keys/update': {
-      if (!body.id) return json({ error: 'bad_id' }, 400);
+      if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400);
       const patch = {};
       ['label', 'status', 'priority', 'reset_interval', 'resets_at', 'credit_requests_total', 'credit_tokens_total'].forEach((k) => { if (body[k] !== undefined) patch[k] = body[k]; });
       if (body.secret) patch.secret_ref = await encryptSecret(env, String(body.secret));
@@ -351,8 +362,8 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       await audit(env, admin.sub, 'key.update', 'api_key', body.id, null, Object.keys(patch), ip);
       return json({ success: true });
     }
-    case '/admin/keys/disable': { await sbPatch(env, 'api_keys', `id=eq.${body.id}`, { status: 'disabled' }); return json({ success: true }); }
-    case '/admin/keys/delete': { await sbDelete(env, 'api_keys', `id=eq.${body.id}`); await audit(env, admin.sub, 'key.delete', 'api_key', body.id, null, null, ip); return json({ success: true }); }
+    case '/admin/keys/disable': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbPatch(env, 'api_keys', `id=eq.${body.id}`, { status: 'disabled' }); return json({ success: true }); }
+    case '/admin/keys/delete': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbDelete(env, 'api_keys', `id=eq.${body.id}`); await audit(env, admin.sub, 'key.delete', 'api_key', body.id, null, null, ip); return json({ success: true }); }
 
     case '/admin/health': {
       const out = { worker: { ok: true }, supabase: { ok: false }, providers: [] };
@@ -433,7 +444,10 @@ export async function handleSepayWebhook(request, env) {
   const pay = rows && rows[0];
   if (!pay) return json({ success: true, matched: false });
   if (pay.status === 'paid') return json({ success: true, already: true });
-  if (pay.amount && amount && amount < pay.amount) return json({ success: true, underpaid: true });
+  // Số tiền thiếu/0/không hợp lệ → KHÔNG đánh dấu đã trả (chống cấp gói khi callback rỗng số tiền).
+  if (pay.amount && (!amount || amount < pay.amount)) return json({ success: true, underpaid: true });
+  // Sai tiền tệ (chỉ kiểm khi webhook có gửi currency) → từ chối.
+  if (pay.currency && body.currency && String(body.currency).toUpperCase() !== String(pay.currency).toUpperCase()) return json({ success: true, currency_mismatch: true });
   await sbPatch(env, 'payments', `id=eq.${pay.id}`, { status: 'paid', paid_at: new Date().toISOString(), provider_txn_id: txnId || null, raw_payload: body });
   if (pay.user_id && pay.plan) { await rpc(env, 'admin_set_plan', { p_user_id: pay.user_id, p_plan: pay.plan, p_months: 12 }); }
   return json({ success: true });

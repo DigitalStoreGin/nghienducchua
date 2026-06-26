@@ -47,6 +47,9 @@
 
     selectSegment(i, opts) {
       opts = opts || {};
+      // Hủy timer "Nghe" (listenSeg) còn treo khi đổi câu — nếu không, nó sẽ tạm dừng câu mới
+      // theo endSec CŨ (bug: bấm Nghe rồi Sau làm câu mới dừng đột ngột).
+      if (this._listenTimer) { clearInterval(this._listenTimer); this._listenTimer = null; }
       if (i < 0 || i >= this.sentences.length) return;
       this.queue = null; this.current = i;
       // Chong "snap-back": sau khi tua, playhead can vai chuc ms de cap nhat. Trong
@@ -138,6 +141,7 @@
       this.runId++;
       this.queue = null;
       this.busy = false;
+      if (this._listenTimer) { clearInterval(this._listenTimer); this._listenTimer = null; }
       // Cancel ongoing recording
       if (this._abortRec) { try { this._abortRec.abort(); } catch (e) {} this._abortRec = null; }
       try { V().pause(); } catch (e) {}

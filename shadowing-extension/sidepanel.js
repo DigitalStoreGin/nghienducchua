@@ -1036,7 +1036,7 @@
     ];
     body.innerHTML =
       (msg ? '<div class="vg-msg">' + esc(msg) + '</div>' : '') +
-      '<div class="vg-pool"><label data-i18n="game_pool">Nguồn từ</label>' +
+      '<div class="vg-pool"><label>' + esc(t('game_pool', 'Nguồn từ')) + '</label>' +
         '<select id="vg-pool-sel" class="setting-select">' +
           '<option value="saved">' + esc(t('voc_tab_saved', 'Từ đã lưu')) + '</option>' +
           '<option value="weak">' + esc(t('voc_tab_weak', 'Phát âm yếu')) + '</option>' +
@@ -2147,6 +2147,7 @@
       game_title:'🎮 Ôn tập từ vựng', game_empty:'Chưa có từ nào để ôn — hãy lưu từ trước.', game_flashcard:'Lật thẻ', game_choice:'Trắc nghiệm', game_type:'Nghe & gõ', game_speak:'Nói & chấm',
       game_pool:'Nguồn từ', game_pool_sent:'Câu đã lưu', game_reveal:'Hiện nghĩa', game_done:'Hoàn thành!', game_again:'🔁 Chơi lại', game_menu:'☰ Chọn chế độ', game_correct:'Chính xác!', game_check:'Kiểm tra', game_type_ph:'Gõ từ bạn nghe…', game_replay:'Nghe lại', game_speak_btn:'Nói', game_skip:'Bỏ qua',
       you_said:'Bạn nói', empty_heard:'Không nghe rõ — thử lại.', mic_not_ready:'Mic chưa sẵn sàng — tải lại extension.',
+      tc_pause_tt:'Tự dừng cuối mỗi câu để bạn luyện',
     },
     en: {
       tab_practice:'Practice', tab_vocab:'Words', tab_flash:'Cards', tab_progress:'Progress',
@@ -2176,6 +2177,7 @@
       game_title:'🎮 Vocabulary review', game_empty:'No words to review — save some words first.', game_flashcard:'Flashcards', game_choice:'Multiple choice', game_type:'Listen & type', game_speak:'Speak & score',
       game_pool:'Word source', game_pool_sent:'Saved sentences', game_reveal:'Reveal', game_done:'Done!', game_again:'🔁 Play again', game_menu:'☰ Modes', game_correct:'Correct!', game_check:'Check', game_type_ph:'Type what you hear…', game_replay:'Replay', game_speak_btn:'Speak', game_skip:'Skip',
       you_said:'You said', empty_heard:"Didn't catch that — try again.", mic_not_ready:'Mic not ready — reload the extension.',
+      tc_pause_tt:'Auto-pause at the end of each sentence',
     },
     de: {
       tab_practice:'Üben', tab_vocab:'Wörter', tab_flash:'Karten', tab_progress:'Fortschritt',
@@ -2205,6 +2207,7 @@
       game_title:'🎮 Wortschatz üben', game_empty:'Keine Wörter zum Üben — speichere zuerst Wörter.', game_flashcard:'Karten', game_choice:'Multiple Choice', game_type:'Hören & tippen', game_speak:'Sprechen & bewerten',
       game_pool:'Wortquelle', game_pool_sent:'Gespeicherte Sätze', game_reveal:'Aufdecken', game_done:'Fertig!', game_again:'🔁 Nochmal', game_menu:'☰ Modi', game_correct:'Richtig!', game_check:'Prüfen', game_type_ph:'Tippe, was du hörst…', game_replay:'Wiederholen', game_speak_btn:'Sprechen', game_skip:'Überspringen',
       you_said:'Du sagtest', empty_heard:'Nicht verstanden — versuch es nochmal.', mic_not_ready:'Mikro nicht bereit — Extension neu laden.',
+      tc_pause_tt:'Nach jedem Satz automatisch pausieren',
     },
   };
   // Tra cứu chuỗi UI theo ngôn ngữ đang chọn (cho chuỗi động trong JS).
