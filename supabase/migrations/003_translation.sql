@@ -18,9 +18,10 @@ create table if not exists public.app_settings (
 );
 alter table public.app_settings enable row level security; -- không policy → chỉ service_role (Worker)
 
--- Mặc định: gói trả phí dùng Gemini; gói free dùng nguồn dịch miễn phí ở client.
+-- Mặc định: CHƯA chọn provider (paid_provider rỗng) — chủ shop tự chọn trong Admin
+-- sau khi thêm key. Khi chưa chọn → user trả phí vẫn dùng dịch miễn phí (an toàn, không lỗi).
 insert into public.app_settings (key, value) values
-  ('translation', '{"paid_provider":"gemini","free_source":"free"}'::jsonb)
+  ('translation', '{"paid_provider":"","free_source":"free"}'::jsonb)
 on conflict (key) do nothing;
 
 -- ───────── 2. Ghi đè theo từng user ─────────
@@ -29,10 +30,15 @@ on conflict (key) do nothing;
 alter table if exists public.profiles add column if not exists translation_provider text;
 alter table if exists public.profiles add column if not exists premium_translate    boolean default false;
 
--- ───────── 3. Bổ sung nhà cung cấp Mistral vào danh mục ─────────
-insert into public.api_providers (id, display_name, kind, base_url, docs_url) values
-  ('mistral', 'Mistral AI', 'api_key', 'https://api.mistral.ai', 'https://console.mistral.ai/api-keys')
-on conflict (id) do nothing;
+-- ───────── 3. Bổ sung nhà cung cấp Mistral (chỉ khi đã chạy 002 → bảng api_providers tồn tại) ─────────
+do $$
+begin
+  if to_regclass('public.api_providers') is not null then
+    insert into public.api_providers (id, display_name, kind, base_url, docs_url) values
+      ('mistral', 'Mistral AI', 'api_key', 'https://api.mistral.ai', 'https://console.mistral.ai/api-keys')
+    on conflict (id) do nothing;
+  end if;
+end $$;
 
 -- ───────── 4. RPC: lấy 1 key tốt nhất từ pool + TỰ TRỪ credit (atomic) ─────────
 -- Worker gọi với service-role. Chọn key active, ưu tiên priority nhỏ, còn hạn mức;
@@ -96,7 +102,7 @@ begin
   if v_settings is null then v_settings := '{"paid_provider":"gemini","free_source":"free"}'::jsonb; end if;
 
   v_is_premium := coalesce(v_premium, false) or coalesce(v_plan, 'free') <> 'free';
-  v_provider   := coalesce(v_user_prov, v_settings->>'paid_provider', 'gemini');
+  v_provider   := coalesce(v_user_prov, v_settings->>'paid_provider', ''); -- rỗng = chưa chọn provider
 
   return jsonb_build_object(
     'is_premium',  v_is_premium,

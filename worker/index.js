@@ -562,9 +562,9 @@ async function pickProviderKey(env, provider) {
   if (consumed && consumed.secret_ref) {
     try { const k = await decryptSecret(env, consumed.secret_ref); if (k) return k; } catch (_) {}
   }
-  // Fallback: secret cấu hình trực tiếp (wrangler secret put) khi pool trống.
+  // Fallback (tuỳ chọn): secret cấu hình trực tiếp qua wrangler khi pool trống.
   const ENV_KEY = { gemini: 'GEMINI_API_KEY', deepl: 'DEEPL_API_KEY', openrouter: 'OPENROUTER_API_KEY', mistral: 'MISTRAL_API_KEY' };
-  return env[ENV_KEY[provider]] || (provider === 'gemini' ? env.GEMINI_API_KEY_1 : null) || null;
+  return env[ENV_KEY[provider]] || null;
 }
 async function runProvider(env, provider, key, text, from, to) {
   switch (provider) {
@@ -589,15 +589,18 @@ async function handleTranslate(request, env, userId) {
   const cfg = await sbRpc(env, 'translation_config_for', { p_user_id: userId });
   const isPremium  = cfg ? !!cfg.is_premium : false;
   const freeSource = (cfg && cfg.free_source) || 'free';
-  let provider     = (cfg && cfg.provider) || 'gemini';
+  let provider     = (cfg && cfg.provider) || ''; // rỗng = Admin chưa chọn provider
 
   // User FREE:
   //  - free_source = 'free' (mặc định) → client tự dịch miễn phí (YouTube/Google).
   //  - Admin đổi free_source sang 1 provider → kể cả free cũng dịch qua API đó.
   if (!isPremium) {
-    if (freeSource === 'free') return json({ free: true, provider: 'free', message: 'use_free_client' }, 200);
+    if (freeSource === 'free' || !freeSource) return json({ free: true, provider: 'free', message: 'use_free_client' }, 200);
     provider = freeSource;
   }
+
+  // Admin chưa chọn provider dịch → dùng dịch miễn phí (an toàn, không gọi API nào).
+  if (!provider) return json({ free: true, provider: 'free', message: 'no_provider_configured' }, 200);
 
   // Hạn mức ngày theo gói (basic/pro/lifetime) vẫn áp dụng.
   const quota = await checkQuota(userId, 'translation', env);

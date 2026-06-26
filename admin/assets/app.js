@@ -292,7 +292,9 @@
       const tv = transCfg.value || { paid_provider: 'gemini', free_source: 'free' };
       const provOpts = (transCfg.providers || []).filter((p) => TRANS_PROVS.includes(p.id));
       const list = provOpts.length ? provOpts : TRANS_PROVS.map((id) => ({ id, display_name: id }));
-      const paidSel = h('select', null, ...list.map((p) => h('option', { value: p.id, selected: tv.paid_provider === p.id ? 'selected' : null }, p.display_name + (p.enabled === false ? ' (tắt)' : ''))));
+      const paidSel = h('select', null,
+        h('option', { value: '', selected: !tv.paid_provider ? 'selected' : null }, '— ' + t('trans_free_youtube') + ' —'),
+        ...list.map((p) => h('option', { value: p.id, selected: tv.paid_provider === p.id ? 'selected' : null }, p.display_name + (p.enabled === false ? ' (tắt)' : ''))));
       const freeSel = h('select', null,
         h('option', { value: 'free', selected: (tv.free_source || 'free') === 'free' ? 'selected' : null }, t('trans_free_youtube')),
         ...list.map((p) => h('option', { value: p.id, selected: tv.free_source === p.id ? 'selected' : null }, p.display_name)));
