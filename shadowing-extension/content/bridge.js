@@ -40,6 +40,10 @@
     } catch (e) {}
   }
 
+  // Cho phép nạp LẠI phụ đề cho CÙNG video khi đổi ngôn ngữ học (Settings). Không reset
+  // thì autoLoadedFor === videoId sẽ chặn việc tải track ngôn ngữ mới (lỗi đổi DE↔EN).
+  function resetAutoLoad() { autoLoadedFor = ''; }
+
   function onSubtitles(cb) { listeners.push(cb); }
   function emitSentences(sentences, meta) {
     try { console.info('[Shadow] subtitles:', sentences.length, (meta && meta.source) || ''); } catch (e) {}
@@ -224,5 +228,5 @@
   // Ask MAIN world to expose tracklist now (handles case where early retries fired before ISOLATED world was ready)
   try { document.dispatchEvent(new CustomEvent('SD_REQUEST_TRACKLIST')); } catch (e) {}
 
-  root.SD.bridge = { onSubtitles, emitSentences, fetchYouTubeTrack, getAvailableTracks, hasTracklist: () => !!lastTracklist };
+  root.SD.bridge = { onSubtitles, emitSentences, fetchYouTubeTrack, getAvailableTracks, resetAutoLoad, hasTracklist: () => !!lastTracklist };
 })(window);

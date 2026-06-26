@@ -19,6 +19,13 @@ compatibility_flags = ["nodejs_compat"]
 # ALERT_EMAIL         (tuỳ chọn — email nhận cảnh báo; mặc định email chủ tài khoản Resend)
 # ALERT_FROM          (tuỳ chọn — địa chỉ gửi sau khi xác thực domain ở Resend)
 # SENTRY_DSN          (tuỳ chọn — bật giám sát lỗi qua /log; chưa set thì ghi console)
+# ADMIN_JWT_SECRET    khoá ký JWT phiên admin (trang Admin SPA)         — BẮT BUỘC cho admin
+# KEY_ENCRYPTION_KEY  khoá AES-GCM mã hoá API key lưu trong DB (admin)  — BẮT BUỘC cho admin
+# SEPAY_WEBHOOK_KEY   khoá xác thực webhook SePay (thanh toán)          — khi bật SePay
+
+# Cron: reset hạn mức API key theo chu kỳ + dọn session admin hết hạn (00:00 UTC mỗi ngày).
+[triggers]
+crons = ["0 0 * * *"]
 
 # Burst rate limit theo user (Cloudflare native, GA). 30 lần / 60 giây.
 [[ratelimit]]

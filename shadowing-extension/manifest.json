@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NghienDeutsch",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "Luyện shadowing chuyên nghiệp: phụ đề, ghi âm, chấm điểm ngữ âm, dịch AI, phân tích từ vựng. Chạy trên YouTube & Netflix.",
   "permissions": [
     "activeTab",
@@ -17,6 +17,7 @@
     "https://api-free.deepl.com/*",
     "https://api.deepl.com/*",
     "https://api.mymemory.translated.net/*",
+    "https://api.dictionaryapi.dev/*",
     "https://translate.googleapis.com/*",
     "https://edge.microsoft.com/*",
     "https://api.cognitive.microsofttranslator.com/*",
@@ -109,7 +110,7 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*.supabase.co https://nghienducchua-proxy.thoatran21012.workers.dev https://api.mymemory.translated.net https://translate.googleapis.com https://edge.microsoft.com https://api.cognitive.microsofttranslator.com https://huggingface.co https://*.huggingface.co https://cdn.jsdelivr.net https://openrouter.ai https://api-free.deepl.com https://api.deepl.com;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*.supabase.co https://nghienducchua-proxy.thoatran21012.workers.dev https://api.mymemory.translated.net https://api.dictionaryapi.dev https://translate.googleapis.com https://edge.microsoft.com https://api.cognitive.microsofttranslator.com https://huggingface.co https://*.huggingface.co https://cdn.jsdelivr.net https://openrouter.ai https://api-free.deepl.com https://api.deepl.com;"
   },
   "side_panel": {
     "default_path": "sidepanel.html"

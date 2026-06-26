@@ -435,6 +435,12 @@
       <summary class="menu-section-title" data-i18n="sec_settings">Cài đặt</summary>
       <div class="menu-section-body">
 
+        <!-- Master ON/OFF — id="extEnabled" (đồng bộ với chip ON/OFF trên video) -->
+        <div class="setting-row setting-row--toggle setting-row--master">
+          <label class="setting-label" for="extEnabled" data-i18n="set_master">Bật extension</label>
+          <input type="checkbox" id="extEnabled" class="setting-toggle" checked>
+        </div>
+
         <!-- Target Language — id="target" used by sidepanel.js -->
         <div class="setting-row">
           <label class="setting-label" for="target" data-i18n="set_target">Ngôn ngữ học</label>
@@ -484,6 +490,7 @@
           <select id="uilang" class="setting-select">
             <option value="vi" selected>🇻🇳 Tiếng Việt</option>
             <option value="en">🇬🇧 English</option>
+            <option value="de">🇩🇪 Deutsch</option>
           </select>
         </div>
 
@@ -512,16 +519,27 @@
       </div>
     </details><!-- /#section-settings -->
 
-    <!-- VOCABULARY SECTION — HAI BẢNG: từ đã lưu + từ phát âm yếu -->
+    <!-- VOCABULARY SECTION — 2 tab (từ đã lưu / phát âm yếu) + khung chi tiết từ -->
     <details class="menu-section" id="section-vocab" open>
       <summary class="menu-section-title" id="tab-vocab" data-i18n="sec_vocab">Từ vựng</summary>
-      <div class="menu-section-body">
-        <!-- Bảng 1: từ đã lưu -->
-        <div class="vocab-table-title" data-i18n="voc_saved_title">📚 Từ đã lưu</div>
-        <div id="vocab-list" class="vocab-list"></div>
-        <!-- Bảng 2: từ phát âm yếu (đọc sai nhiều lần) -->
-        <div class="vocab-table-title" data-i18n="voc_weak_title">⚠️ Từ phát âm yếu</div>
-        <div id="weak-words-list" class="weak-words-list"></div>
+      <div class="menu-section-body vocab-pane">
+        <!-- Tabs -->
+        <div class="vocab-tabs" role="tablist">
+          <button class="vocab-tab on" id="vocab-tab-saved" data-tab="saved" data-i18n="voc_tab_saved">📚 Từ đã lưu</button>
+          <button class="vocab-tab" id="vocab-tab-weak" data-tab="weak" data-i18n="voc_tab_weak">⚠️ Phát âm yếu</button>
+        </div>
+        <!-- Khung chi tiết 1 từ (hiện khi bấm vào 1 từ) -->
+        <div class="vocab-detail" id="vocab-detail" hidden></div>
+        <!-- Danh sách -->
+        <div id="vocab-list" class="vocab-list" data-pane="saved"></div>
+        <div id="weak-words-list" class="weak-words-list" data-pane="weak" hidden></div>
+        <!-- Footer: tổng số + phát tất cả + ôn tập -->
+        <div class="vocab-foot">
+          <span class="vocab-foot-count"><span id="vocab-foot-count">0</span> <span data-i18n="voc_total">từ</span></span>
+          <span class="vocab-foot-spacer"></span>
+          <button class="vocab-foot-btn" id="vocab-foot-play" title="Phát tất cả" data-i18n="voc_play_all">▶ Phát tất cả</button>
+          <button class="vocab-foot-btn vocab-foot-btn--game" id="vocab-foot-game" data-i18n="voc_review">🎮 Ôn tập</button>
+        </div>
       </div>
     </details>
 
@@ -545,6 +563,18 @@
     </details>
 
   </div><!-- /#slide-menu -->
+
+  <!-- ===== 🎮 GAME ÔN TỪ VỰNG (overlay) ===== -->
+  <div class="vg-overlay" id="vocab-game" hidden>
+    <div class="vg-modal">
+      <div class="vg-head">
+        <span class="vg-title" id="vg-title" data-i18n="game_title">🎮 Ôn tập từ vựng</span>
+        <button class="vg-close" id="vg-close" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="vg-body" id="vg-body"></div>
+    </div>
+  </div>
+
   <!-- Legacy hidden stubs: JS may still reference these IDs (Anki/progress/weak summary). -->
   <button id="anki-export" hidden></button>
   <button id="anki-sync" hidden></button>

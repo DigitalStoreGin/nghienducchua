@@ -195,9 +195,11 @@
           break;
         }
         case 'fav': {
-          const f = await S().toggleFavorite(msg.args.text);
+          const f = await S().toggleFavorite(msg.args.text, { trans: msg.args.trans, source: msg.args.source });
           reply({ favorites: f }); break;
         }
+        case 'savedSentences': { const arr = await S().getSentences(); reply({ savedSentences: arr }); break; }
+        case 'removeSentence': { const arr = await S().removeSentence(msg.args.text); reply({ savedSentences: arr }); break; }
         case 'saveWord': {
           const w = await S().saveWord({ word: msg.args.word, context: msg.args.context });
           status('Đã lưu từ: ' + msg.args.word, 'ok');
@@ -205,6 +207,10 @@
         }
         case 'removeWord': {
           const w = await S().removeWord(msg.args.word);
+          reply({ savedWords: w }); break;
+        }
+        case 'updateWord': {
+          const w = await S().updateWord(msg.args.word, msg.args.fields);
           reply({ savedWords: w }); break;
         }
         case 'mic': {
@@ -231,9 +237,32 @@
           break;
         }
         case 'settings': {
+          const prevLang = (eng.settings && eng.settings.targetLang) || '';
+          const prevNative = (eng.settings && eng.settings.nativeLang) || '';
           const st = await S().saveSettings(msg.args);
           eng.setSettings(st);
+          // Đổi ngôn ngữ HỌC/DỊCH → nạp lại phụ đề đúng ngôn ngữ cho CÙNG video.
+          // (Sửa lỗi: đổi DE↔EN nhưng vẫn giữ track cũ vì autoLoadedFor khoá theo videoId.)
+          if (st.targetLang !== prevLang || st.nativeLang !== prevNative) {
+            try { if (SD.bridge && SD.bridge.resetAutoLoad) SD.bridge.resetAutoLoad(); } catch (e) {}
+            if (location.hostname.includes('youtube') && SD.bridge && SD.bridge.fetchYouTubeTrack) {
+              SD.bridge.fetchYouTubeTrack(st.targetLang || 'de', st.nativeLang || 'vi')
+                .then((s) => { if (s && s.length) status('Đã tải lại phụ đề (' + s.length + ' câu).', 'ok'); })
+                .catch(() => {});
+            }
+          }
           reply({ settings: st }); break;
+        }
+        case 'reloadForLang': {
+          try { if (SD.bridge && SD.bridge.resetAutoLoad) SD.bridge.resetAutoLoad(); } catch (e) {}
+          if (location.hostname.includes('youtube') && SD.bridge && SD.bridge.fetchYouTubeTrack) {
+            const s = await SD.bridge.fetchYouTubeTrack(
+              (msg.args && msg.args.target) || 'de',
+              (msg.args && msg.args.native) || 'vi'
+            );
+            if (s && s.length) status('Đã tải lại phụ đề (' + s.length + ' câu).', 'ok');
+          }
+          reply({ ok: true }); break;
         }
         case 'vocab': {
           const d = await S().get();

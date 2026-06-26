@@ -293,17 +293,29 @@
     }
     // Panel luyện (Chép/Điền/Ẩn chữ) đang mở → đồng bộ sang câu mới.
     refreshActivePanel();
-    // Panel "Nói & chấm" đang mở mà ĐỔI câu → đóng lại để không chấm nhầm câu cũ.
+    // Panel "Nói & chấm" đang mở:
+    //  - Điều hướng Trước/Sau/Lặp trong lúc luyện (keepRecordPanel) → GIỮ panel mở cho câu
+    //    mới + reset điểm để luyện tiếp (sửa lỗi: bấm Sau là panel biến mất, không hiện câu mới).
+    //  - Đổi câu kiểu khác (click dòng khác) → đóng panel để không chấm nhầm câu cũ.
     const _rp = $('#record-panel');
-    if (_rp && !_rp.hidden && recordPanelIdx !== c.idx) {
-      try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {}
-      showRecordPanel(false);
+    if (_rp && !_rp.hidden) {
+      if (keepRecordPanel) {
+        keepRecordPanel = false;
+        recordPanelIdx = c.idx;
+        updateRecordTarget();
+        resetRecordPanelScoreUI();
+      } else if (recordPanelIdx !== c.idx) {
+        try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {}
+        showRecordPanel(false);
+      }
     }
   }
   function markCur(i) { document.querySelectorAll('.row').forEach((r) => r.classList.toggle('cur', +r.dataset.i === i)); const r = document.querySelector('.row[data-i="' + i + '"]'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
 
   // Anti snap-back guard cho dieu huong cau (xem selectRow + handleEvent 'current').
   let manualSelectIdx = -1, manualSelectUntil = 0;
+  // Khi điều hướng Trước/Sau/Lặp lúc panel "Nói & chấm" đang mở → giữ panel mở cho câu mới.
+  let keepRecordPanel = false;
 
   function isFav(t) { return favorites.some((f) => f.text === t); }
 
@@ -376,7 +388,7 @@
       row.appendChild(playBtn);
       // Than chu — chu to, de doc (kieu hinh mau)
       const body = document.createElement('div'); body.className = 'row-body';
-      const de = document.createElement('div'); de.className = 'de'; de.textContent = s.text;
+      const de = document.createElement('div'); de.className = 'de'; wireWordLookup(de, s.text, { hoverOnly: true });
       body.appendChild(de);
       if (s.trans) { const tr = document.createElement('div'); tr.className = 'tr'; tr.textContent = s.trans; body.appendChild(tr); }
       row.appendChild(body);
@@ -432,10 +444,11 @@
       favBtn.onclick = async (e) => {
         e.stopPropagation();
         favBtn.classList.remove('fav-pop'); void favBtn.offsetWidth; favBtn.classList.add('fav-pop');
-        const r = await cmd('fav', { text: s.text });
+        const r = await cmd('fav', { text: s.text, trans: s.trans });
         if (r && r.favorites) favorites = r.favorites;
         setFavUI();
         if (typeof updateTryCard === 'function') updateTryCard();
+        setStatus(isFav(s.text) ? t('sent_saved', '⭐ Đã lưu câu vào kho từ vựng.') : t('sent_unsaved', 'Đã bỏ câu khỏi kho.'), 'ok');
       };
       actions.appendChild(micBtn); actions.appendChild(transBtn); actions.appendChild(favBtn);
       row.appendChild(actions);
@@ -457,7 +470,7 @@
         fetch(WORKER_URL + '/score-ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target, transcript, targetLang: settings.targetLang || 'de' }),
+          body: JSON.stringify({ target, transcript, targetLang: settings.targetLang || 'de', nativeLang: settings.nativeLang || 'vi' }),
         }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
       ]);
@@ -735,7 +748,10 @@
     const fbx = $('#feedback-box'); if (fbx) fbx.hidden = false;
   }
 
-  function wireWordLookup(container, text) {
+  // hover: none (cảm ứng) → bỏ hover, giữ click.
+  const _canHover = !(window.matchMedia && window.matchMedia('(hover: none)').matches);
+  function wireWordLookup(container, text, opts) {
+    opts = opts || {};
     container.innerHTML = '';
     // To mau theo tan suat (kieu Language Reactor): chi cho tieng Duc
     const freqOn = (settings.targetLang || 'de') === 'de' && window.SD_FREQ_DE;
@@ -743,10 +759,46 @@
       if (/^\s*$/.test(w)) { container.appendChild(document.createTextNode(w)); return; }
       const sp = document.createElement('span'); sp.className = 'w'; sp.textContent = w;
       if (freqOn && window.SD_FREQ_DE && !window.SD_FREQ_DE.isCommon(w)) sp.classList.add('freq-rare');
-      sp.onclick = (e) => { e.stopPropagation(); lookup(w, text, e.clientX, e.clientY); };
+      // hoverOnly (danh sách câu): KHÔNG bắt click để click vẫn chọn câu; chỉ hover dịch.
+      if (!opts.hoverOnly) sp.onclick = (e) => { e.stopPropagation(); lookup(w, text, e.clientX, e.clientY); };
+      if (_canHover) {
+        sp.addEventListener('mouseenter', () => { clearHoverTimers(); const r = sp.getBoundingClientRect(); _hoverTimer = setTimeout(() => hoverPopup(w, r.left, r.bottom), 350); });
+        sp.addEventListener('mouseleave', () => scheduleHoverHide());
+      }
       container.appendChild(sp);
     });
   }
+
+  // ===== Popup HOVER (di chuột vào từ → dịch + IPA + 🔊), nhẹ hơn popup click =====
+  let _hoverPop = null, _hoverTimer = null, _hoverHideTimer = null;
+  function clearHoverTimers() { if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; } if (_hoverHideTimer) { clearTimeout(_hoverHideTimer); _hoverHideTimer = null; } }
+  function removeHoverPop() { if (_hoverPop) { try { _hoverPop.remove(); } catch (_) {} _hoverPop = null; } }
+  function scheduleHoverHide() { clearHoverTimers(); _hoverHideTimer = setTimeout(removeHoverPop, 220); }
+  function hoverPopup(word, x, y) {
+    removeHoverPop();
+    const clean = String(word || '').replace(/[^A-Za-zÀ-ÿäöüÄÖÜß]/g, '');
+    if (!clean) return;
+    const lang = settings.targetLang || 'de';
+    const pop = document.createElement('div');
+    pop.className = 'pop pop--hover';
+    pop.style.left = Math.min(x, innerWidth - 240) + 'px';
+    pop.style.top = (y + 6) + 'px';
+    pop.innerHTML =
+      '<div class="pop-head"><b class="pop-word">' + esc(clean) + '</b>' +
+      '<span class="pop-ipa"></span>' +
+      '<button class="pop-tts" title="' + esc(t('pop_listen')) + '">🔊</button></div>' +
+      '<div class="pop-trans">' + esc(t('pop_loading')) + '</div>';
+    const ttsB = pop.querySelector('.pop-tts'); if (ttsB) ttsB.onclick = (e) => { e.stopPropagation(); speakText(clean); };
+    pop.addEventListener('mouseenter', () => clearHoverTimers());
+    pop.addEventListener('mouseleave', () => scheduleHoverHide());
+    document.body.appendChild(pop);
+    _hoverPop = pop;
+    const gloss = pop.querySelector('.pop-trans');
+    fetchGloss(clean).then((g) => { if (_hoverPop === pop && gloss) gloss.textContent = g || t('pop_nomean'); });
+    fetchWordCard(clean, lang).then((c) => { if (_hoverPop === pop && c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
+  }
+  // Ẩn hover popup khi cuộn (vị trí cũ không còn đúng).
+  window.addEventListener('scroll', removeHoverPop, true);
   function lookup(word, ctx, x, y) {
     document.querySelectorAll('.pop').forEach((p) => p.remove());
     const clean = word.replace(/[^A-Za-zäöüÄÖÜß]/g, '');
@@ -762,13 +814,17 @@
       if (hints.length) phonHtml = '<div class="pop-phon">🗣 ' + esc(t('pop_pron')) + ': ' +
         hints.map((h) => '<span class="pop-phon-c">' + esc(h.cluster) + '</span> ' + esc(h.hint)).join(' · ') + '</div>';
     }
-    // Liên kết từ điển (chỉ hữu ích cho tiếng Đức).
+    // Liên kết từ điển theo ngôn ngữ học: Đức → DWDS/LEO; Anh → Cambridge/Wiktionary.
     const links = isDe
       ? '<a target="_blank" href="https://www.dwds.de/wb/' + encodeURIComponent(clean) + '">DWDS</a>' +
         '<a target="_blank" href="https://dict.leo.org/german-english/' + encodeURIComponent(clean) + '">LEO</a>'
-      : '';
+      : ((settings.targetLang || '') === 'en'
+        ? '<a target="_blank" href="https://dictionary.cambridge.org/dictionary/english/' + encodeURIComponent(clean) + '">Cambridge</a>' +
+          '<a target="_blank" href="https://en.wiktionary.org/wiki/' + encodeURIComponent(clean) + '">Wiktionary</a>'
+        : '');
     pop.innerHTML =
       '<div class="pop-head"><b class="pop-word">' + esc(clean) + '</b>' +
+      '<span class="pop-ipa"></span>' +
       '<button class="pop-tts" title="' + esc(t('pop_listen')) + '">🔊</button></div>' +
       '<div class="pop-trans">' + esc(t('pop_loading')) + '</div>' +
       phonHtml +
@@ -778,7 +834,7 @@
     const saveBtn = pop.querySelector('.pop-save');
     saveBtn.onclick = (e) => {
       e.stopPropagation();
-      cmd('saveWord', { word: clean, context: ctx });
+      cmd('saveWord', { word: clean, context: ctx, lang: settings.targetLang });
       markWordSaved(clean);
       saveBtn.textContent = '✅ ' + t('pop_saved');
       saveBtn.classList.add('saved'); saveBtn.disabled = true;
@@ -786,29 +842,66 @@
     isWordSaved(clean).then((saved) => { if (saved) { saveBtn.textContent = '✅ ' + t('pop_saved'); saveBtn.classList.add('saved'); saveBtn.disabled = true; } });
     const gloss = pop.querySelector('.pop-trans');
     fetchGloss(clean).then((g) => { gloss.textContent = g || t('pop_nomean'); });
+    fetchWordCard(clean, settings.targetLang).then((c) => { if (c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
     document.body.appendChild(pop);
     setTimeout(() => document.addEventListener('click', function h() { pop.remove(); document.removeEventListener('click', h); }), 50);
   }
 
-  // ---- Vocabulary view: HAI BẢNG (từ đã lưu + từ phát âm yếu) ----
+  // ---- Vocabulary view: 2 tab (từ đã lưu / phát âm yếu) + khung chi tiết từ ----
+  let _savedWordsCache = [];
+  const wordCardCache = {};
+
   function vocabHint(word) {
     if ((settings.targetLang || 'de') !== 'de') return '';
     const h = germanHints(word); if (!h.length) return '';
     return '💡 ' + h.map((x) => '<span class="voc-hint-c">' + esc(x.cluster) + '</span> ' + esc(x.hint)).join(' · ');
   }
+
+  // Tra IPA/định nghĩa/ví dụ từ dictionaryapi.dev (miễn phí, không key). Cache trong phiên.
+  async function fetchWordCard(word, lang) {
+    lang = lang || settings.targetLang || 'de';
+    const clean = String(word || '').trim();
+    if (!clean) return { ipa: '', def: '', example: '' };
+    const ck = lang + '|' + clean.toLowerCase();
+    if (wordCardCache[ck]) return wordCardCache[ck];
+    const card = { ipa: '', def: '', example: '', related: [] };
+    try {
+      const r = await fetch('https://api.dictionaryapi.dev/api/v2/entries/' + encodeURIComponent(lang) + '/' + encodeURIComponent(clean));
+      if (r.ok) {
+        const j = await r.json();
+        const entry = Array.isArray(j) ? j[0] : null;
+        if (entry) {
+          if (entry.phonetic) card.ipa = entry.phonetic;
+          else if (Array.isArray(entry.phonetics)) { const p = entry.phonetics.find((x) => x && x.text); if (p) card.ipa = p.text; }
+          const m = entry.meanings && entry.meanings[0];
+          const d = m && m.definitions && m.definitions[0];
+          if (d) { card.def = d.definition || ''; card.example = d.example || ''; }
+          const rel = new Set();
+          (entry.meanings || []).forEach((mm) => {
+            (mm.synonyms || []).forEach((s) => rel.add(s));
+            (mm.definitions || []).forEach((dd) => (dd.synonyms || []).forEach((s) => rel.add(s)));
+          });
+          card.related = Array.from(rel).filter((x) => x && x.toLowerCase() !== clean.toLowerCase()).slice(0, 6);
+        }
+      }
+    } catch (_) {}
+    wordCardCache[ck] = card; return card;
+  }
+
   function vocabRow(w) {
-    const hint = vocabHint(w.word);
-    return '<div class="voc-row" data-w="' + esc(w.word) + '">' +
-      '<div class="voc-main"><b class="voc-w">' + esc(w.word) + '</b><span class="voc-tr"></span></div>' +
-      (hint ? '<div class="voc-hint">' + hint + '</div>' : '') +
-      (w.context ? '<div class="voc-ctx">' + esc(w.context) + '</div>' : '') +
+    return '<div class="voc-row" data-w="' + esc(w.word) + '" role="button" tabindex="0">' +
+      '<div class="voc-main"><b class="voc-w">' + esc(w.word) + '</b>' +
+        '<span class="voc-ipa">' + esc(w.ipa || '') + '</span>' +
+      '</div>' +
       '<div class="voc-row-actions">' +
         '<button class="voc-tts" title="' + esc(t('pop_listen')) + '">🔊</button>' +
         '<button class="voc-del" title="' + esc(t('voc_remove')) + '">🗑</button>' +
       '</div></div>';
   }
+
   async function renderVocabView() {
     const r = await cmd('vocab'); const words = (r && r.savedWords) || [];
+    _savedWordsCache = words;
     savedWordSet = new Set(words.map((w) => (w.word || '').toLowerCase()));
     const box = $('#vocab-list');
     if (box) {
@@ -817,15 +910,249 @@
         box.innerHTML = words.map(vocabRow).join('');
         box.querySelectorAll('.voc-row').forEach((row) => {
           const word = row.dataset.w;
-          const tts = row.querySelector('.voc-tts'); if (tts) tts.onclick = () => speakText(word);
-          const del = row.querySelector('.voc-del'); if (del) del.onclick = async () => { await cmd('removeWord', { word }); markWordRemoved(word); renderVocabView(); };
-          const trEl = row.querySelector('.voc-tr');
-          if (trEl) fetchGloss(word).then((g) => { trEl.textContent = g || ''; });
+          const w = words.find((x) => x.word === word) || { word };
+          const tts = row.querySelector('.voc-tts'); if (tts) tts.onclick = (e) => { e.stopPropagation(); speakText(word); };
+          const del = row.querySelector('.voc-del'); if (del) del.onclick = async (e) => { e.stopPropagation(); await cmd('removeWord', { word }); markWordRemoved(word); renderVocabView(); };
+          row.onclick = () => showVocabDetail(w);
+          row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showVocabDetail(w); } };
+          if (!w.ipa) {
+            const ipaEl = row.querySelector('.voc-ipa');
+            fetchWordCard(word, w.lang).then((c) => { if (c.ipa && ipaEl) { ipaEl.textContent = c.ipa; w.ipa = c.ipa; cmd('updateWord', { word, fields: { ipa: c.ipa } }); } });
+          }
         });
       }
     }
+    updateVocabFoot();
     renderWeakWords();
   }
+
+  function updateVocabFoot() {
+    const el = $('#vocab-foot-count'); if (!el) return;
+    const weakOn = $('#weak-words-list') && !$('#weak-words-list').hidden;
+    el.textContent = weakOn ? Object.values(weakWords).filter((e) => e.miss > 0).length : (_savedWordsCache ? _savedWordsCache.length : 0);
+  }
+
+  // Khung chi tiết 1 từ (IPA · nghĩa · định nghĩa · ví dụ · ghi chú · Quên/Ôn lại).
+  async function showVocabDetail(w) {
+    const box = $('#vocab-detail'); if (!box) return;
+    const lang = w.lang || settings.targetLang || 'de';
+    box.hidden = false;
+    box.innerHTML = '<div class="vd-loading">' + esc(t('pop_loading', 'Đang tải…')) + '</div>';
+    try { box.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+    const [gloss, card] = await Promise.all([ fetchGloss(w.word).catch(() => ''), fetchWordCard(w.word, lang) ]);
+    const ipa = w.ipa || card.ipa || '';
+    const def = w.def || card.def || '';
+    const example = w.example || w.context || card.example || '';
+    const related = (Array.isArray(w.related) && w.related.length ? w.related : card.related) || [];
+    box.innerHTML =
+      '<div class="vd-head">' +
+        '<div class="vd-head-main"><b class="vd-word">' + esc(w.word) + '</b>' + (ipa ? '<span class="vd-ipa">' + esc(ipa) + '</span>' : '') + '</div>' +
+        '<button class="vd-tts" title="' + esc(t('pop_listen')) + '">🔊</button>' +
+        '<button class="vd-close" title="' + esc(t('close', 'Đóng')) + '">✕</button>' +
+      '</div>' +
+      (gloss ? '<div class="vd-gloss">' + esc(gloss) + '</div>' : '') +
+      (def ? '<div class="vd-block"><span class="vd-label" data-i18n="voc_def">Định nghĩa</span><div class="vd-text">' + esc(def) + '</div></div>' : '') +
+      (example ? '<div class="vd-block"><span class="vd-label" data-i18n="voc_example">Ví dụ</span><div class="vd-text vd-ex">' + esc(example) + '</div></div>' : '') +
+      '<div class="vd-block"><span class="vd-label" data-i18n="voc_notes">Ghi chú của bạn</span>' +
+        '<textarea class="vd-notes" placeholder="' + esc(t('voc_notes_ph', 'Thêm ghi chú…')) + '">' + esc(w.notes || '') + '</textarea></div>' +
+      (related.length ? '<div class="vd-block"><span class="vd-label" data-i18n="voc_related">Từ liên quan</span><div class="vd-chips">' + related.map((rw) => '<button class="vd-chip" data-rw="' + esc(rw) + '">' + esc(rw) + '</button>').join('') + '</div></div>' : '') +
+      '<div class="vd-actions">' +
+        '<button class="vd-forget" data-i18n="voc_forget">🗑 Quên từ này</button>' +
+        '<button class="vd-review" data-i18n="voc_review_one">🔁 Ôn lại</button>' +
+      '</div>';
+    box.querySelectorAll('.vd-chip').forEach((c) => { c.onclick = () => showVocabDetail({ word: c.dataset.rw, lang }); });
+    const ttsB = box.querySelector('.vd-tts'); if (ttsB) ttsB.onclick = () => speakText(w.word);
+    const closeB = box.querySelector('.vd-close'); if (closeB) closeB.onclick = () => { box.hidden = true; };
+    const ta = box.querySelector('.vd-notes'); if (ta) ta.onchange = () => { w.notes = ta.value; cmd('updateWord', { word: w.word, fields: { notes: ta.value } }); };
+    const forgetB = box.querySelector('.vd-forget'); if (forgetB) forgetB.onclick = async () => { await cmd('removeWord', { word: w.word }); markWordRemoved(w.word); box.hidden = true; renderVocabView(); };
+    const reviewB = box.querySelector('.vd-review'); if (reviewB) reviewB.onclick = () => { if (typeof openVocabGame === 'function') openVocabGame({ mode: 'speak', words: [w] }); };
+    // Lưu lại card đã tra để lần sau khỏi gọi mạng.
+    const patch = {};
+    if (ipa && !w.ipa) { w.ipa = ipa; patch.ipa = ipa; }
+    if (card.def && !w.def) { w.def = card.def; patch.def = card.def; }
+    if (example && !w.example) { w.example = example; patch.example = example; }
+    if (related.length && !(w.related && w.related.length)) { w.related = related; patch.related = related; }
+    if (lang && !w.lang) { w.lang = lang; patch.lang = lang; }
+    if (Object.keys(patch).length) cmd('updateWord', { word: w.word, fields: patch });
+    applyI18n(settings.uiLang || 'vi');
+  }
+
+  function switchVocabTab(tab) {
+    const isWeak = tab === 'weak';
+    const sv = $('#vocab-tab-saved'), wv = $('#vocab-tab-weak');
+    const sl = $('#vocab-list'), wl = $('#weak-words-list');
+    if (sv) sv.classList.toggle('on', !isWeak);
+    if (wv) wv.classList.toggle('on', isWeak);
+    if (sl) sl.hidden = isWeak;
+    if (wl) wl.hidden = !isWeak;
+    const d = $('#vocab-detail'); if (d) d.hidden = true;
+    updateVocabFoot();
+  }
+
+  async function playAllVocab() {
+    const weakOn = $('#weak-words-list') && !$('#weak-words-list').hidden;
+    const list = weakOn ? Object.values(weakWords).filter((e) => e.miss > 0).map((e) => e.word) : (_savedWordsCache || []).map((w) => w.word);
+    for (const word of list) { try { speakText(word); } catch (_) {} await new Promise((r) => setTimeout(r, 1100)); }
+  }
+
+  { const b = $('#vocab-tab-saved'); if (b) b.onclick = () => switchVocabTab('saved'); }
+  { const b = $('#vocab-tab-weak'); if (b) b.onclick = () => switchVocabTab('weak'); }
+  { const b = $('#vocab-foot-play'); if (b) b.onclick = () => playAllVocab(); }
+  { const b = $('#vocab-foot-game'); if (b) b.onclick = () => openVocabGame({ mode: 'menu' }); }
+
+  // ===== 🎮 GAME ÔN TỪ VỰNG — tái dùng ĐÚNG pipeline chấm điểm (mic→Whisper→phonetic) + dịch =====
+  let _vgState = null;
+  function vgShuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const tmp = a[i]; a[i] = a[j]; a[j] = tmp; } return a; }
+  function closeVocabGame() {
+    const ov = $('#vocab-game'); if (ov) ov.hidden = true;
+    _vgState = null;
+    try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {}
+    try { speechSynthesis.cancel(); } catch (_) {}
+  }
+  async function gameLoadPool(kind) {
+    if (kind === 'weak') return Object.values(weakWords).filter((e) => e.miss > 0).map((e) => ({ word: e.word, lang: settings.targetLang }));
+    if (kind === 'sentences') { try { const r = await cmd('savedSentences'); return ((r && r.savedSentences) || []).map((s) => ({ word: s.text, trans: s.trans, sentence: true, lang: settings.targetLang })); } catch (_) { return []; } }
+    try { const r = await cmd('vocab'); return ((r && r.savedWords) || []).map((w) => ({ word: w.word, trans: '', ipa: w.ipa, lang: w.lang || settings.targetLang })); } catch (_) { return []; }
+  }
+  async function openVocabGame(opts) {
+    opts = opts || {};
+    const ov = $('#vocab-game'); if (!ov) return;
+    ov.hidden = false;
+    if (!opts.mode || opts.mode === 'menu') { renderGameMenu(); return; }
+    let pool = opts.words;
+    if (!pool || !pool.length) pool = await gameLoadPool(opts.pool || 'saved');
+    if (!pool.length) { renderGameMenu(t('game_empty', 'Chưa có từ nào để ôn — hãy lưu từ trước.')); return; }
+    _vgState = { mode: opts.mode, pool: vgShuffle(pool), idx: 0, correct: 0 };
+    renderGameStep();
+  }
+  function renderGameMenu(msg) {
+    const body = $('#vg-body'); if (!body) return;
+    const ttl = $('#vg-title'); if (ttl) ttl.textContent = t('game_title', '🎮 Ôn tập từ vựng');
+    const modes = [
+      { m: 'flashcard', icon: '🃏', label: t('game_flashcard', 'Lật thẻ') },
+      { m: 'choice', icon: '🔤', label: t('game_choice', 'Trắc nghiệm') },
+      { m: 'type', icon: '⌨️', label: t('game_type', 'Nghe & gõ') },
+      { m: 'speak', icon: '🎤', label: t('game_speak', 'Nói & chấm') },
+    ];
+    body.innerHTML =
+      (msg ? '<div class="vg-msg">' + esc(msg) + '</div>' : '') +
+      '<div class="vg-pool"><label data-i18n="game_pool">Nguồn từ</label>' +
+        '<select id="vg-pool-sel" class="setting-select">' +
+          '<option value="saved">' + esc(t('voc_tab_saved', 'Từ đã lưu')) + '</option>' +
+          '<option value="weak">' + esc(t('voc_tab_weak', 'Phát âm yếu')) + '</option>' +
+          '<option value="sentences">' + esc(t('game_pool_sent', 'Câu đã lưu')) + '</option>' +
+        '</select></div>' +
+      '<div class="vg-modes">' + modes.map((x) => '<button class="vg-mode" data-m="' + x.m + '"><span class="vg-mode-ico">' + x.icon + '</span>' + esc(x.label) + '</button>').join('') + '</div>';
+    body.querySelectorAll('.vg-mode').forEach((b) => { b.onclick = () => { const pool = ($('#vg-pool-sel') || {}).value || 'saved'; openVocabGame({ mode: b.dataset.m, pool }); }; });
+  }
+  function gameProgressHtml() { const s = _vgState; return s ? '<div class="vg-prog">' + (s.idx + 1) + ' / ' + s.pool.length + ' · ✓ ' + s.correct + '</div>' : ''; }
+  function gameNext() { const s = _vgState; if (!s) return; s.idx++; if (s.idx >= s.pool.length) { renderGameDone(); return; } renderGameStep(); }
+  function renderGameDone() {
+    const s = _vgState; const body = $('#vg-body'); if (!body || !s) return;
+    const pct = s.pool.length ? Math.round(s.correct / s.pool.length * 100) : 0;
+    body.innerHTML = '<div class="vg-done"><div class="vg-done-pct">' + pct + '%</div>' +
+      '<div class="vg-done-sub">' + esc(t('game_done', 'Hoàn thành!')) + ' ✓ ' + s.correct + '/' + s.pool.length + '</div>' +
+      '<div class="vg-actions"><button class="vg-btn vg-btn--primary" id="vg-again">' + esc(t('game_again', '🔁 Chơi lại')) + '</button>' +
+      '<button class="vg-btn" id="vg-menu">' + esc(t('game_menu', '☰ Chọn chế độ')) + '</button></div></div>';
+    const a = $('#vg-again'); if (a) a.onclick = () => { _vgState.idx = 0; _vgState.correct = 0; _vgState.pool = vgShuffle(_vgState.pool); renderGameStep(); };
+    const m = $('#vg-menu'); if (m) m.onclick = () => renderGameMenu();
+  }
+  function renderGameStep() {
+    const s = _vgState; if (!s) return;
+    if (s.mode === 'flashcard') return gameFlashcard();
+    if (s.mode === 'choice') return gameChoice();
+    if (s.mode === 'type') return gameType();
+    if (s.mode === 'speak') return gameSpeak();
+  }
+  async function gameFlashcard() {
+    const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
+    body.innerHTML = gameProgressHtml() +
+      '<div class="vg-card"><div class="vg-word">' + esc(it.word) + '</div>' +
+      '<button class="vg-tts" title="' + esc(t('pop_listen')) + '">🔊</button>' +
+      '<div class="vg-back" id="vg-back" hidden></div></div>' +
+      '<div class="vg-actions" id="vg-actions"><button class="vg-btn vg-btn--primary" id="vg-reveal">' + esc(t('game_reveal', 'Hiện nghĩa')) + '</button></div>';
+    const tts = body.querySelector('.vg-tts'); if (tts) tts.onclick = () => speakText(it.word);
+    $('#vg-reveal').onclick = async () => {
+      const back = $('#vg-back'); back.textContent = it.trans || (await fetchGloss(it.word)) || '—'; back.hidden = false;
+      $('#vg-actions').innerHTML = '<button class="vg-btn vg-btn--hard" id="vg-hard">' + esc(t('fc_hard', 'Khó')) + '</button><button class="vg-btn vg-btn--good" id="vg-good">' + esc(t('fc_good', 'Tốt')) + '</button>';
+      $('#vg-hard').onclick = () => gameNext();
+      $('#vg-good').onclick = () => { s.correct++; gameMarkLearned(it.word); gameNext(); };
+    };
+  }
+  async function gameChoice() {
+    const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
+    body.innerHTML = gameProgressHtml() + '<div class="vg-card"><div class="vg-word">' + esc(it.word) + '</div><button class="vg-tts">🔊</button></div><div class="vg-loading">' + esc(t('pop_loading', 'Đang tải…')) + '</div>';
+    body.querySelector('.vg-tts').onclick = () => speakText(it.word);
+    const correct = it.trans || (await fetchGloss(it.word)) || it.word;
+    const others = vgShuffle(s.pool.filter((x) => x.word !== it.word)).slice(0, 6);
+    const distr = [];
+    for (const o of others) { if (distr.length >= 3) break; const g = o.trans || (await fetchGloss(o.word)); if (g && g !== correct && distr.indexOf(g) < 0) distr.push(g); }
+    while (distr.length < 3) distr.push('—');
+    const options = vgShuffle([correct].concat(distr));
+    body.innerHTML = gameProgressHtml() + '<div class="vg-card"><div class="vg-word">' + esc(it.word) + '</div><button class="vg-tts">🔊</button></div>' +
+      '<div class="vg-opts">' + options.map((o) => '<button class="vg-opt" data-c="' + (o === correct ? '1' : '0') + '">' + esc(o) + '</button>').join('') + '</div>';
+    body.querySelector('.vg-tts').onclick = () => speakText(it.word);
+    body.querySelectorAll('.vg-opt').forEach((b) => { b.onclick = () => {
+      const ok = b.dataset.c === '1';
+      body.querySelectorAll('.vg-opt').forEach((x) => { x.disabled = true; if (x.dataset.c === '1') x.classList.add('vg-opt--ok'); });
+      if (ok) { s.correct++; gameMarkLearned(it.word); } else { b.classList.add('vg-opt--bad'); }
+      setTimeout(gameNext, 850);
+    }; });
+  }
+  function gameType() {
+    const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
+    body.innerHTML = gameProgressHtml() +
+      '<div class="vg-card"><button class="vg-tts vg-tts--big" title="' + esc(t('pop_listen')) + '">🔊 ' + esc(t('game_replay', 'Nghe lại')) + '</button></div>' +
+      '<input class="vg-input" id="vg-input" type="text" autocomplete="off" placeholder="' + esc(t('game_type_ph', 'Gõ từ bạn nghe…')) + '">' +
+      '<div class="vg-actions"><button class="vg-btn vg-btn--primary" id="vg-check">' + esc(t('game_check', 'Kiểm tra')) + '</button></div>' +
+      '<div class="vg-result" id="vg-result" hidden></div>';
+    speakText(it.word);
+    body.querySelector('.vg-tts').onclick = () => speakText(it.word);
+    const input = $('#vg-input'); if (input) { input.focus(); input.onkeydown = (e) => { if (e.key === 'Enter') doCheck(); }; }
+    function doCheck() {
+      const val = (($('#vg-input') || {}).value || '').trim().toLowerCase();
+      const ok = val === String(it.word).trim().toLowerCase();
+      const res = $('#vg-result'); res.hidden = false; res.className = 'vg-result ' + (ok ? 'ok' : 'bad');
+      res.textContent = ok ? '✓ ' + t('game_correct', 'Chính xác!') : '✗ ' + it.word;
+      if (ok) { s.correct++; gameMarkLearned(it.word); }
+      setTimeout(gameNext, 1100);
+    }
+    const cb = $('#vg-check'); if (cb) cb.onclick = doCheck;
+  }
+  async function gameSpeak() {
+    const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
+    body.innerHTML = gameProgressHtml() +
+      '<div class="vg-card"><div class="vg-word">' + esc(it.word) + '</div><button class="vg-tts">🔊</button></div>' +
+      '<div class="vg-actions"><button class="vg-btn vg-btn--primary" id="vg-rec">🎤 ' + esc(t('game_speak_btn', 'Nói')) + '</button><button class="vg-btn" id="vg-skip">' + esc(t('game_skip', 'Bỏ qua')) + '</button></div>' +
+      '<div class="vg-result" id="vg-result" hidden></div>';
+    body.querySelector('.vg-tts').onclick = () => speakText(it.word);
+    const sk = $('#vg-skip'); if (sk) sk.onclick = () => gameNext();
+    const rec = $('#vg-rec'); if (rec) rec.onclick = async () => {
+      if (!window.ShadowMic || !window.ShadowMic.recordAndTranscribe) { setStatus(t('mic_not_ready', 'Mic chưa sẵn sàng — tải lại extension.'), 'warn'); return; }
+      rec.disabled = true; rec.textContent = '● ' + t('st_listening', 'Đang nghe…');
+      let res;
+      try { res = await window.ShadowMic.recordAndTranscribe({ maxMs: 5000, lang2: it.lang || settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad }); }
+      catch (e) { res = { error: 'rec' }; }
+      rec.disabled = false; rec.textContent = '🎤 ' + t('game_speak_btn', 'Nói');
+      const res2 = $('#vg-result'); res2.hidden = false;
+      if (!res || res.error || !res.transcript) { res2.className = 'vg-result bad'; res2.textContent = '✗ ' + t('empty_heard', 'Không nghe rõ — thử lại.'); return; }
+      let score = null;
+      try { if (window.SD && window.SD.phonetic) score = window.SD.phonetic.analyze(it.word, res.transcript, { lang: it.lang || settings.targetLang || 'de' }); } catch (_) {}
+      const pct = score ? Math.round(score.overall) : 0;
+      const ok = pct >= 70;
+      res2.className = 'vg-result ' + (ok ? 'ok' : 'bad');
+      res2.textContent = (ok ? '✓ ' : '✗ ') + pct + '% · ' + t('you_said', 'Bạn nói') + ': ' + (res.transcript || '');
+      if (ok) { s.correct++; gameMarkLearned(it.word); }
+      setTimeout(gameNext, 1600);
+    };
+  }
+  function gameMarkLearned(word) {
+    const key = String(word || '').toLowerCase();
+    if (weakWords[key] && weakWords[key].miss > 0) { weakWords[key].miss--; if (weakWords[key].miss <= 0) delete weakWords[key]; try { chrome.storage.local.set({ [WEAK_KEY]: weakWords }); } catch (_) {} }
+  }
+  { const b = $('#vg-close'); if (b) b.onclick = closeVocabGame; }
+  { const ov = $('#vocab-game'); if (ov) ov.onclick = (e) => { if (e.target === ov) closeVocabGame(); }; }
+
   function markWordRemoved(word) { if (savedWordSet) savedWordSet.delete(String(word || '').toLowerCase()); }
 
   // ---- Controls / commands ----
@@ -860,9 +1187,25 @@
     // Nạp sẵn model mới chọn để lần ghi âm sau không phải chờ
     try { if (settings.engine === 'whisper' && window.ShadowMic) window.ShadowMic.warmupWhisper(settings.whisperModel); } catch (_) {}
   };
-  bindSetting('target', 'targetLang', 'str'); bindSetting('native', 'nativeLang', 'str'); bindSetting('serverurl', 'serverUrl', 'str');
+  // Ngôn ngữ HỌC/DỊCH: lưu + đẩy xuống content script (tự nạp lại track) + xoá cache + render lại.
+  { const el = $('#target'); if (el) el.onchange = () => { settings.targetLang = el.value; cmd('settings', settings); onLearningLangChanged(); }; }
+  { const el = $('#native'); if (el) el.onchange = () => { settings.nativeLang = el.value; cmd('settings', settings); onLearningLangChanged(); }; }
+  bindSetting('serverurl', 'serverUrl', 'str');
+  // Công tắc master Bật/Tắt extension — đồng bộ 2 chiều với chip ON/OFF trên video.
+  { const sw = $('#extEnabled'); if (sw) sw.onchange = () => {
+    settings.extEnabled = sw.checked;
+    cmd('extEnabled', { on: sw.checked });
+    applyMasterUI(sw.checked);
+    setStatus(sw.checked ? t('ext_on', 'Đã bật extension') : t('ext_off', 'Đã tắt extension'), sw.checked ? 'ok' : 'warn');
+  }; }
   $('#vsubs').onchange = (e) => { settings.videoSubs = e.target.checked; cmd('settings', settings); cmd('vsubs', { on: e.target.checked }); };
-  $('#uilang').onchange = (e) => { settings.uiLang = e.target.value; cmd('settings', settings); applyI18n(settings.uiLang); };
+  $('#uilang').onchange = (e) => {
+    settings.uiLang = e.target.value; cmd('settings', settings); applyI18n(settings.uiLang);
+    // Render lại các view động để chuỗi đổi ngôn ngữ ngay (không sót tiếng cũ).
+    try { refreshActivePanel(); } catch (_) {}
+    try { renderList(); } catch (_) {}
+    try { const sv = $('#section-vocab'); if (sv && sv.open) renderVocabView(); } catch (_) {}
+  };
   function applySettings() {
     $('#rate').value = settings.rate; $('#rep').value = settings.repeat; $('#autonext').checked = settings.autoNext;
     $('#autorec').checked = settings.autoRecord; $('#engine').value = settings.engine; $('#offset').value = settings.offsetMs;
@@ -874,8 +1217,26 @@
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
     $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;
     if ($('#serverurl')) $('#serverurl').value = settings.serverUrl || 'http://localhost:8000';
+    if ($('#extEnabled')) $('#extEnabled').checked = settings.extEnabled !== false;
+    applyMasterUI(settings.extEnabled !== false);
     applyBlur(!!settings.hideText);
     applyI18n(settings.uiLang || 'vi');
+  }
+
+  // Phản ánh trạng thái master ON/OFF lên giao diện side panel.
+  function applyMasterUI(on) {
+    document.body.classList.toggle('ext-off', !on);
+    const sw = $('#extEnabled'); if (sw) sw.checked = !!on;
+  }
+
+  // Đổi ngôn ngữ HỌC/DỊCH: xoá cache dịch + render lại các view phụ thuộc ngôn ngữ.
+  // (Việc nạp lại track phụ đề do content script xử lý trong case 'settings'/'reloadForLang'.)
+  function onLearningLangChanged() {
+    try { for (const k in transCache) delete transCache[k]; } catch (_) {}
+    try { for (const k in glossCache) delete glossCache[k]; } catch (_) {}
+    try { renderList(); } catch (_) {}
+    try { if (sentences[current]) renderNow({ idx: current, total: sentences.length, sentence: sentences[current] }); } catch (_) {}
+    try { refreshActivePanel(); } catch (_) {}
   }
 
   // ===== Che do an/mo chu (tu kiem tra) =====
@@ -917,6 +1278,32 @@
   // Listen for tab changes
   chrome.tabs.onActivated.addListener(refresh);
   chrome.tabs.onUpdated.addListener((id, info) => { if (info.status === 'complete') refresh(); });
+
+  // ===== A0: Đồng bộ realtime qua chrome.storage.onChanged =====
+  // Chip ON/OFF trên video, đổi ngôn ngữ học, hoặc đổi giao diện ở nơi khác → panel cập nhật ngay.
+  // Diff với `settings` hiện tại nên thay đổi do CHÍNH panel này gây ra sẽ là no-op (không vòng lặp).
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.sd_data_v1) return;
+      const nv = (changes.sd_data_v1.newValue && changes.sd_data_v1.newValue.settings) || null;
+      if (!nv) return;
+      if (nv.extEnabled !== undefined && nv.extEnabled !== settings.extEnabled) {
+        settings.extEnabled = nv.extEnabled; applyMasterUI(nv.extEnabled !== false);
+      }
+      if (nv.uiLang && nv.uiLang !== settings.uiLang) {
+        settings.uiLang = nv.uiLang;
+        const ul = $('#uilang'); if (ul) ul.value = nv.uiLang;
+        applyI18n(nv.uiLang); try { refreshActivePanel(); } catch (_) {}
+      }
+      if ((nv.targetLang && nv.targetLang !== settings.targetLang) || (nv.nativeLang && nv.nativeLang !== settings.nativeLang)) {
+        settings.targetLang = nv.targetLang || settings.targetLang;
+        settings.nativeLang = nv.nativeLang || settings.nativeLang;
+        const te = $('#target'); if (te) te.value = settings.targetLang;
+        const ne = $('#native'); if (ne) ne.value = settings.nativeLang;
+        onLearningLangChanged();
+      }
+    });
+  } catch (_) {}
 
   // ===== Dịch thuật qua Cloudflare Worker (API keys lưu phía server, mã hóa an toàn) =====
   // Khách hàng chỉ cần nhập License Key — không thấy DeepL/OpenRouter keys.
@@ -1022,18 +1409,53 @@
       : !!(out && String(out).trim());
   }
 
+  // Dịch qua BACKGROUND service worker (Microsoft → Google → MyMemory). Background SW
+  // không bị page-CSP/CORS và giữ token Microsoft riêng → ổn định hơn gọi trực tiếp.
+  function bgTranslate(text, from, to) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ sd: 'translate', text, from, to }, (res) => {
+          if (chrome.runtime.lastError) { resolve(''); return; }
+          resolve((res && res.ok && res.text) || '');
+        });
+      } catch (_) { resolve(''); }
+    });
+  }
+
+  const _transFail = {}; // negative-cache: ck -> timestamp (tránh gọi dồn dập khi vừa fail hết)
+
   async function translateText(text, from, to) {
     if (!text) return '';
+    if (from && to && from === to) return text; // học = dịch sang cùng ngôn ngữ → khỏi dịch
     const ck = from + '|' + to + '|' + text;
     if (transCache[ck]) return transCache[ck];
-    // Ưu tiên cho dịch ĐOẠN + TỪ: DeepL → Google → Microsoft → MyMemory.
-    // Mỗi nguồn đều KIỂM TRA kết quả trước khi nhận; rỗng/sai thì hạ xuống nguồn kế.
-    // (DeepL cần đăng nhập; nếu chưa đăng nhập sẽ trả rỗng nhanh và nhảy sang Google.)
-    try { const d = await deeplTranslate(text, from, to); if (validTrans(d, text, from, to)) { transCache[ck] = d; return d; } } catch (e) {}
-    try { const g = await googleFreeTranslate(text, from, to); if (validTrans(g, text, from, to)) { transCache[ck] = g; return g; } } catch (e) {}
-    try { const ms = await microsoftFreeTranslate(text, from, to); if (validTrans(ms, text, from, to)) { transCache[ck] = ms; return ms; } } catch (e) {}
-    try { const t = await myMemoryTranslate(text, from, to); if (validTrans(t, text, from, to)) { transCache[ck] = t; return t; } } catch (e) {}
-    // Tất cả nguồn dịch đều thất bại — báo về Worker /log để theo dõi
+    if (_transFail[ck] && Date.now() - _transFail[ck] < 30000) return ''; // vừa thất bại → chờ 30s
+
+    // Thứ tự: background SW (chắc chắn) → DeepL → Google → Microsoft → MyMemory.
+    // Mỗi nguồn đều KIỂM TRA kết quả; rỗng/sai thì hạ xuống nguồn kế. Thử 2 vòng có backoff.
+    const attempts = [
+      () => bgTranslate(text, from, to),
+      () => deeplTranslate(text, from, to),
+      () => googleFreeTranslate(text, from, to),
+      () => microsoftFreeTranslate(text, from, to),
+      () => myMemoryTranslate(text, from, to),
+    ];
+    for (let pass = 0; pass < 2; pass++) {
+      for (const fn of attempts) {
+        try { const out = await fn(); if (validTrans(out, text, from, to)) { transCache[ck] = out; delete _transFail[ck]; return out; } } catch (e) {}
+      }
+      if (pass === 0) await new Promise((r) => setTimeout(r, 500)); // backoff trước vòng 2
+    }
+    // Tầng CUỐI: AI qua Worker (tốn quota → để cuối) khi đã đăng nhập.
+    try {
+      if (typeof ShadowAuth !== 'undefined' && ShadowAuth.isLoggedIn() && !_quotaHitAI) {
+        const ai = await openrouterTranslate(text, from, to, OR_MODELS[0]);
+        if (validTrans(ai, text, from, to)) { transCache[ck] = ai; delete _transFail[ck]; return ai; }
+      }
+    } catch (e) {}
+
+    // Tất cả nguồn dịch đều thất bại — ghi negative-cache + báo về Worker /log để theo dõi.
+    _transFail[ck] = Date.now();
     try { if (self.ShadowReport) self.ShadowReport.error('all-translate-failed', { from, to, len: text.length }, 'translateText'); } catch (_) {}
     return '';
   }
@@ -1137,26 +1559,25 @@
   function renderWeakWords() {
     const box = $('#weak-words-list'); if (!box) return;
     const arr = Object.values(weakWords).filter((e) => e.miss > 0)
-      .sort((a, b) => b.miss - a.miss || b.updatedAt - a.updatedAt).slice(0, 40);
-    if (!arr.length) { box.innerHTML = '<div class="voc-empty">' + esc(t('weak_empty')) + '</div>'; return; }
-    box.innerHTML = arr.map((e) => {
-      const hint = vocabHint(e.word);
-      return '<div class="voc-row voc-row--weak" data-w="' + esc(e.word) + '">' +
+      .sort((a, b) => b.miss - a.miss || b.updatedAt - a.updatedAt).slice(0, 60);
+    if (!arr.length) { box.innerHTML = '<div class="voc-empty">' + esc(t('weak_empty')) + '</div>'; updateVocabFoot(); return; }
+    box.innerHTML = arr.map((e) =>
+      '<div class="voc-row voc-row--weak" data-w="' + esc(e.word) + '" role="button" tabindex="0">' +
         '<div class="voc-main"><b class="voc-w">' + esc(e.word) + '</b>' +
         '<span class="weak-word-count" title="' + esc(t('weak_miss')) + '">×' + e.miss + '</span></div>' +
-        (hint ? '<div class="voc-hint">' + hint + '</div>' : '') +
         '<div class="voc-row-actions">' +
           '<button class="voc-tts" title="' + esc(t('pop_listen')) + '">🔊</button>' +
           '<button class="voc-del" title="' + esc(t('voc_remove')) + '">🗑</button>' +
-        '</div></div>';
-    }).join('');
+        '</div></div>').join('');
     box.querySelectorAll('.voc-row').forEach((row) => {
       const word = row.dataset.w; const key = word.toLowerCase();
-      const tts = row.querySelector('.voc-tts'); if (tts) tts.onclick = () => speakText(word);
-      const del = row.querySelector('.voc-del'); if (del) del.onclick = () => {
-        delete weakWords[key]; try { chrome.storage.local.set({ [WEAK_KEY]: weakWords }); } catch (_) {} renderWeakWords();
+      const tts = row.querySelector('.voc-tts'); if (tts) tts.onclick = (e) => { e.stopPropagation(); speakText(word); };
+      const del = row.querySelector('.voc-del'); if (del) del.onclick = (e) => {
+        e.stopPropagation(); delete weakWords[key]; try { chrome.storage.local.set({ [WEAK_KEY]: weakWords }); } catch (_) {} renderWeakWords();
       };
+      row.onclick = () => showVocabDetail({ word, lang: settings.targetLang });
     });
+    updateVocabFoot();
   }
 
   // ===== 🏷️ SENTENCE STATUS (LingQ-style: new/learning/known) =====
@@ -1220,7 +1641,8 @@
       const targetEl = document.getElementById('target');
       if (targetEl) targetEl.value = selectedLang;
       settings.targetLang = selectedLang;
-      cmd('settings', settings); // push to content script
+      cmd('settings', settings); // push to content script (cũng tự nạp lại track theo ngôn ngữ)
+      onLearningLangChanged();
     }
     await chrome.storage.local.set({ [ONBOARD_KEY]: true });
     showView('list');
@@ -1717,6 +2139,14 @@
       st_listening:'Đang nghe…', st_transcribing:'Đang nhận dạng…', st_scoring:'Đang chấm…', st_ready:'Sẵn sàng', st_playing:'Đang phát…', st_paused:'Đã tạm dừng', st_ad:'Đang chờ quảng cáo kết thúc…',
       stop:'⏹ Dừng', finalize:'✅ Tôi nói xong → chấm', fav_run:'▶️ Tự luyện dòng ⭐',
       empty_list:'Chưa có phụ đề. Mở video trên YouTube — phụ đề sẽ tự tải.', pr_back:'← Quay lại',
+      // Master toggle + câu đã lưu + vocab redesign + game
+      set_master:'Bật extension', ext_on:'Đã bật extension', ext_off:'Đã tắt extension',
+      sent_saved:'⭐ Đã lưu câu vào kho từ vựng.', sent_unsaved:'Đã bỏ câu khỏi kho.', trans_unavailable:'🌐 Tạm thời không dịch được — thử lại sau.',
+      voc_tab_saved:'📚 Từ đã lưu', voc_tab_weak:'⚠️ Phát âm yếu', voc_total:'từ', voc_play_all:'▶ Phát tất cả', voc_review:'🎮 Ôn tập',
+      voc_def:'Định nghĩa', voc_example:'Ví dụ', voc_notes:'Ghi chú của bạn', voc_notes_ph:'Thêm ghi chú…', voc_related:'Từ liên quan', voc_review_one:'🔁 Ôn lại', voc_forget:'🗑 Quên từ này', close:'Đóng',
+      game_title:'🎮 Ôn tập từ vựng', game_empty:'Chưa có từ nào để ôn — hãy lưu từ trước.', game_flashcard:'Lật thẻ', game_choice:'Trắc nghiệm', game_type:'Nghe & gõ', game_speak:'Nói & chấm',
+      game_pool:'Nguồn từ', game_pool_sent:'Câu đã lưu', game_reveal:'Hiện nghĩa', game_done:'Hoàn thành!', game_again:'🔁 Chơi lại', game_menu:'☰ Chọn chế độ', game_correct:'Chính xác!', game_check:'Kiểm tra', game_type_ph:'Gõ từ bạn nghe…', game_replay:'Nghe lại', game_speak_btn:'Nói', game_skip:'Bỏ qua',
+      you_said:'Bạn nói', empty_heard:'Không nghe rõ — thử lại.', mic_not_ready:'Mic chưa sẵn sàng — tải lại extension.',
     },
     en: {
       tab_practice:'Practice', tab_vocab:'Words', tab_flash:'Cards', tab_progress:'Progress',
@@ -1739,6 +2169,42 @@
       st_listening:'Listening…', st_transcribing:'Transcribing…', st_scoring:'Scoring…', st_ready:'Ready', st_playing:'Playing…', st_paused:'Paused', st_ad:'Waiting for ad to end…',
       stop:'⏹ Stop', finalize:'✅ Done speaking → score', fav_run:'▶️ Practice ⭐ lines',
       empty_list:'No subtitles yet. Open a video on YouTube — subtitles load automatically.', pr_back:'← Back',
+      set_master:'Enable extension', ext_on:'Extension on', ext_off:'Extension off',
+      sent_saved:'⭐ Sentence saved to your vocabulary.', sent_unsaved:'Sentence removed.', trans_unavailable:'🌐 Translation unavailable — try again later.',
+      voc_tab_saved:'📚 Saved words', voc_tab_weak:'⚠️ Weak words', voc_total:'words', voc_play_all:'▶ Play all', voc_review:'🎮 Review',
+      voc_def:'Definition', voc_example:'Example', voc_notes:'Your notes', voc_notes_ph:'Add a note…', voc_related:'Related words', voc_review_one:'🔁 Review', voc_forget:'🗑 Forget this word', close:'Close',
+      game_title:'🎮 Vocabulary review', game_empty:'No words to review — save some words first.', game_flashcard:'Flashcards', game_choice:'Multiple choice', game_type:'Listen & type', game_speak:'Speak & score',
+      game_pool:'Word source', game_pool_sent:'Saved sentences', game_reveal:'Reveal', game_done:'Done!', game_again:'🔁 Play again', game_menu:'☰ Modes', game_correct:'Correct!', game_check:'Check', game_type_ph:'Type what you hear…', game_replay:'Replay', game_speak_btn:'Speak', game_skip:'Skip',
+      you_said:'You said', empty_heard:"Didn't catch that — try again.", mic_not_ready:'Mic not ready — reload the extension.',
+    },
+    de: {
+      tab_practice:'Üben', tab_vocab:'Wörter', tab_flash:'Karten', tab_progress:'Fortschritt',
+      nohost:'Öffne ein YouTube- oder Netflix-Video und komm hierher zurück.',
+      ob_title:'Schnellstart', ob1:'Öffne ein deutsches Video auf YouTube.', ob2:'Untertitel laden automatisch nach ein paar Sekunden — nichts zu tun.', ob3:'Klicke „Mikro an" und erlaube den Mikrofonzugriff.', ob4:'Klicke einen Satz → sprich ihn nach → sieh deine Punktzahl.', ob_close:'Verstanden',
+      status_init:'Öffne ein Video auf YouTube — Untertitel laden automatisch.',
+      sec_settings:'Einstellungen', set_target:'Lernsprache', set_native:'Übersetzen nach', set_vsubs:'Untertitel im Video', set_uilang:'Oberflächensprache',
+      at_mic:'Mikro an', at_dict:'Diktat', at_cloze:'Lücken', at_vocab:'Wortschatz', at_menu:'Menü',
+      tt_mic:'Mikrofon erlauben, um die Aussprache zu bewerten', tt_dict:'Diktat: hören und den ganzen Satz tippen', tt_cloze:'Fehlende Wörter ergänzen', tt_vocab:'Gespeicherte & schwache Wörter', tt_menu:'Einstellungen öffnen', tt_loop:'Einen Satz wiederholen (Taste L)',
+      bt_prev:'Zurück', bt_play:'Play', bt_pause:'Pause', bt_next:'Weiter', bt_loop:'Schleife',
+      t_prev:'Vorheriger', t_play:'Play/Pause', t_loop:'Einen wiederholen', t_next:'Nächster', t_shadow:'Üben', t_listen:'Hören', t_dict:'Diktat', t_cloze:'Lücken füllen', t_blur:'Text verbergen (Selbsttest)',
+      kbd_hint:'⌨ Leertaste: sprechen · ◀ ▶: Satz · ▲ ▼: Tempo · R: hören · L: Schleife · B: verbergen',
+      tc_title:'Diesen Satz üben', tc_pause_on:'⏸ Auto-Pause: An', tc_pause_off:'▶ Auto-Pause: Aus', tc_pause_msg_on:'⏸ Auto-Pause nach jedem Satz: AN', tc_pause_msg_off:'▶ Auto-Pause nach jedem Satz: AUS', tc_next:'Weiter ›', tc_listen:'▷ Hören', tc_speak:'🎤 Sprechen & bewerten', tc_fav:'Diesen Satz favorisieren',
+      rp_ready:'Bereit', rp_target:'Übung läuft', rp_match:'Übereinstimmung %', rp_yousaid:'DU SAGTEST',
+      rp_listen:'🔊 Anhören', rp_replay:'🔁 Wiederholen', rescore_go:'🎤 Bewerten', rescore_stop:'⏹ Stopp & bewerten', wd_speak:'🔊 Richtige Aussprache hören',
+      menu_title:'Menü', menu_logout:'Abmelden', usage_trans:'Übersetzungen heute', usage_ai:'KI heute', btn_upgrade:'⚡ Auf Pro upgraden',
+      sec_vocab:'Wortschatz', sec_flash:'Lernkarten', voc_saved_title:'📚 Gespeicherte Wörter', voc_weak_title:'⚠️ Schwache Wörter', fc_hard:'Schwer', fc_good:'Gut', fc_skip:'Überspringen', flash_empty:'⭐ Füge Lieblingssätze hinzu, um Lernkarten zu üben!',
+      pop_listen:'Hören', pop_save:'Speichern', pop_saved:'Gespeichert', pop_loading:'… wird übersetzt', pop_nomean:'(keine Übersetzung)', pop_pron:'Aussprache',
+      voc_remove:'Entfernen', voc_empty:'Noch keine Wörter. Klicke ein Wort im Satz und ⭐ Speichern.', weak_empty:'Noch keine schwachen Wörter — übe weiter! 💪', weak_miss:'Falsch ausgesprochen',
+      st_listening:'Hört zu…', st_transcribing:'Erkenne…', st_scoring:'Bewerte…', st_ready:'Bereit', st_playing:'Spielt…', st_paused:'Pausiert', st_ad:'Warte auf das Ende der Werbung…',
+      stop:'⏹ Stopp', finalize:'✅ Fertig gesprochen → bewerten', fav_run:'▶️ ⭐-Sätze üben',
+      empty_list:'Noch keine Untertitel. Öffne ein Video auf YouTube — sie laden automatisch.', pr_back:'← Zurück',
+      set_master:'Extension aktivieren', ext_on:'Extension an', ext_off:'Extension aus',
+      sent_saved:'⭐ Satz im Wortschatz gespeichert.', sent_unsaved:'Satz entfernt.', trans_unavailable:'🌐 Übersetzung nicht verfügbar — später erneut versuchen.',
+      voc_tab_saved:'📚 Gespeichert', voc_tab_weak:'⚠️ Schwach', voc_total:'Wörter', voc_play_all:'▶ Alle abspielen', voc_review:'🎮 Üben',
+      voc_def:'Definition', voc_example:'Beispiel', voc_notes:'Deine Notizen', voc_notes_ph:'Notiz hinzufügen…', voc_related:'Verwandte Wörter', voc_review_one:'🔁 Wiederholen', voc_forget:'🗑 Wort vergessen', close:'Schließen',
+      game_title:'🎮 Wortschatz üben', game_empty:'Keine Wörter zum Üben — speichere zuerst Wörter.', game_flashcard:'Karten', game_choice:'Multiple Choice', game_type:'Hören & tippen', game_speak:'Sprechen & bewerten',
+      game_pool:'Wortquelle', game_pool_sent:'Gespeicherte Sätze', game_reveal:'Aufdecken', game_done:'Fertig!', game_again:'🔁 Nochmal', game_menu:'☰ Modi', game_correct:'Richtig!', game_check:'Prüfen', game_type_ph:'Tippe, was du hörst…', game_replay:'Wiederholen', game_speak_btn:'Sprechen', game_skip:'Überspringen',
+      you_said:'Du sagtest', empty_heard:'Nicht verstanden — versuch es nochmal.', mic_not_ready:'Mikro nicht bereit — Extension neu laden.',
     },
   };
   // Tra cứu chuỗi UI theo ngôn ngữ đang chọn (cho chuỗi động trong JS).
@@ -1988,15 +2454,16 @@
   // Toolbar buttons wiring
   { const b = $('#btn-play-pause'); if (b) b.onclick = () => cmd('togglePlay', { target: settings.targetLang, native: settings.nativeLang }); }
   { const b = $('#btn-shadow'); if (b) b.onclick = () => { showRecordPanel(true); scoreNow(); }; }
-  { const b = $('#btn-prev'); if (b) b.onclick = () => { manualSelectIdx = Math.max(0, current - 1); manualSelectUntil = Date.now() + 750; cmd('prev'); }; }
-  { const b = $('#btn-next'); if (b) b.onclick = () => { manualSelectIdx = Math.min(sentences.length - 1, current + 1); manualSelectUntil = Date.now() + 750; cmd('next'); }; }
+  { const b = $('#btn-prev'); if (b) b.onclick = () => { const rp = $('#record-panel'); if (rp && !rp.hidden) keepRecordPanel = true; manualSelectIdx = Math.max(0, current - 1); manualSelectUntil = Date.now() + 750; cmd('prev'); }; }
+  { const b = $('#btn-next'); if (b) b.onclick = () => { const rp = $('#record-panel'); if (rp && !rp.hidden) keepRecordPanel = true; manualSelectIdx = Math.min(sentences.length - 1, current + 1); manualSelectUntil = Date.now() + 750; cmd('next'); }; }
   { const b = $('#btn-dictation'); if (b) b.onclick = () => startDictation(); }
   { const b = $('#btn-cloze'); if (b) b.onclick = () => startCloze(); }
   { const b = $('#btn-hint'); if (b) b.onclick = () => { const s = sentences[current]; if (s && s.trans) setStatus(s.trans, 'ok'); else if (s) translateText(s.text, settings.targetLang, settings.nativeLang).then((t) => { if (t) { s.trans = t; setStatus(t, 'ok'); } }); }; }
   // "Từ vựng": mở menu + mở mục Từ vựng (2 bảng: từ đã lưu + từ phát âm yếu).
   { const b = $('#btn-vocab'); if (b) b.onclick = () => { openMenu(); const sec = $('#section-vocab'); if (sec) { sec.open = true; renderVocabView(); sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }; }
   { const b = $('#btn-blur'); if (b) b.onclick = () => startRecall(); }
-  { const b = $('#btn-listen'); if (b) b.onclick = () => { const s = sentences[current]; if (s) speakText(s.text); }; }
+  // "Nghe mẫu": phát lại ĐÚNG đoạn video gốc của câu (giọng thật) thay vì TTS máy.
+  { const b = $('#btn-listen'); if (b) b.onclick = () => { if (sentences[current]) cmd('listenSeg', { i: current }); }; }
   // 🔁 Nghe lại bản ghi của chính mình (blob cuối cùng từ mic-service).
   {
     const b = $('#btn-replay');
@@ -2023,11 +2490,11 @@
   { const b = $('#try-fav-btn'); if (b) b.onclick = async () => {
       const s = sentences[current]; if (!s) return;
       b.classList.remove('fav-pop'); void b.offsetWidth; b.classList.add('fav-pop');
-      const r = await cmd('fav', { text: s.text });
+      const r = await cmd('fav', { text: s.text, trans: s.trans });
       if (r && r.favorites) favorites = r.favorites;
       updateTryCard();
       renderList();
-      setStatus(isFav(s.text) ? '⭐ Đã thêm vào yêu thích.' : 'Đã bỏ khỏi yêu thích.', 'ok');
+      setStatus(isFav(s.text) ? t('sent_saved', '⭐ Đã lưu câu vào kho từ vựng.') : t('sent_unsaved', 'Đã bỏ câu khỏi kho.'), 'ok');
     }; }
   // Nut "Tu dung" tren the luyen tap — bat/tat tu dung cuoi moi cau (segPause).
   function updatePauseToggle() {
@@ -2066,6 +2533,17 @@
     wrap.classList.remove('record-target--in'); void wrap.offsetWidth; wrap.classList.add('record-target--in');
   }
   function showRecordPanel(show) { const p = $('#record-panel'); if (p) { if (show) { syncToolbarHeight(); recordPanelIdx = current; updateRecordTarget(); } p.hidden = !show; } updatePracticeBlur(); }
+  // Xoá kết quả chấm cũ → panel sẵn sàng cho câu mới khi điều hướng Trước/Sau trong lúc luyện.
+  function resetRecordPanelScoreUI() {
+    try { setRecordScore(null); } catch (_) {}
+    { const el = $('#you-said-text'); if (el) el.textContent = ''; }
+    { const tm = $('#score-tier-msg'); if (tm) tm.hidden = true; }
+    { const pfe = $('#phoneme-focus'); if (pfe) pfe.hidden = true; }
+    { const rb = $('#btn-replay'); if (rb) rb.disabled = true; }
+    { const fb = $('#fb'); if (fb) fb.hidden = true; }
+    { const ai = $('.ai-score'); if (ai) ai.hidden = true; }
+    { const st = $('#record-status-text'); if (st) st.textContent = t('st_ready'); }
+  }
   { const b = $('#btn-record-close'); if (b) b.onclick = () => { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (_) {} showRecordPanel(false); }; }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -2120,7 +2598,7 @@
     let score = null;
     try {
       if (window.SD && window.SD.phonetic) {
-        score = window.SD.phonetic.analyze(s.text, res.transcript, { pitch: res.pitch || [], spokenMs: res.spokenMs, refMs: (s.endMs - s.startMs) });
+        score = window.SD.phonetic.analyze(s.text, res.transcript, { lang: settings.targetLang || 'de', pitch: res.pitch || [], spokenMs: res.spokenMs, refMs: (s.endMs - s.startMs) });
       }
     } catch (e) {}
     if (!score) { renderFeedback({ error: 'Thiếu bộ chấm điểm (phonetic.js) — tải lại extension.' }); return; }

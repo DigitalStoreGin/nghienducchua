@@ -12,7 +12,12 @@
  *   ADMIN_KEY             admin API key for management endpoints
  *   GROQ_API_KEY_1..5     Groq Whisper keys (round-robin, fallback on 429)
  *   RESEND_API_KEY        (tuỳ chọn) Resend.com key để gửi email cảnh báo Groq hết quota
+ *   ADMIN_JWT_SECRET      khoá ký JWT phiên admin (trang Admin SPA)
+ *   KEY_ENCRYPTION_KEY    khoá AES-GCM mã hoá API key lưu trong DB (admin)
+ *   SEPAY_WEBHOOK_KEY     khoá xác thực webhook SePay (thanh toán)
  */
+
+import { handleAdminV2, handleSepayWebhook, scheduledAdmin } from './admin.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -76,9 +81,15 @@ export default {
       return handleLog(request, env);
     }
 
-    // Admin endpoints (internal use only)
+    // Admin endpoints (trang Admin SPA): /admin/login + /admin/bootstrap công khai,
+    // các endpoint còn lại yêu cầu phiên JWT admin (xem worker/admin.js).
     if (url.pathname.startsWith('/admin/')) {
-      return handleAdmin(request, url.pathname, env);
+      return handleAdminV2(request, url.pathname, env, ctx);
+    }
+
+    // SePay webhook (công khai, xác thực bằng Apikey của SePay) → tự cập nhật thanh toán.
+    if (url.pathname === '/sepay/webhook') {
+      return handleSepayWebhook(request, env);
     }
 
     // Public pronunciation scoring (rate-limited by IP, no auth required —
@@ -131,6 +142,11 @@ export default {
 
     return json({ error: 'not_found' }, 404);
   },
+
+  // Cron: reset hạn mức API key theo chu kỳ + dọn session admin hết hạn.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(scheduledAdmin(env));
+  },
 };
 
 // ── /score-ai  — AI pronunciation scoring (Groq Llama primary, OpenRouter fallback) ──
@@ -152,14 +168,15 @@ async function handleScoreAI(request, env) {
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
-  const { target, transcript, targetLang = 'de' } = body;
+  const { target, transcript, targetLang = 'de', nativeLang = 'vi' } = body;
   if (!target || !transcript) return json({ error: 'missing_fields' }, 400);
   if (String(target).length > 400 || String(transcript).length > 400) return json({ error: 'too_long' }, 400);
 
-  const LANG_NAME = { de: 'German', en: 'English', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese' };
+  const LANG_NAME = { de: 'German', en: 'English', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', vi: 'Vietnamese' };
   const langName = LANG_NAME[targetLang] || targetLang;
+  const fbLangName = LANG_NAME[nativeLang] || 'Vietnamese';
   const systemPrompt = `You are evaluating ${langName} pronunciation. Respond ONLY with a JSON object — no markdown, no explanation.`;
-  const userPrompt = `Target: "${target}"\nStudent said: "${transcript}"\n\nReturn JSON only:\n{"pronunciation":0-100,"fluency":0-100,"overall":0-100,"feedback":"tip in Vietnamese ≤12 words"}`;
+  const userPrompt = `Target: "${target}"\nStudent said: "${transcript}"\n\nReturn JSON only:\n{"pronunciation":0-100,"fluency":0-100,"overall":0-100,"feedback":"tip in ${fbLangName} ≤12 words"}`;
 
   // Primary: Groq free models (2 options, 5 keys each, random starting key để phân tải)
   const GROQ_KEYS = [

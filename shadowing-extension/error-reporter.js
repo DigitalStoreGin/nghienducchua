@@ -6,7 +6,8 @@
  */
 (function () {
   'use strict';
-  const VERSION = '2.1.0';
+  // Lấy version từ manifest để KHÔNG lệch với manifest.json (trước đây cứng '2.1.0').
+  const VERSION = (() => { try { return chrome.runtime.getManifest().version; } catch (_) { return '2.4.0'; } })();
   const MAX_PER_SESSION = 20;
   let sent = 0;
   const seen = new Set();

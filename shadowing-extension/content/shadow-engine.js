@@ -64,8 +64,10 @@
       this.emit('playstate', { playing: this.playing });
     },
 
-    nextSeg() { this.selectSegment(Math.min(this.current + 1, this.sentences.length - 1)); },
-    prevSeg() { this.selectSegment(Math.max(this.current - 1, 0)); },
+    // Hủy mọi lượt luyện đang chờ trước khi điều hướng → tránh "double-advance" (autoNext
+    // + bấm Sau) và tránh lượt shadow đang treo phát lại câu cũ.
+    nextSeg() { if (this.busy) this.stop(); this.selectSegment(Math.min(this.current + 1, this.sentences.length - 1)); },
+    prevSeg() { if (this.busy) this.stop(); this.selectSegment(Math.max(this.current - 1, 0)); },
 
     togglePlay() {
       if (V().el && V().el.paused) {
@@ -86,14 +88,40 @@
       return this.loopOne;
     },
 
-    // Phát lại đúng đoạn video của 1 câu (KHÔNG TTS) — dùng cho nút "Nghe".
+    // Phát lại ĐÚNG đoạn video của 1 câu (KHÔNG TTS) — dùng cho nút "Nghe"/"Nghe mẫu".
+    // Tua về đầu câu, phát, rồi DỪNG đúng cuối câu bằng timer riêng (độc lập monitor) nên
+    // luôn nghe đúng 1 câu kể cả khi tắt "tự dừng" hoặc câu rất ngắn.
     listenSeg(i) {
       const idx = (i == null) ? this.current : i;
+      const s = this.sentences[idx]; if (!s) return;
       try { speechSynthesis.cancel(); } catch (e) {}
-      this.selectSegment(idx, { play: true });
+      this.queue = null; this.current = idx;
+      this._seekGuardUntil = Date.now() + 600;
+      this.setCurrent(idx);
+      const off = this.off();
+      const startSec = s.startMs / 1000 + off;
+      const endSec = s.endMs / 1000 + off;
+      V().setRate(this.settings?.rate || 1);
+      V().seekTo(startSec);
+      V().play().catch(() => {});
+      this.playing = true; this.emit('playstate', { playing: true });
+      if (this._listenTimer) { clearInterval(this._listenTimer); this._listenTimer = null; }
+      const t0 = Date.now();
+      this._listenTimer = setInterval(() => {
+        if (this.busy) { clearInterval(this._listenTimer); this._listenTimer = null; return; }
+        const v = V().el; if (!v) return;
+        if (Date.now() - t0 < 200) return; // chờ seek "ăn" rồi mới kiểm tra cuối câu
+        if (v.currentTime >= endSec - 0.02 || v.ended) {
+          clearInterval(this._listenTimer); this._listenTimer = null;
+          try { V().pause(); } catch (e) {}
+          this.playing = false; this.emit('playstate', { playing: false });
+        }
+      }, 50);
     },
 
     async shadow(i) {
+      // Master OFF: extension ngừng hoạt động — không luyện/ghi âm/chấm.
+      if (!this.enabled) { this.emit('state', { state: 'idle' }); return; }
       // Preempt: neu dang ban (vd lan cham truoc treo), huy no roi bat dau lai
       // -> tranh truong hop bam "Luyen cau" khong phan hoi gi.
       if (this.busy) { this.runId++; this.busy = false; }
@@ -167,6 +195,8 @@
     },
 
     async recordOnlyAt(i) {
+      // Master OFF: không ghi âm/chấm điểm.
+      if (!this.enabled) { this.emit('state', { state: 'idle' }); return; }
       if (this.busy) { this.runId++; this.busy = false; }
       this.busy = true; this.idx = i; this.rep = 0;
       this._recordOnly = true; // skip runRep retry — user pressed Chấm điểm, not shadow

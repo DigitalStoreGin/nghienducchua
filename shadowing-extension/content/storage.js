@@ -5,7 +5,7 @@
   const KEY = 'sd_data_v1';
   const DEFAULTS = {
     settings: { repeat: 3, autoNext: true, autoRecord: true, segPause: true, rate: 1, offsetMs: 0, engine: 'webspeech', whisperModel: 'auto', useSileroVad: false, nativeLang: 'vi', targetLang: 'de', videoSubs: true, extEnabled: true, uiLang: 'vi', deeplKey: '', openrouterKey: '' },
-    history: [], savedWords: [], favorites: [],
+    history: [], savedWords: [], favorites: [], savedSentences: [],
   };
   function get() {
     return new Promise((resolve) => {
@@ -21,9 +21,25 @@
   async function addAttempt(a) { const d = await get(); d.history.unshift(Object.assign({ at: Date.now() }, a)); d.history = d.history.slice(0, 500); await set(d); return d.history; }
   async function saveWord(w) { const d = await get(); if (!d.savedWords.find((x) => x.word === w.word)) { d.savedWords.unshift(Object.assign({ at: Date.now() }, w)); await set(d); } return d.savedWords; }
   async function removeWord(word) { const d = await get(); d.savedWords = (d.savedWords || []).filter((x) => x.word !== word); await set(d); return d.savedWords; }
+  async function updateWord(word, fields) { const d = await get(); const w = (d.savedWords || []).find((x) => x.word === word); if (w) { Object.assign(w, fields || {}); await set(d); } return d.savedWords; }
   async function saveSettings(s) { const d = await get(); d.settings = Object.assign({}, d.settings, s); await set(d); return d.settings; }
-  async function toggleFavorite(text) { const d = await get(); const i = d.favorites.findIndex((f) => f.text === text); if (i >= 0) d.favorites.splice(i, 1); else d.favorites.unshift({ text, at: Date.now() }); await set(d); return d.favorites; }
+  async function toggleFavorite(text, extra) {
+    const d = await get();
+    const i = d.favorites.findIndex((f) => f.text === text);
+    let on;
+    if (i >= 0) { d.favorites.splice(i, 1); on = false; } else { d.favorites.unshift({ text, at: Date.now() }); on = true; }
+    // ⭐ cũng LƯU CÂU vào kho "câu đã lưu" (dùng cho ôn tập/game). Đồng bộ theo trạng thái favorite.
+    d.savedSentences = d.savedSentences || [];
+    const j = d.savedSentences.findIndex((s) => s.text === text);
+    if (on && j < 0) d.savedSentences.unshift(Object.assign({ text, at: Date.now() }, extra || {}));
+    else if (!on && j >= 0) d.savedSentences.splice(j, 1);
+    await set(d); return d.favorites;
+  }
   async function getFavorites() { return (await get()).favorites; }
   function isFavoriteList(favs, text) { return favs.some((f) => f.text === text); }
-  root.SD.storage = { get, set, addAttempt, saveWord, removeWord, saveSettings, toggleFavorite, getFavorites, isFavoriteList };
+  // Kho "câu đã lưu" (độc lập favorite, dùng cho game ôn câu).
+  async function saveSentence(s) { const d = await get(); d.savedSentences = d.savedSentences || []; if (!d.savedSentences.find((x) => x.text === s.text)) { d.savedSentences.unshift(Object.assign({ at: Date.now() }, s)); await set(d); } return d.savedSentences; }
+  async function removeSentence(text) { const d = await get(); d.savedSentences = (d.savedSentences || []).filter((x) => x.text !== text); await set(d); return d.savedSentences; }
+  async function getSentences() { return (await get()).savedSentences || []; }
+  root.SD.storage = { get, set, addAttempt, saveWord, removeWord, updateWord, saveSettings, toggleFavorite, getFavorites, isFavoriteList, saveSentence, removeSentence, getSentences };
 })(window);

@@ -137,6 +137,22 @@
       });
     } catch (e) {}
 
+    // Đồng bộ realtime 2 chiều: side panel hoặc tab khác đổi master/overlay → cập nhật
+    // chip ON/OFF + overlay ngay (không ghi ngược lại nên không tạo vòng lặp).
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !changes.sd_data_v1) return;
+        const cfg = (changes.sd_data_v1.newValue && changes.sd_data_v1.newValue.settings) || null;
+        if (!cfg) return;
+        const newMaster = cfg.extEnabled !== false;
+        const newSubs = cfg.videoSubs !== false;
+        let changed = false;
+        if (newMaster !== extEnabled) { extEnabled = newMaster; try { if (SD.engine.setEnabled) SD.engine.setEnabled(extEnabled); } catch (e) {} changed = true; }
+        if (newSubs !== subsOn) { subsOn = newSubs; changed = true; }
+        if (changed) applyState();
+      });
+    } catch (e) {}
+
     // ===== Khối điều khiển trong thanh YouTube: logo (mở panel) + chip BẬT/TẮT (master) =====
     function updateToggleBtn() {
       const btn = document.getElementById('sd-toggle-btn'); if (!btn) return;
