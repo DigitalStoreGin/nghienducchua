@@ -29,7 +29,9 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = "../admin"
 binding = "ASSETS"
-not_found_handling = "single-page-application"
+# Admin dùng hash-routing (#dashboard, #users…) nên path luôn là "/" → không cần SPA fallback.
+# "none": GET không khớp file tĩnh sẽ rơi xuống Worker (giữ nguyên API GET /health, /me).
+not_found_handling = "none"
 
 # Cron: reset hạn mức API key theo chu kỳ + dọn session admin hết hạn (00:00 UTC mỗi ngày).
 [triggers]
