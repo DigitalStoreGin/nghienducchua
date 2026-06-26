@@ -141,15 +141,62 @@ async function bgMyMemoryTranslate(text, from, to) {
   const j = await r.json();
   return (j && j.responseData && j.responseData.translatedText) || '';
 }
+// ── Phân tầng dịch theo GÓI ──────────────────────────────────
+// User TRẢ PHÍ → dịch qua Worker /translate (provider do Admin chọn: Gemini/DeepL/…).
+// User FREE/chưa đăng nhập → dịch miễn phí (Microsoft → Google → MyMemory) như cũ.
+// Worker tự quyết định free/paid; ở đây cache kết quả để khỏi gọi Worker mỗi câu khi free.
+async function bgSessionToken() {
+  try { const r = await chrome.storage.local.get('shadowecho_session'); return (r && r.shadowecho_session && r.shadowecho_session.access_token) || ''; } catch (_) { return ''; }
+}
+// trạng thái tầng dịch: 'premium' | 'free' | 'fallback' | 'unknown'
+let _transTier = { state: 'unknown', at: 0 };
+const _TIER_TTL = { free: 5 * 60 * 1000, fallback: 60 * 1000 };
+async function bgWorkerTranslate(token, text, from, to) {
+  const r = await fetch(WORKER_URL + '/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ text, from, to }),
+  });
+  const data = await r.json().catch(() => null);
+  return { status: r.status, ok: r.ok, data };
+}
+async function bgFreeTranslate(text, from, to) {
+  try { const t = await bgMicrosoftTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'ms' }; } catch (e) {}
+  try { const t = await bgGoogleTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'google' }; } catch (e) {}
+  try { const t = await bgMyMemoryTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'mymemory' }; } catch (e) {}
+  return { ok: false };
+}
 async function handleTranslate(msg) {
   const text = (msg && msg.text) || '';
   const from = (msg && msg.from) || 'de';
   const to = (msg && msg.to) || 'vi';
   if (!text) return { ok: false };
-  try { const t = await bgMicrosoftTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'ms' }; } catch (e) {}
-  try { const t = await bgGoogleTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'google' }; } catch (e) {}
-  try { const t = await bgMyMemoryTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'mymemory' }; } catch (e) {}
-  return { ok: false };
+
+  const token = await bgSessionToken();
+  const now = Date.now();
+  // Có thử Worker không? Bỏ qua khi vừa xác định là free/fallback (còn hạn cache).
+  let tryWorker = !!token;
+  if (token && _transTier.state === 'free' && now - _transTier.at < _TIER_TTL.free) tryWorker = false;
+  if (token && _transTier.state === 'fallback' && now - _transTier.at < _TIER_TTL.fallback) tryWorker = false;
+
+  if (tryWorker) {
+    try {
+      const res = await bgWorkerTranslate(token, text, from, to);
+      if (res.ok && res.data) {
+        if (res.data.text && !res.data.free) {
+          _transTier = { state: 'premium', at: now };
+          return { ok: true, text: res.data.text, src: res.data.src || res.data.provider || 'api' };
+        }
+        if (res.data.free) {
+          // provider==='free' → user free thật; có error → tạm lỗi (cache ngắn rồi thử lại).
+          _transTier = { state: res.data.provider === 'free' && !res.data.error ? 'free' : 'fallback', at: now };
+        }
+      } else if (res.status === 401) {
+        _transTier = { state: 'fallback', at: now }; // token hết hạn → dùng free tạm
+      }
+    } catch (_) { /* lỗi mạng → rơi xuống free */ }
+  }
+  return bgFreeTranslate(text, from, to);
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {

@@ -1314,7 +1314,6 @@
     'google/gemma-4-31b-it:free',
     'google/gemma-4-26b-a4b-it:free',
   ];
-  const DEEPL_TGT = { vi: 'VI', en: 'EN-US', de: 'DE', fr: 'FR', es: 'ES', it: 'IT', ja: 'JA', zh: 'ZH', ko: 'KO' };
   const LANG_NAME = { vi: 'Vietnamese', en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean' };
 
   function workerHeaders() {
@@ -1324,18 +1323,18 @@
   // Khi đã hết quota trong phiên -> ngừng gọi lại (tránh spam 429 + bật modal liên tục).
   let _quotaHitDeepL = false, _quotaHitAI = false;
 
-  async function deeplTranslate(text, from, to) {
+  // Dịch qua Worker /translate (gói trả phí → provider Admin chọn). Worker tự quyết
+  // free/paid: trả {free:true} cho user free → trả '' để rơi xuống nguồn miễn phí.
+  async function workerTranslate(text, from, to) {
     if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn() || _quotaHitDeepL) return '';
-    const tgt = DEEPL_TGT[to]; if (!tgt) return '';
-    const body = { text, target_lang: tgt };
-    if (DEEPL_TGT[from]) body.source_lang = DEEPL_TGT[from].split('-')[0];
-    const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: workerHeaders(), body: JSON.stringify(body) });
+    const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: workerHeaders(), body: JSON.stringify({ text, from, to }) });
     if (!r.ok) {
       if (r.status === 429) { _quotaHitDeepL = true; try { await r.json(); } catch (_) {} showUpgradeModal('Đã hết hạn mức dịch hôm nay. Nâng cấp để tiếp tục.'); return ''; }
-      throw new Error('worker-deepl-' + r.status);
+      throw new Error('worker-translate-' + r.status);
     }
     const j = await r.json();
-    return (j.translations && j.translations[0] && j.translations[0].text) || '';
+    if (j && j.free) return ''; // user free → nguồn miễn phí xử lý
+    return (j && j.text) || '';
   }
 
   async function openrouterTranslate(text, from, to, model) {
@@ -1435,7 +1434,7 @@
     // Mỗi nguồn đều KIỂM TRA kết quả; rỗng/sai thì hạ xuống nguồn kế. Thử 2 vòng có backoff.
     const attempts = [
       () => bgTranslate(text, from, to),
-      () => deeplTranslate(text, from, to),
+      () => workerTranslate(text, from, to),
       () => googleFreeTranslate(text, from, to),
       () => microsoftFreeTranslate(text, from, to),
       () => myMemoryTranslate(text, from, to),
