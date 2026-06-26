@@ -587,12 +587,16 @@ async function handleTranslate(request, env, userId) {
 
   // Cấu hình dịch hiệu lực cho user (gói + override) qua RPC.
   const cfg = await sbRpc(env, 'translation_config_for', { p_user_id: userId });
-  const isPremium = cfg ? !!cfg.is_premium : false;
-  const provider  = (cfg && cfg.provider) || 'gemini';
+  const isPremium  = cfg ? !!cfg.is_premium : false;
+  const freeSource = (cfg && cfg.free_source) || 'free';
+  let provider     = (cfg && cfg.provider) || 'gemini';
 
-  // User FREE → KHÔNG gọi API trả phí; báo client tự dùng dịch miễn phí (YouTube/Google).
+  // User FREE:
+  //  - free_source = 'free' (mặc định) → client tự dịch miễn phí (YouTube/Google).
+  //  - Admin đổi free_source sang 1 provider → kể cả free cũng dịch qua API đó.
   if (!isPremium) {
-    return json({ free: true, provider: 'free', message: 'use_free_client' }, 200);
+    if (freeSource === 'free') return json({ free: true, provider: 'free', message: 'use_free_client' }, 200);
+    provider = freeSource;
   }
 
   // Hạn mức ngày theo gói (basic/pro/lifetime) vẫn áp dụng.
