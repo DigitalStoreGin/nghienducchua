@@ -7,8 +7,12 @@
  * Worker Secrets (wrangler secret put):
  *   SUPABASE_URL          https://xxxx.supabase.co
  *   SUPABASE_SERVICE_KEY  service_role key (sb_secret_...)
- *   DEEPL_API_KEY         DeepL auth key
- *   OPENROUTER_API_KEY    OpenRouter key
+ *   DEEPL_API_KEY         DeepL auth key (fallback khi pool trống)
+ *   OPENROUTER_API_KEY    OpenRouter key (fallback khi pool trống)
+ *   GEMINI_API_KEY        Google AI Studio key cho dịch trả phí (fallback khi pool trống)
+ *   MISTRAL_API_KEY       (tuỳ chọn) Mistral key (fallback khi pool trống)
+ *   GEMINI_MODEL          (tuỳ chọn) model Gemini, mặc định 'gemini-2.0-flash'
+ *   MISTRAL_MODEL         (tuỳ chọn) model Mistral, mặc định 'mistral-small-latest'
  *   ADMIN_KEY             admin API key for management endpoints
  *   GROQ_API_KEY_1..5     Groq Whisper keys (round-robin, fallback on 429)
  *   RESEND_API_KEY        (tuỳ chọn) Resend.com key để gửi email cảnh báo Groq hết quota
@@ -17,7 +21,7 @@
  *   SEPAY_WEBHOOK_KEY     khoá xác thực webhook SePay (thanh toán)
  */
 
-import { handleAdminV2, handleSepayWebhook, scheduledAdmin } from './admin.js';
+import { handleAdminV2, handleSepayWebhook, scheduledAdmin, decryptSecret } from './admin.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -129,7 +133,7 @@ export default {
     }
 
     if (url.pathname === '/translate') {
-      return handleDeepL(request, env, user.id);
+      return handleTranslate(request, env, user.id);
     }
 
     if (url.pathname === '/ai-translate') {
@@ -461,38 +465,156 @@ async function handleMe(env, user) {
   }
 }
 
-// ── /translate  — DeepL proxy ────────────────────────────────
-async function handleDeepL(request, env, userId) {
+// ── Supabase RPC helper (service-role) ───────────────────────
+async function sbRpc(env, fn, args) {
+  try {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        'apikey': env.SUPABASE_SERVICE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(args || {}),
+    });
+    if (!r.ok) return null;
+    return await r.json().catch(() => null);
+  } catch (_) { return null; }
+}
+
+// Tên ngôn ngữ đầy đủ cho prompt dịch (LLM cần tên, không phải mã ISO).
+const LANG_NAMES = {
+  de: 'German', en: 'English', vi: 'Vietnamese', fr: 'French', es: 'Spanish', it: 'Italian',
+  ru: 'Russian', zh: 'Chinese', ja: 'Japanese', ko: 'Korean', ar: 'Arabic', tr: 'Turkish',
+  pl: 'Polish', id: 'Indonesian', th: 'Thai', hi: 'Hindi', uk: 'Ukrainian', ro: 'Romanian',
+  nl: 'Dutch', pt: 'Portuguese', sv: 'Swedish',
+};
+function langName(code) { return LANG_NAMES[(code || '').toLowerCase()] || code || 'the target language'; }
+function transPrompt(text, from, to) {
+  return `Translate the following ${langName(from)} text into ${langName(to)}. ` +
+    `Output ONLY the translation — no quotes, no notes, no romanization, no explanation.\n\n${text}`;
+}
+
+// ── Provider dịch: mỗi hàm nhận (apiKey, text, from, to) → chuỗi đã dịch ──
+async function translateGemini(apiKey, text, from, to, env) {
+  const model = (env && env.GEMINI_MODEL) || 'gemini-2.0-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: transPrompt(text, from, to) }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 512 },
+    }),
+  });
+  if (!resp.ok) throw new Error('gemini-' + resp.status);
+  const data = await resp.json();
+  const out = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
+    data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+  return (out || '').trim();
+}
+async function translateDeepL(apiKey, text, from, to) {
+  // Key free kết thúc ':fx' → dùng api-free; ngược lại api.deepl.com (Pro).
+  const host = /:fx$/.test(apiKey) ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
+  const params = new URLSearchParams();
+  params.append('text', text);
+  params.append('target_lang', (to || 'vi').toUpperCase());
+  if (from) params.append('source_lang', from.toUpperCase());
+  const resp = await fetch(`${host}/v2/translate`, {
+    method: 'POST',
+    headers: { 'Authorization': `DeepL-Auth-Key ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (!resp.ok) throw new Error('deepl-' + resp.status);
+  const data = await resp.json();
+  return ((data.translations && data.translations[0] && data.translations[0].text) || '').trim();
+}
+// OpenAI-compatible chat (OpenRouter, Mistral) dùng chung.
+async function translateChat(url, apiKey, model, text, from, to, extraHeaders) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...(extraHeaders || {}) },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      messages: [
+        { role: 'system', content: 'You are a professional translator. Output ONLY the translation — no quotes, no notes.' },
+        { role: 'user', content: transPrompt(text, from, to) },
+      ],
+    }),
+  });
+  if (!resp.ok) throw new Error('chat-' + resp.status);
+  const data = await resp.json();
+  return ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '').trim();
+}
+function translateOpenRouter(apiKey, text, from, to) {
+  return translateChat('https://openrouter.ai/api/v1/chat/completions', apiKey, OR_MODELS[0], text, from, to,
+    { 'HTTP-Referer': 'https://shadowecho.app', 'X-Title': 'ShadowEcho' });
+}
+function translateMistral(apiKey, text, from, to, env) {
+  const model = (env && env.MISTRAL_MODEL) || 'mistral-small-latest';
+  return translateChat('https://api.mistral.ai/v1/chat/completions', apiKey, model, text, from, to);
+}
+
+// Lấy key cho provider: ưu tiên KEY POOL (api_keys, tự trừ credit), fallback env secret.
+async function pickProviderKey(env, provider) {
+  const consumed = await sbRpc(env, 'consume_api_key', { p_provider_id: provider, p_requests: 1, p_tokens: 0 });
+  if (consumed && consumed.secret_ref) {
+    try { const k = await decryptSecret(env, consumed.secret_ref); if (k) return k; } catch (_) {}
+  }
+  // Fallback: secret cấu hình trực tiếp (wrangler secret put) khi pool trống.
+  const ENV_KEY = { gemini: 'GEMINI_API_KEY', deepl: 'DEEPL_API_KEY', openrouter: 'OPENROUTER_API_KEY', mistral: 'MISTRAL_API_KEY' };
+  return env[ENV_KEY[provider]] || (provider === 'gemini' ? env.GEMINI_API_KEY_1 : null) || null;
+}
+async function runProvider(env, provider, key, text, from, to) {
+  switch (provider) {
+    case 'gemini':     return translateGemini(key, text, from, to, env);
+    case 'deepl':      return translateDeepL(key, text, from, to);
+    case 'openrouter': return translateOpenRouter(key, text, from, to);
+    case 'mistral':    return translateMistral(key, text, from, to, env);
+    default:           return translateGemini(key, text, from, to, env);
+  }
+}
+
+// ── /translate  — dịch theo gói (free→client miễn phí, trả phí→API admin chọn) ──
+async function handleTranslate(request, env, userId) {
+  let body;
+  try { body = await request.json(); } catch (_) { return json({ error: 'bad_json' }, 400); }
+  const text = String(body.text || '').slice(0, 5000);
+  const from = (body.from || body.source_lang || 'de').toLowerCase();
+  const to   = (body.to   || body.target_lang || 'vi').toLowerCase();
+  if (!text) return json({ error: 'empty_text' }, 400);
+
+  // Cấu hình dịch hiệu lực cho user (gói + override) qua RPC.
+  const cfg = await sbRpc(env, 'translation_config_for', { p_user_id: userId });
+  const isPremium = cfg ? !!cfg.is_premium : false;
+  const provider  = (cfg && cfg.provider) || 'gemini';
+
+  // User FREE → KHÔNG gọi API trả phí; báo client tự dùng dịch miễn phí (YouTube/Google).
+  if (!isPremium) {
+    return json({ free: true, provider: 'free', message: 'use_free_client' }, 200);
+  }
+
+  // Hạn mức ngày theo gói (basic/pro/lifetime) vẫn áp dụng.
   const quota = await checkQuota(userId, 'translation', env);
   if (!quota.allowed) {
     return json({
       error: 'quota_exceeded',
-      message: `Daily translation limit reached (${quota.used}/${quota.limit}). Upgrade your plan at shadowecho.app`,
+      message: `Đã đạt hạn mức dịch hôm nay (${quota.used}/${quota.limit}). Nâng cấp gói để dùng thêm.`,
       plan: quota.plan, used: quota.used, limit: quota.limit,
     }, 429);
   }
 
+  // Lấy key (pool → env) và gọi provider; nếu lỗi/thiếu key → báo client fallback free.
+  const key = await pickProviderKey(env, provider);
+  if (!key) return json({ free: true, provider, error: 'no_key', message: 'Chưa cấu hình key cho provider ' + provider }, 200);
   try {
-    const body = await request.json();
-    const params = new URLSearchParams();
-    params.append('text', body.text || '');
-    params.append('target_lang', body.target_lang || 'VI');
-    if (body.source_lang) params.append('source_lang', body.source_lang);
-
-    const resp = await fetch('https://api-free.deepl.com/v2/translate', {
-      method: 'POST',
-      headers: {
-        'Authorization': `DeepL-Auth-Key ${env.DEEPL_API_KEY}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
-    });
-
-    const data = await resp.json();
-    if (!resp.ok) return json({ error: `deepl-${resp.status}`, details: data }, resp.status);
-    return json(data);
+    const out = await runProvider(env, provider, key, text, from, to);
+    if (!out) return json({ free: true, provider, error: 'empty', message: 'use_free_client' }, 200);
+    return json({ text: out, src: provider, provider, free: false });
   } catch (e) {
-    return json({ error: 'deepl-error', message: e.message }, 500);
+    // Provider lỗi → để client fallback dịch miễn phí, không chặn trải nghiệm.
+    return json({ free: true, provider, error: String(e.message || e), message: 'use_free_client' }, 200);
   }
 }
 
