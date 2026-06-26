@@ -38,7 +38,7 @@ async function pbkdf2(password, salt, iterations) {
 }
 async function hashPassword(password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iterations = 150000;
+  const iterations = 10000; // Cloudflare Workers CPU limit — verifyPassword handles any stored iteration count
   const hash = await pbkdf2(password, salt, iterations);
   return `pbkdf2$${iterations}$${b64(salt)}$${b64(hash)}`;
 }
@@ -170,7 +170,7 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     const rows = await sbGet(env, `admin_users?email=eq.${encodeURIComponent(email)}&select=*`);
     const u = rows && rows[0];
     const fail = () => json({ error: 'invalid_credentials' }, 401);
-    if (!u) { await pbkdf2('dummy', enc.encode('dummy'), 150000); return fail(); } // chống timing
+    if (!u) { await pbkdf2('dummy', enc.encode('dummy'), 10000); return fail(); } // chống timing
     if (u.locked_until && new Date(u.locked_until).getTime() > Date.now()) return json({ error: 'locked', message: 'Tài khoản tạm khoá, thử lại sau.' }, 423);
     const okPw = await verifyPassword(String(body.password || ''), u.password_hash);
     if (!okPw) {
