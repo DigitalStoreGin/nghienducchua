@@ -381,6 +381,40 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     case '/admin/keys/disable': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbPatch(env, 'api_keys', `id=eq.${body.id}`, { status: 'disabled' }); return json({ success: true }); }
     case '/admin/keys/delete': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbDelete(env, 'api_keys', `id=eq.${body.id}`); await audit(env, admin.sub, 'key.delete', 'api_key', body.id, null, null, ip); return json({ success: true }); }
 
+    // ───────── Catalog model (9Router-style: thêm/bật/tắt model theo provider) ─────────
+    case '/admin/models/list': {
+      const rows = await sbGet(env, 'api_models?select=*&order=capability.asc,priority.asc,display_name.asc');
+      return json({ items: rows });
+    }
+    case '/admin/models/add': {
+      if (!body.provider_id || !body.model_id || !body.capability) return json({ error: 'bad_args' }, 400);
+      const row = {
+        provider_id: body.provider_id, model_id: String(body.model_id).slice(0, 200),
+        display_name: body.display_name || body.model_id, capability: body.capability,
+        enabled: body.enabled !== false, priority: body.priority || 100,
+        cost_per_mtok: body.cost_per_mtok || 0, notes: body.notes || null,
+      };
+      const r = await sbInsert(env, 'api_models', row);
+      await audit(env, admin.sub, 'model.add', 'api_model', r && r[0] && r[0].id, null, { provider_id: body.provider_id, model_id: row.model_id, capability: body.capability }, ip);
+      return r ? json({ success: true, id: r[0] && r[0].id }) : json({ error: 'db_error_or_duplicate' }, 500);
+    }
+    case '/admin/models/update': {
+      if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400);
+      const patch = {};
+      ['display_name', 'enabled', 'priority', 'cost_per_mtok', 'notes', 'model_id', 'capability'].forEach((k) => { if (body[k] !== undefined) patch[k] = body[k]; });
+      await sbPatch(env, 'api_models', `id=eq.${body.id}`, patch);
+      await audit(env, admin.sub, 'model.update', 'api_model', body.id, null, Object.keys(patch), ip);
+      return json({ success: true });
+    }
+    case '/admin/models/delete': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbDelete(env, 'api_models', `id=eq.${body.id}`); await audit(env, admin.sub, 'model.delete', 'api_model', body.id, null, null, ip); return json({ success: true }); }
+
+    // ───────── Thống kê usage (dashboard) ─────────
+    case '/admin/usage/summary': {
+      const days = Math.min(Math.max(parseInt(body.days, 10) || 30, 1), 365);
+      const data = await rpc(env, 'usage_summary', { p_days: days });
+      return json({ days, items: Array.isArray(data) ? data : [] });
+    }
+
     case '/admin/health': {
       const out = { worker: { ok: true }, supabase: { ok: false }, providers: [] };
       try { const r = await fetch(`${env.SUPABASE_URL}/rest/v1/plans?select=name&limit=1`, { headers: sbHeaders(env) }); out.supabase.ok = r.ok; } catch (_) {}
@@ -390,6 +424,11 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       out.providers = Object.values(byProv);
       out.groqEnvKeys = [env.GROQ_API_KEY_1, env.GROQ_API_KEY_2, env.GROQ_API_KEY_3, env.GROQ_API_KEY_4, env.GROQ_API_KEY_5].filter(Boolean).length;
       out.deepl = !!env.DEEPL_API_KEY; out.openrouter = !!env.OPENROUTER_API_KEY;
+      // Số model theo capability (cho biết ghi âm/chấm/dịch đã có model chưa).
+      const models = await sbGet(env, 'api_models?select=capability,enabled');
+      const mc = {};
+      models.forEach((m) => { const c = mc[m.capability] = mc[m.capability] || { total: 0, enabled: 0 }; c.total++; if (m.enabled) c.enabled++; });
+      out.models = mc;
       return json(out);
     }
 
