@@ -64,6 +64,13 @@
       twofa_secret_hint: 'Mở app Authenticator (Google Authenticator, Authy…), thêm khoá thủ công bên dưới, rồi nhập mã 6 số để xác nhận:',
       twofa_secret_label: 'Khoá bí mật (nhập vào app)', twofa_code: 'Mã 6 số', twofa_verify: 'Xác nhận & bật',
       twofa_reauth: 'Nhập mật khẩu HOẶC mã 2FA hiện tại để xác nhận tắt:', copy: 'Sao chép', copied: 'Đã sao chép',
+      // models & routing + usage dashboard
+      models_routing: 'Models & Định tuyến', capability: 'Năng lực', model_id: 'Model ID', model_name: 'Tên hiển thị',
+      cap_translate: 'Dịch', cap_stt: 'Ghi âm (STT)', cap_score: 'Chấm điểm', cap_chat: 'Chat',
+      cost_mtok: 'Chi phí /1M token ($)', add_model: 'Thêm model',
+      routing_note: 'Mỗi năng lực chạy lần lượt các model đang BẬT theo Ưu tiên (nhỏ → lớn), tự fallback khi lỗi/hết quota. Ghi âm & chấm điểm giờ lấy key+model từ đây.',
+      usage_title: 'Thống kê sử dụng (30 ngày)', usage_calls: 'Lượt gọi', usage_errors: 'Lỗi',
+      usage_tokens: 'Token (in/out)', usage_cost: 'Chi phí ước tính ($)', usage_empty: 'Chưa có dữ liệu sử dụng.',
     },
     de: {
       brand: 'nghienducchua', login_sub: 'Administrationsbereich — nur für den Inhaber',
@@ -97,6 +104,12 @@
       twofa_secret_hint: 'Öffne eine Authenticator-App (Google Authenticator, Authy…), füge den Schlüssel unten manuell hinzu und gib den 6-stelligen Code ein:',
       twofa_secret_label: 'Geheimschlüssel (in App eingeben)', twofa_code: '6-stelliger Code', twofa_verify: 'Bestätigen & aktivieren',
       twofa_reauth: 'Passwort ODER aktuellen 2FA-Code zum Deaktivieren eingeben:', copy: 'Kopieren', copied: 'Kopiert',
+      models_routing: 'Modelle & Routing', capability: 'Fähigkeit', model_id: 'Modell-ID', model_name: 'Anzeigename',
+      cap_translate: 'Übersetzung', cap_stt: 'Spracherkennung (STT)', cap_score: 'Bewertung', cap_chat: 'Chat',
+      cost_mtok: 'Kosten /1M Token ($)', add_model: 'Modell hinzufügen',
+      routing_note: 'Jede Fähigkeit durchläuft aktive Modelle nach Priorität (klein → groß) mit automatischem Fallback. Spracherkennung & Bewertung nutzen jetzt Key+Modell von hier.',
+      usage_title: 'Nutzung (30 Tage)', usage_calls: 'Aufrufe', usage_errors: 'Fehler',
+      usage_tokens: 'Token (in/out)', usage_cost: 'Geschätzte Kosten ($)', usage_empty: 'Noch keine Nutzungsdaten.',
     },
   };
   let lang = localStorage.getItem('admin_lang') || 'vi';
@@ -261,9 +274,11 @@
     const addPanel = h('div', { class: 'panel' }, h('h2', null, t('add_key')));
     const transPanel = h('div', { class: 'panel' }, h('h2', null, t('trans_settings')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
     const secPanel = h('div', { class: 'panel' }, h('h2', null, t('security')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
-    view.append(healthPanel, transPanel, h('div', { class: 'grid2' }, keysPanel, provPanel), addPanel, secPanel);
+    const modelsPanel = h('div', { class: 'panel' }, h('h2', null, t('models_routing')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
+    const usagePanel = h('div', { class: 'panel' }, h('h2', null, t('usage_title')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
+    view.append(healthPanel, transPanel, modelsPanel, usagePanel, h('div', { class: 'grid2' }, keysPanel, provPanel), addPanel, secPanel);
 
-    const [health, keys, provs, transCfg, me] = await Promise.all([api('health', {}), api('keys/list', {}), api('providers/list', {}), api('settings/translation/get', {}), api('me', {})]);
+    const [health, keys, provs, transCfg, me, models, usage] = await Promise.all([api('health', {}), api('keys/list', {}), api('providers/list', {}), api('settings/translation/get', {}), api('me', {}), api('models/list', {}), api('usage/summary', { days: 30 })]);
 
     // health render
     const dot = (ok) => h('span', { class: 'health-dot ' + (ok ? 'ok' : 'bad') });
@@ -356,6 +371,83 @@
         await api('keys/add', { provider_id: provSel.value, label: labelI.value, secret: secretI.value, credit_requests_total: +reqI.value || 0, credit_tokens_total: +tokI.value || 0, priority: +prioI.value || 100, reset_interval: intSel.value });
         toast(t('saved')); route();
       } }, t('add'))));
+
+    // ── Models & Định tuyến (catalog đa nguồn, fallback theo priority) ──
+    {
+      const CAPS = ['translate', 'stt', 'score', 'chat'];
+      const capLabel = (c) => t('cap_' + c) || c;
+      const tb = h('table', null, h('thead', null, h('tr', null,
+        h('th', null, t('capability')), h('th', null, t('provider')), h('th', null, t('model_id')),
+        h('th', null, t('priority')), h('th', null, t('cost_mtok')), h('th', null, t('status')), h('th', null, t('actions')))));
+      const tbody = h('tbody');
+      (models.items || []).forEach((m) => {
+        const prioI = h('input', { type: 'number', value: String(m.priority), class: 'select-inline', style: 'width:72px',
+          onchange: async (e) => { await api('models/update', { id: m.id, priority: parseInt(e.target.value, 10) || 100 }); toast(t('saved')); } });
+        const toggle = h('button', { class: 'btn btn--sm ' + (m.enabled ? 'btn--primary' : ''),
+          onclick: async () => { await api('models/update', { id: m.id, enabled: !m.enabled }); toast(t('saved')); route(); } }, m.enabled ? t('enabled') : t('disable'));
+        const del = h('button', { class: 'btn btn--sm btn--danger',
+          onclick: async () => { if (confirm(t('confirm_delete'))) { await api('models/delete', { id: m.id }); toast(t('saved')); route(); } } }, t('delete'));
+        tbody.append(h('tr', null,
+          h('td', null, h('span', { class: 'badge badge--free' }, capLabel(m.capability))),
+          h('td', null, m.provider_id),
+          h('td', null, h('div', null, h('b', null, m.display_name || m.model_id), h('div', { class: 'muted' }, m.model_id))),
+          h('td', null, prioI),
+          h('td', null, Number(m.cost_per_mtok) ? ('$' + m.cost_per_mtok) : '—'),
+          h('td', null, toggle),
+          h('td', null, h('div', { class: 'row-actions' }, del))));
+      });
+      tb.append(tbody);
+      const mProv = h('select', null, ...(provs.items || []).map((p) => h('option', { value: p.id }, p.display_name)));
+      const mCap = h('select', null, ...CAPS.map((c) => h('option', { value: c }, capLabel(c))));
+      const mId = h('input', { type: 'text', placeholder: 'vd: gemini-2.0-flash' });
+      const mName = h('input', { type: 'text', placeholder: t('model_name') });
+      const mPrio = h('input', { type: 'number', value: '100' });
+      const mCost = h('input', { type: 'number', value: '0', step: '0.01' });
+      clear(modelsPanel).append(
+        h('h2', null, t('models_routing')),
+        h('div', { class: 'muted', style: 'margin-bottom:12px' }, t('routing_note')),
+        (models.items && models.items.length) ? h('div', { class: 'table-wrap' }, tb) : h('div', { class: 'empty' }, '—'),
+        h('div', { style: 'margin-top:16px;border-top:1px solid var(--border);padding-top:14px' },
+          h('div', { class: 'muted', style: 'font-weight:700;margin-bottom:10px' }, t('add_model')),
+          h('div', { class: 'form-grid' },
+            h('div', { class: 'field' }, h('label', null, t('capability')), mCap),
+            h('div', { class: 'field' }, h('label', null, t('provider')), mProv),
+            h('div', { class: 'field' }, h('label', null, t('model_id')), mId),
+            h('div', { class: 'field' }, h('label', null, t('model_name')), mName),
+            h('div', { class: 'field' }, h('label', null, t('priority')), mPrio),
+            h('div', { class: 'field' }, h('label', null, t('cost_mtok')), mCost)),
+          h('div', { style: 'margin-top:12px' }, h('button', { class: 'btn btn--primary', onclick: async () => {
+            if (!mId.value.trim()) return;
+            try {
+              await api('models/add', { provider_id: mProv.value, model_id: mId.value.trim(), display_name: mName.value.trim() || mId.value.trim(), capability: mCap.value, priority: parseInt(mPrio.value, 10) || 100, cost_per_mtok: parseFloat(mCost.value) || 0 });
+              toast(t('saved')); route();
+            } catch (e) { toast(t('error') + ': ' + e.message, true); }
+          } }, t('add_model')))));
+    }
+
+    // ── Thống kê sử dụng (usage dashboard) ──
+    {
+      const items = (usage && usage.items) || [];
+      if (!items.length) {
+        clear(usagePanel).append(h('h2', null, t('usage_title')), h('div', { class: 'empty' }, t('usage_empty')));
+      } else {
+        const maxCalls = Math.max.apply(null, items.map((r) => Number(r.calls) || 0).concat([1]));
+        const tb = h('table', null, h('thead', null, h('tr', null,
+          h('th', null, t('provider')), h('th', null, t('usage_calls')), h('th', null, t('usage_errors')),
+          h('th', null, t('usage_tokens')), h('th', null, t('usage_cost')))));
+        const tbody = h('tbody');
+        items.forEach((r) => {
+          tbody.append(h('tr', null,
+            h('td', null, r.provider_id || '—'),
+            h('td', null, fmt(r.calls), bar(Number(r.calls) || 0, maxCalls)),
+            h('td', null, fmt(r.errors)),
+            h('td', null, fmt(r.tokens_in) + ' / ' + fmt(r.tokens_out)),
+            h('td', null, '$' + (Number(r.est_cost) || 0))));
+        });
+        tb.append(tbody);
+        clear(usagePanel).append(h('h2', null, t('usage_title')), h('div', { class: 'table-wrap' }, tb));
+      }
+    }
 
     // ── Bảo mật: đổi mật khẩu + 2FA ──
     renderSecurity(secPanel, !!(me && me.totp_enabled));
