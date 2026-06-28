@@ -618,7 +618,7 @@
       if (/server-unavailable/.test(f.error)) { m = 'Không kết nối được STT Server (' + f.error.replace('server-unavailable:', '') + '). Đổi Engine sang Web Speech trong Cài đặt.'; shortMsg = 'Lỗi server'; }
       else if (/whisper-unavailable/.test(f.error)) { m = 'Whisper chưa sẵn sàng — đang dùng Web Speech tạm. Thử lại sau giây lát.'; shortMsg = 'Đang tải model…'; }
       else if (/score-timeout/.test(f.error)) { m = '⏱️ Chấm quá lâu (mạng chậm hoặc model đang tải). Hãy thử lại — nói rõ, gần micro.'; shortMsg = 'Hết thời gian — thử lại'; hint = 'Nhấn 🎤 Chấm điểm để thử lại.'; }
-      else if (/^mic|not-allowed|denied|audio-capture/.test(f.error)) { m = 'Cần quyền micro. Bấm 🔒/🎤 cạnh thanh địa chỉ của tab video → Microphone → Allow, rồi bấm Chấm điểm lại.'; micFix = true; shortMsg = 'Cần quyền micro'; hint = 'Cấp quyền micro rồi thử lại.'; }
+      else if (/(^mic|not.?allowed|denied|audio-capture|permission|dismiss)/i.test(f.error)) { m = 'Cần quyền micro. Cửa sổ cấp quyền vừa mở (nếu chưa, bấm nút bên dưới) → bấm <b>Cho phép / Allow</b>, rồi quay lại bấm Chấm điểm.'; micFix = true; shortMsg = 'Cần quyền micro'; hint = 'Cấp quyền micro rồi thử lại.'; }
       else if (/empty-transcript|silent/.test(f.error)) {
         const eng = f.engine || '';
         if (eng.includes('no-voice')) {
@@ -2574,6 +2574,16 @@
     const idx = Math.max(0, Math.min(current, sentences.length - 1));
     const s = sentences[idx]; if (!s) return;
     current = idx;
+    // Pre-flight quyền micro: Side Panel KHÔNG hiện được hộp thoại xin quyền (getUserMedia sẽ
+    // trả "Permission dismissed"). Nếu chưa 'granted' → enableMic() (thử trên trang, rồi mở
+    // mic-permission.html). Chưa cấp xong thì dừng, không ghi âm để khỏi dính lỗi.
+    try {
+      const micState = window.ShadowMic.checkMicPermission ? await window.ShadowMic.checkMicPermission() : 'unknown';
+      if (micState !== 'granted') {
+        const ok = await enableMic({ silent: false });
+        if (!ok) { renderFeedback({ error: 'mic:blocked' }); return; }
+      }
+    } catch (_) {}
     showRecordPanel(true);
     setRecordScore(null);
     { const el = $('#you-said-text'); if (el) el.textContent = ''; }
