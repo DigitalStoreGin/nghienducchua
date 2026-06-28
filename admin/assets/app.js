@@ -55,6 +55,11 @@
       paypal: 'Link PayPal donate', sepay_acc: 'Số tài khoản SePay', sepay_bank: 'Mã ngân hàng SePay', iban_prefix: 'Tiền tố mã IBAN',
       sepay_prefix: 'Tiền tố mã SePay', price_table: 'Bảng giá (JSON)', save: 'Lưu', create_order: 'Tạo đơn',
       price_pro_eur: 'Giá Pro (EUR)', price_pro_vnd: 'Giá Pro (VND)', qr_upload: 'Ảnh QR ngân hàng (tải lên)',
+      nav_revenue: 'Doanh thu', nav_emails: 'Email', pay_methods: 'Phương thức thanh toán', email: 'Email',
+      email_subject: 'Tiêu đề email', email_html: 'Nội dung HTML', email_preview: 'Xem trước', email_tpl_note: 'Email gửi cho khách khi nâng cấp Pro. Dùng placeholder: {{name}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
+      last_login: 'Đăng nhập gần nhất', last_seen: 'Hoạt động gần nhất', detail: 'Chi tiết', device: 'Thiết bị', network: 'Mạng',
+      login_history: 'Lịch sử đăng nhập', security: 'Bảo mật', email_verified: 'Email đã xác minh', active_sessions: 'Phiên hoạt động', anomaly: 'Đăng nhập bất thường',
+      ip: 'IP', country: 'Quốc gia', city: 'Thành phố', isp: 'ISP', browser: 'Trình duyệt', os: 'Hệ điều hành', screen: 'Màn hình', tz: 'Múi giờ', time: 'Thời gian', yes: 'Có', no: 'Không',
       method: 'Phương thức', amount: 'Số tiền', currency: 'Tiền tệ', user_id_opt: 'User ID (tuỳ chọn)', orders: 'Đơn thanh toán',
       ref_code: 'Mã tham chiếu', mark_paid: 'Đánh dấu đã trả', order_instructions: 'Hướng dẫn chuyển khoản', reference: 'Nội dung CK',
       pending: 'Chờ', paid: 'Đã trả', theme: 'Sáng/Tối', lang: 'Ngôn ngữ', none: '—',
@@ -97,6 +102,11 @@
       paypal: 'PayPal-Spendenlink', sepay_acc: 'SePay-Kontonummer', sepay_bank: 'SePay-Bankcode', iban_prefix: 'IBAN-Code-Präfix',
       sepay_prefix: 'SePay-Code-Präfix', price_table: 'Preistabelle (JSON)', save: 'Speichern', create_order: 'Auftrag erstellen',
       price_pro_eur: 'Pro-Preis (EUR)', price_pro_vnd: 'Pro-Preis (VND)', qr_upload: 'Bank-QR-Bild (hochladen)',
+      nav_revenue: 'Umsatz', nav_emails: 'E-Mail', pay_methods: 'Zahlungsmethoden', email: 'E-Mail',
+      email_subject: 'Betreff', email_html: 'HTML-Inhalt', email_preview: 'Vorschau', email_tpl_note: 'E-Mail an Kunden beim Pro-Upgrade. Platzhalter: {{name}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
+      last_login: 'Letzter Login', last_seen: 'Zuletzt aktiv', detail: 'Details', device: 'Gerät', network: 'Netzwerk',
+      login_history: 'Login-Verlauf', security: 'Sicherheit', email_verified: 'E-Mail verifiziert', active_sessions: 'Aktive Sitzungen', anomaly: 'Ungewöhnlicher Login',
+      ip: 'IP', country: 'Land', city: 'Stadt', isp: 'ISP', browser: 'Browser', os: 'Betriebssystem', screen: 'Bildschirm', tz: 'Zeitzone', time: 'Zeit', yes: 'Ja', no: 'Nein',
       method: 'Methode', amount: 'Betrag', currency: 'Währung', user_id_opt: 'User-ID (optional)', orders: 'Zahlungsaufträge',
       ref_code: 'Referenzcode', mark_paid: 'Als bezahlt markieren', order_instructions: 'Überweisungsdetails', reference: 'Verwendungszweck',
       pending: 'Offen', paid: 'Bezahlt', theme: 'Hell/Dunkel', lang: 'Sprache', none: '—',
@@ -191,7 +201,9 @@
     dashboard: { icon: '📊', label: 'nav_dash', render: pageDashboard },
     system: { icon: '⚙️', label: 'nav_system', render: pageSystem },
     users: { icon: '👥', label: 'nav_users', render: pageUsers },
+    revenue: { icon: '💰', label: 'nav_revenue', render: pageRevenue },
     payments: { icon: '💳', label: 'nav_pay', render: pagePayments },
+    emails: { icon: '📧', label: 'nav_emails', render: pageEmails },
   };
   function renderShell() {
     const nav = Object.keys(PAGES).map((k) => h('button', {
@@ -553,15 +565,44 @@
         const premBox = h('input', { type: 'checkbox', title: t('premium_translate'), checked: u.premium_translate ? 'checked' : null, onchange: async (e) => { await api('users/translation', { user_id: u.id, premium_translate: e.target.checked }); toast(t('saved')); } });
         const banBtn = h('button', { class: 'btn btn--sm', onclick: async () => { await api('users/' + (u.banned ? 'unban' : 'ban'), { user_id: u.id }); toast(t('saved')); load(); } }, u.banned ? t('unban') : t('ban'));
         const delBtn = h('button', { class: 'btn btn--sm btn--danger', onclick: async () => { if (confirm(t('confirm_delete'))) { await api('users/delete', { user_id: u.id }); toast(t('saved')); load(); } } }, t('delete'));
+        const detBtn = h('button', { class: 'btn btn--sm', onclick: () => openUserDetail(u) }, t('detail'));
         body.append(h('tr', null,
           h('td', null, u.banned ? h('span', { class: 'badge badge--bad' }, t('banned') + ' ') : null, u.email || u.id),
           h('td', null, planSel), h('td', null, srcSel),
           h('td', null, h('div', { class: 'panel-row', style: 'gap:6px' }, transSel, h('label', { class: 'muted', style: 'display:flex;align-items:center;gap:3px;font-size:11px' }, premBox, t('premium_translate')))),
           h('td', null, fmtDate(u.created_at)),
-          h('td', null, h('div', { class: 'row-actions' }, banBtn, delBtn))));
+          h('td', null, h('div', { class: 'row-actions' }, detBtn, banBtn, delBtn))));
       });
       tb.append(body);
       clear(panel).append((r.items && r.items.length) ? h('div', { class: 'table-wrap' }, tb) : h('div', { class: 'empty' }, '—'));
+    }
+    // Chi tiết 360° cho 1 user (hồ sơ / thiết bị / mạng / bảo mật / lịch sử đăng nhập).
+    async function openUserDetail(u) {
+      clear(panel).append(h('div', { class: 'empty' }, h('span', { class: 'spin' })));
+      const d = await api('users/detail', { user_id: u.id });
+      const p = d.profile || {}; const dev = p.last_device || {}; const ev0 = (d.events && d.events[0]) || {};
+      const fmtDT = (s) => s ? new Date(s).toLocaleString(lang === 'de' ? 'de-DE' : 'vi-VN') : '—';
+      const row = (label, val) => h('div', { class: 'panel-row', style: 'justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0' }, h('span', { class: 'muted' }, label), h('b', null, (val == null || val === '') ? '—' : String(val)));
+      const profileSec = h('div', { class: 'panel' }, h('h2', null, '👤 ' + t('nav_users')),
+        row(t('email'), p.email), row('ID', p.id), row(t('created'), fmtDT(p.created_at)),
+        row(t('last_login'), fmtDT(p.last_login_at)), row(t('last_seen'), fmtDT(p.last_seen_at)),
+        row(t('plan'), p.plan || 'free'), row(t('model_source'), p.model_source || 'server'));
+      const deviceSec = h('div', { class: 'panel' }, h('h2', null, '💻 ' + t('device')),
+        row(t('os'), dev.os), row(t('browser'), dev.browser), row(t('device'), dev.device), row(t('screen'), dev.screen), row(t('tz'), dev.timezone), row('Lang', dev.lang));
+      const netSec = h('div', { class: 'panel' }, h('h2', null, '🌐 ' + t('network')),
+        row(t('ip'), p.last_ip), row('IP ' + t('time'), p.prev_ip), row(t('country'), ev0.country), row(t('city'), ev0.city), row(t('isp'), ev0.isp), row('VPN/Proxy', t('none')));
+      const secSec = h('div', { class: 'panel' }, h('h2', null, '🔒 ' + t('security')),
+        row(t('email_verified'), '—'), row(t('active_sessions'), d.active_sessions), row(t('anomaly'), d.anomaly ? ('⚠️ ' + t('yes')) : t('no')));
+      const lh = h('table', null, h('thead', null, h('tr', null, h('th', null, t('time')), h('th', null, t('ip')), h('th', null, t('device')), h('th', null, t('browser')), h('th', null, t('country')))));
+      const lhb = h('tbody');
+      (d.events || []).forEach((e) => lhb.append(h('tr', null, h('td', null, fmtDT(e.ts)), h('td', null, e.ip || '—'), h('td', null, ((e.os || '') + ' ' + (e.device || '')).trim() || '—'), h('td', null, e.browser || '—'), h('td', null, (e.country || '—') + (e.city ? ' / ' + e.city : '')))));
+      lh.append(lhb);
+      const histSec = h('div', { class: 'panel' }, h('h2', null, '📜 ' + t('login_history') + ' (50)'), (d.events && d.events.length) ? h('div', { class: 'table-wrap' }, lh) : h('div', { class: 'empty' }, '—'));
+      clear(panel).append(
+        h('button', { class: 'btn btn--sm', onclick: load }, '← ' + t('nav_users')),
+        h('div', { class: 'grid2', style: 'margin-top:12px' }, profileSec, deviceSec),
+        h('div', { class: 'grid2' }, netSec, secSec),
+        histSec);
     }
     await load();
   }
@@ -578,42 +619,61 @@
     const c = config || {};
     const pt = c.price_table || {};
     const proPrice = pt.pro || { EUR: 9.99, VND: 249000 };
-    const fields = {
-      beneficiary_name: h('input', { type: 'text', value: c.beneficiary_name || '' }),
-      iban: h('input', { type: 'text', value: c.iban || '' }),
-      bic: h('input', { type: 'text', value: c.bic || '' }),
-      bank_name: h('input', { type: 'text', value: c.bank_name || '' }),
-      sepay_account_number: h('input', { type: 'text', value: c.sepay_account_number || '' }),
-      sepay_bank_code: h('input', { type: 'text', value: c.sepay_bank_code || '' }),
-    };
-    const labels = { beneficiary_name: 'beneficiary', iban: 'iban', bic: 'bic', bank_name: 'bank', sepay_account_number: 'sepay_acc', sepay_bank_code: 'sepay_bank' };
-    // Giá gói Pro (chỉnh trực tiếp → ghi vào price_table). Free luôn = 0.
     const proEur = h('input', { type: 'number', step: '0.01', value: String(proPrice.EUR != null ? proPrice.EUR : 9.99) });
     const proVnd = h('input', { type: 'number', value: String(proPrice.VND != null ? proPrice.VND : 249000) });
-    // Ảnh QR ngân hàng VN (lưu base64 data-URI vào payout_config.qr_image).
-    let qrData = c.qr_image || '';
-    const qrImg = h('img', { alt: 'QR', style: 'max-width:170px;border-radius:8px;margin-top:8px;display:' + (qrData ? 'block' : 'none') });
-    if (qrData) qrImg.src = qrData;
-    const qrFile = h('input', { type: 'file', accept: 'image/*', onchange: (e) => {
-      const f = e.target.files && e.target.files[0]; if (!f) return;
-      if (f.size > 700 * 1024) { toast(t('error') + ': ≤ 700KB', true); return; }
-      const rd = new FileReader();
-      rd.onload = () => { qrData = String(rd.result || ''); qrImg.src = qrData; qrImg.style.display = 'block'; };
-      rd.readAsDataURL(f);
-    } });
-    const grid = h('div', { class: 'form-grid' });
-    Object.keys(fields).forEach((k) => grid.append(h('div', { class: 'field' }, h('label', null, t(labels[k])), fields[k])));
-    grid.append(
-      h('div', { class: 'field' }, h('label', null, t('price_pro_eur')), proEur),
-      h('div', { class: 'field' }, h('label', null, t('price_pro_vnd')), proVnd));
-    clear(cfgPanel).append(h('h2', null, t('payout_cfg')), grid,
-      h('div', { class: 'field', style: 'margin-top:12px' }, h('label', null, t('qr_upload')), qrFile, qrImg),
+
+    // Danh sách phương thức thanh toán (clone để chỉnh cục bộ; Lưu ghi cả mảng).
+    let methods = Array.isArray(c.payment_methods) ? JSON.parse(JSON.stringify(c.payment_methods)) : [];
+    const methodsWrap = h('div');
+    const rid = (ty) => ty + '_' + Math.random().toString(36).slice(2, 7);
+    function renderMethods() {
+      clear(methodsWrap);
+      methods.forEach((m, i) => {
+        const enabled = h('input', { type: 'checkbox', onchange: (e) => { m.enabled = e.target.checked; } });
+        if (m.enabled !== false) enabled.checked = true;
+        const label = h('input', { type: 'text', value: m.label || '', oninput: (e) => { m.label = e.target.value; } });
+        const fieldsBox = h('div', { class: 'form-grid' });
+        const addF = (key, lbl, isFile) => {
+          if (isFile) {
+            const img = h('img', { alt: 'QR', style: 'max-width:140px;border-radius:6px;margin-top:6px;display:' + (m[key] ? 'block' : 'none') });
+            if (m[key]) img.src = m[key];
+            const f = h('input', { type: 'file', accept: 'image/*', onchange: (e) => { const file = e.target.files && e.target.files[0]; if (!file) return; if (file.size > 700 * 1024) { toast(t('error') + ': ≤700KB', true); return; } const rd = new FileReader(); rd.onload = () => { m[key] = String(rd.result || ''); img.src = m[key]; img.style.display = 'block'; }; rd.readAsDataURL(file); } });
+            fieldsBox.append(h('div', { class: 'field' }, h('label', null, lbl), f, img));
+          } else {
+            fieldsBox.append(h('div', { class: 'field' }, h('label', null, lbl), h('input', { type: 'text', value: m[key] || '', oninput: (e) => { m[key] = e.target.value; } })));
+          }
+        };
+        if (m.type === 'iban') { addF('beneficiary', t('beneficiary')); addF('iban', t('iban')); addF('bic', t('bic')); addF('bank', t('bank')); }
+        else if (m.type === 'vn_qr') { addF('qr_image', t('qr_upload'), true); addF('note', t('none')); }
+        else if (m.type === 'paypal') { addF('link', 'PayPal link'); addF('email', 'PayPal email'); }
+        methodsWrap.append(h('div', { class: 'panel', style: 'margin-bottom:12px;background:var(--panel2)' },
+          h('div', { class: 'panel-row', style: 'justify-content:space-between' },
+            h('div', null, h('span', { class: 'badge badge--free' }, m.type), ' ', h('label', { style: 'display:inline-flex;align-items:center;gap:5px' }, enabled, t('enabled'))),
+            h('button', { class: 'btn btn--sm btn--danger', onclick: () => { methods.splice(i, 1); renderMethods(); } }, t('delete'))),
+          h('div', { class: 'field', style: 'margin-top:8px' }, h('label', null, t('label')), label),
+          fieldsBox));
+      });
+    }
+    renderMethods();
+    const addType = h('select', null, h('option', { value: 'iban' }, 'IBAN (EU)'), h('option', { value: 'vn_qr' }, 'QR ngân hàng (VN)'), h('option', { value: 'paypal' }, 'PayPal'));
+    const addBtn = h('button', { class: 'btn', onclick: () => { const ty = addType.value; methods.push({ id: rid(ty), type: ty, label: ty === 'iban' ? 'Chuyển khoản IBAN (EU)' : ty === 'vn_qr' ? 'QR ngân hàng (VN)' : 'PayPal', enabled: true }); renderMethods(); } }, '+ ' + t('add'));
+
+    clear(cfgPanel).append(h('h2', null, t('payout_cfg')),
+      h('div', { class: 'form-grid' },
+        h('div', { class: 'field' }, h('label', null, t('price_pro_eur')), proEur),
+        h('div', { class: 'field' }, h('label', null, t('price_pro_vnd')), proVnd)),
+      h('div', { class: 'muted', style: 'margin:16px 0 8px;font-weight:700' }, t('pay_methods')),
+      methodsWrap,
+      h('div', { class: 'panel-row' }, addType, addBtn),
       h('div', { style: 'margin-top:14px' }, h('button', { class: 'btn btn--primary', onclick: async () => {
-        const payload = {};
-        Object.keys(fields).forEach((k) => { payload[k] = fields[k].value; });
-        payload.price_table = { free: { EUR: 0, VND: 0 }, pro: { EUR: parseFloat(proEur.value) || 0, VND: parseInt(proVnd.value, 10) || 0 } };
-        payload.qr_image = qrData;
-        await api('payout-config/update', payload); toast(t('saved'));
+        const fi = methods.find((m) => m.type === 'iban') || {};
+        const fq = methods.find((m) => m.type === 'vn_qr') || {};
+        await api('payout-config/update', {
+          payment_methods: methods,
+          price_table: { free: { EUR: 0, VND: 0 }, pro: { EUR: parseFloat(proEur.value) || 0, VND: parseInt(proVnd.value, 10) || 0 } },
+          beneficiary_name: fi.beneficiary || '', iban: fi.iban || '', bic: fi.bic || '', bank_name: fi.bank || '', qr_image: fq.qr_image || '',
+        });
+        toast(t('saved'));
       } }, t('save'))));
 
     // create order
@@ -655,6 +715,52 @@
       clear(listPanel).append(h('h2', null, t('orders')), (r.items && r.items.length) ? h('div', { class: 'table-wrap' }, tb) : h('div', { class: 'empty' }, '—'));
     }
     await loadOrders();
+  }
+
+  // ───────── PAGE: Revenue (đơn Pro + khách) ─────────
+  async function pageRevenue(view) {
+    clear(view);
+    const panel = h('div', { class: 'panel' }, h('h2', null, t('nav_revenue')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
+    view.append(panel);
+    const r = await api('revenue/list', {});
+    const cards = h('div', { class: 'cards' });
+    Object.keys(r.totals || {}).forEach((cur) => cards.append(kpi(t('revenue'), fmt(r.totals[cur]) + ' ' + cur, '')));
+    cards.append(kpi(t('paid_count'), fmt(r.paid_count || 0), ''));
+    const tb = h('table', null, h('thead', null, h('tr', null,
+      h('th', null, t('created')), h('th', null, t('beneficiary')), h('th', null, t('email')),
+      h('th', null, t('reference')), h('th', null, t('amount')), h('th', null, t('status')), h('th', null, t('actions')))));
+    const body = h('tbody');
+    (r.items || []).forEach((p) => {
+      const st = h('span', { class: 'badge ' + (p.status === 'paid' ? 'badge--good' : 'badge--warn') }, p.status === 'paid' ? t('paid') : t('pending'));
+      const act = p.status === 'paid' ? h('span', { class: 'muted' }, fmtDate(p.paid_at)) : h('button', { class: 'btn btn--sm btn--primary', onclick: async () => { await api('payments/mark-paid', { reference_code: p.reference_code }); toast(t('saved')); route(); } }, t('mark_paid'));
+      body.append(h('tr', null,
+        h('td', null, fmtDate(p.created_at)), h('td', null, p.customer_name || '—'), h('td', null, p.customer_email || '—'),
+        h('td', null, h('code', null, p.reference_code || '—')), h('td', null, fmt(p.amount) + ' ' + (p.currency || '')), h('td', null, st), h('td', null, act)));
+    });
+    tb.append(body);
+    clear(panel).append(h('h2', null, t('nav_revenue')), cards, (r.items && r.items.length) ? h('div', { class: 'table-wrap', style: 'margin-top:14px' }, tb) : h('div', { class: 'empty' }, '—'));
+  }
+
+  // ───────── PAGE: Email template (Pro) + preview ─────────
+  async function pageEmails(view) {
+    clear(view);
+    const panel = h('div', { class: 'panel' }, h('h2', null, t('nav_emails')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
+    view.append(panel);
+    const r = await api('email-template/get', {});
+    const v = r.value || {};
+    const subj = h('input', { type: 'text', value: v.subject || 'NghienDeutsch Pro — Zahlungsanweisungen ({{ref}})' });
+    const html = h('textarea', { rows: '16', style: 'font-family:monospace;font-size:12px;width:100%' }, v.html || '');
+    const frame = h('iframe', { style: 'width:100%;height:420px;border:1px solid var(--border);border-radius:10px;background:#fff' });
+    const sample = (s) => String(s || '').replace(/\{\{name\}\}/g, 'Nguyễn Văn A').replace(/\{\{ref\}\}/g, 'PRO-ABC123').replace(/\{\{amount\}\}/g, '249.000₫').replace(/\{\{method_label\}\}/g, 'QR ngân hàng (VN)').replace(/\{\{method_instructions\}\}/g, 'IBAN: <b>DE...</b>');
+    clear(panel).append(h('h2', null, t('nav_emails')),
+      h('div', { class: 'muted', style: 'margin-bottom:10px' }, t('email_tpl_note')),
+      h('div', { class: 'field' }, h('label', null, t('email_subject')), subj),
+      h('div', { class: 'field', style: 'margin-top:10px' }, h('label', null, t('email_html')), html),
+      h('div', { class: 'panel-row', style: 'margin-top:12px' },
+        h('button', { class: 'btn', onclick: () => { try { frame.srcdoc = sample(html.value); } catch (_) {} } }, t('email_preview')),
+        h('button', { class: 'btn btn--primary', onclick: async () => { await api('email-template/set', { subject: subj.value, html: html.value }); toast(t('saved')); } }, t('save'))),
+      h('div', { style: 'margin-top:12px' }, frame));
+    try { frame.srcdoc = sample(html.value); } catch (_) {}
   }
 
   // ───────── boot ─────────
