@@ -1491,6 +1491,23 @@
     } catch { return null; }
   }
 
+  // Gửi thông tin phiên (thiết bị/mạng) cho Worker → Admin Users 360°.
+  async function sendSessionPing(event) {
+    try {
+      if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn()) return;
+      await fetch(WORKER_URL + '/session/ping', {
+        method: 'POST', headers: workerHeaders(),
+        body: JSON.stringify({
+          event: event || 'ping',
+          ua: navigator.userAgent,
+          screen: (screen.width + 'x' + screen.height),
+          lang: navigator.language || '',
+          timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || '',
+        }),
+      });
+    } catch (_) {}
+  }
+
   const glossCache = {};
   async function fetchGloss(word) {
     const from = settings.targetLang || 'de';
@@ -1707,7 +1724,7 @@
     const modal = document.getElementById('upgrade-modal');
     const reasonEl = document.getElementById('upgrade-reason');
     if (reasonEl && reason) reasonEl.textContent = reason;
-    const payBox = document.getElementById('pay-info'); if (payBox) payBox.hidden = true; // reset mỗi lần mở
+    const payBox = document.getElementById('pay-flow'); if (payBox) payBox.hidden = true; // reset mỗi lần mở
     if (modal) modal.hidden = false;
   }
 
@@ -1723,35 +1740,76 @@
     const backdrop = document.getElementById('upgrade-modal');
     if (backdrop) backdrop.onclick = (e) => { if (e.target === backdrop) hideUpgradeModal(); };
 
-    // "Chọn Pro" → tải thông tin thanh toán (/pay-info) → hiện giá + IBAN + QR ngân hàng VN.
+    // "Chọn Pro" → luồng 3 bước: chọn phương thức → điền thông tin → gửi yêu cầu (email).
+    let _payInfo = null, _paySelected = null;
+    const showPayStep = (step) => {
+      ['method', 'form', 'done'].forEach((s) => { const el = document.getElementById('pay-step-' + s); if (el) el.hidden = (s !== step); });
+      const flow = document.getElementById('pay-flow'); if (flow) flow.hidden = false;
+    };
+    const renderMethodInstr = (m) => {
+      const rowsEl = document.getElementById('pay-rows'); const qrEl = document.getElementById('pay-qr');
+      if (rowsEl) {
+        rowsEl.innerHTML = '';
+        const add = (label, val) => { if (!val) return; const d = document.createElement('div'); d.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); d.appendChild(s); d.appendChild(b); rowsEl.appendChild(d); };
+        if (m.type === 'iban') { add('Người nhận', m.beneficiary); add('IBAN', m.iban); add('Bank', m.bank); add('BIC', m.bic); }
+        else if (m.type === 'paypal') { add('PayPal', m.link || m.email); }
+        else if (m.type === 'vn_qr') { add('Hình thức', 'Quét QR ngân hàng'); }
+      }
+      if (qrEl) { if (m.type === 'vn_qr' && m.qr_image) { qrEl.src = m.qr_image; qrEl.hidden = false; } else qrEl.hidden = true; }
+    };
     const proBtn = document.getElementById('btn-choose-pro');
     if (proBtn) proBtn.onclick = async () => {
-      const box = document.getElementById('pay-info');
-      const priceEl = document.getElementById('pay-price');
-      const rowsEl = document.getElementById('pay-rows');
-      const qrEl = document.getElementById('pay-qr');
-      if (box) box.hidden = false;
-      if (rowsEl) rowsEl.textContent = 'Đang tải…';
+      const methodsEl = document.getElementById('pay-methods');
+      showPayStep('method');
+      if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">Đang tải…</div>';
       try {
         const r = await fetch(WORKER_URL + '/pay-info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const info = await r.json();
-        const pro = (info.price_table || {}).pro || {};
-        if (priceEl) {
-          const vnd = pro.VND ? (Number(pro.VND).toLocaleString('vi-VN') + '₫') : '';
-          const eur = pro.EUR ? ('€' + pro.EUR) : '';
-          priceEl.textContent = 'Gói Pro: ' + ([vnd, eur].filter(Boolean).join(' · ') || 'liên hệ admin');
+        _payInfo = await r.json();
+        const pro = (_payInfo.price_table || {}).pro || {};
+        const vnd = pro.VND ? (Number(pro.VND).toLocaleString('vi-VN') + '₫') : '';
+        const eur = pro.EUR ? ('€' + pro.EUR) : '';
+        const priceStr = 'Gói Pro: ' + ([vnd, eur].filter(Boolean).join(' · ') || 'liên hệ admin');
+        const pEl = document.getElementById('pay-price'); if (pEl) pEl.textContent = priceStr;
+        const methods = (_payInfo.methods || []).filter((m) => m && m.enabled !== false);
+        if (methodsEl) {
+          methodsEl.innerHTML = '';
+          if (!methods.length) { methodsEl.innerHTML = '<div class="pay-info-note">Chưa cấu hình phương thức. Liên hệ admin.</div>'; return; }
+          methods.forEach((m) => {
+            const b = document.createElement('button');
+            b.className = 'pay-method-btn';
+            b.innerHTML = '<span>' + (m.type === 'vn_qr' ? '🏦' : m.type === 'paypal' ? '🅿️' : '🇪🇺') + '</span> ' + (m.label || m.type);
+            b.onclick = () => { _paySelected = m; renderMethodInstr(m); showPayStep('form'); };
+            methodsEl.appendChild(b);
+          });
         }
+      } catch (_) {
+        if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">Không tải được thông tin thanh toán. Liên hệ admin.</div>';
+      }
+    };
+    const paySubmit = document.getElementById('pay-submit');
+    if (paySubmit) paySubmit.onclick = async () => {
+      const name = (document.getElementById('pay-name') || {}).value || '';
+      const email = (document.getElementById('pay-email') || {}).value || '';
+      const errEl = document.getElementById('pay-form-err');
+      if (errEl) errEl.textContent = '';
+      if (!name.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { if (errEl) errEl.textContent = 'Vui lòng nhập Họ tên và email hợp lệ.'; return; }
+      paySubmit.disabled = true; paySubmit.textContent = 'Đang gửi…';
+      try {
+        const r = await fetch(WORKER_URL + '/upgrade-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), email: email.trim(), method: (_paySelected && _paySelected.id) || '' }) });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.message || 'fail');
+        const rowsEl = document.getElementById('pay-done-rows');
         if (rowsEl) {
           rowsEl.innerHTML = '';
-          const add = (label, val) => { if (!val) return; const d = document.createElement('div'); d.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); d.appendChild(s); d.appendChild(b); rowsEl.appendChild(d); };
-          add('Người nhận', info.beneficiary_name);
-          add('Ngân hàng', info.bank_name);
-          add('Số TK / IBAN', info.iban);
+          const add = (label, val) => { const dv = document.createElement('div'); dv.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); dv.appendChild(s); dv.appendChild(b); rowsEl.appendChild(dv); };
+          add('Số tiền', d.amount || '');
+          add('Nội dung CK (Verwendungszweck)', d.reference_code || '');
+          add('Phương thức', (_paySelected && _paySelected.label) || '');
         }
-        if (qrEl) { if (info.qr_image) { qrEl.src = info.qr_image; qrEl.hidden = false; } else qrEl.hidden = true; }
-      } catch (_) {
-        if (rowsEl) rowsEl.textContent = 'Không tải được thông tin thanh toán. Liên hệ admin.';
-      }
+        showPayStep('done');
+      } catch (e) {
+        if (errEl) errEl.textContent = 'Lỗi gửi yêu cầu: ' + (e.message || e) + '. Thử lại hoặc liên hệ admin.';
+      } finally { paySubmit.disabled = false; paySubmit.textContent = 'Gửi yêu cầu nâng cấp'; }
     };
 
     // btn-upgrade in menu
@@ -2890,6 +2948,7 @@
           updateAccountUI(user, profile);
           updateUsageUI(profile);
         });
+        sendSessionPing('login');
         refresh();
       } else {
         // Not logged in → show auth
