@@ -120,6 +120,14 @@ export default {
       return handlePayInfo(env);
     }
 
+    // Public: khách bấm Nâng cấp Pro → điền Họ tên/email/phương thức → tạo đơn + gửi email.
+    if (url.pathname === '/upgrade-request') {
+      if (env.RATE_LIMITER) {
+        try { const ip = request.headers.get('CF-Connecting-IP') || 'anon'; const { success } = await env.RATE_LIMITER.limit({ key: 'upgrade:' + ip }); if (!success) return json({ error: 'rate_limited' }, 429); } catch (_) {}
+      }
+      return handleUpgradeRequest(request, env, ctx);
+    }
+
     // All other routes require Supabase JWT
     const authHeader = request.headers.get('Authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -159,6 +167,10 @@ export default {
 
     if (url.pathname === '/me') {
       return handleMe(env, user);
+    }
+
+    if (url.pathname === '/session/ping') {
+      return handleSessionPing(request, env, user, ctx);
     }
 
     return json({ error: 'not_found' }, 404);
@@ -399,20 +411,192 @@ async function verifyToken(token, env) {
 // Chỉ trả field an toàn; KHÔNG trả sepay key / bic. Admin sửa trong trang Thanh toán.
 async function handlePayInfo(env) {
   try {
-    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/payout_config?select=beneficiary_name,iban,bank_name,qr_image,price_table&limit=1`, {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/payout_config?select=beneficiary_name,iban,bank_name,qr_image,price_table,payment_methods&limit=1`, {
       headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY },
     });
     if (!r.ok) return json({ error: 'unavailable' }, 200);
     const rows = await r.json().catch(() => []);
     const c = (rows && rows[0]) || {};
+    // Danh sách phương thức đang bật (mọi field đều để hiển thị → an toàn công khai).
+    let methods = Array.isArray(c.payment_methods) ? c.payment_methods.filter((m) => m && m.enabled) : [];
+    // Tương thích ngược: nếu chưa cấu hình methods → dựng từ iban/qr cũ.
+    if (!methods.length) {
+      if (c.iban) methods.push({ id: 'iban', type: 'iban', label: 'Chuyển khoản IBAN (EU)', beneficiary: c.beneficiary_name || '', iban: c.iban, bank: c.bank_name || '' });
+      if (c.qr_image) methods.push({ id: 'vn_qr', type: 'vn_qr', label: 'QR ngân hàng (VN)', qr_image: c.qr_image });
+    }
     return json({
       beneficiary_name: c.beneficiary_name || '',
       iban: c.iban || '',
       bank_name: c.bank_name || '',
       qr_image: c.qr_image || '',
       price_table: c.price_table || {},
+      methods,
     });
   } catch (_) { return json({ error: 'unavailable' }, 200); }
+}
+
+// ── Email + nâng cấp Pro ───────────────────────────────────────────────────
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function fillTpl(s, vars) { return String(s || '').replace(/\{\{(\w+)\}\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : '')); }
+function genRef() {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const u = crypto.getRandomValues(new Uint8Array(6));
+  let s = ''; for (let i = 0; i < 6; i++) s += a[u[i] % a.length];
+  return 'PRO-' + s;
+}
+
+// Email NghienDeutsch (mặc định) — admin override trong app_settings key 'email_pro'.
+const DEFAULT_PRO_EMAIL = {
+  subject: 'NghienDeutsch Pro — Zahlungsanweisungen ({{ref}})',
+  html: `<!doctype html><html lang="de"><body style="margin:0;background:#F8FAFC;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;padding:24px 0"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.08)">
+  <tr><td style="background:linear-gradient(135deg,#2563EB,#0EA5E9);padding:32px 32px 28px">
+    <div style="font-size:22px;font-weight:800;color:#ffffff;letter-spacing:.3px">NghienDeutsch</div>
+    <div style="font-size:13px;color:#dbeafe;margin-top:4px">Deutsch lernen mit KI</div>
+  </td></tr>
+  <tr><td style="padding:32px">
+    <h1 style="margin:0 0 8px;font-size:24px;color:#0f172a">Willkommen bei Pro, {{name}}! 🎉</h1>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#475569">Vielen Dank für Ihr Upgrade. Bitte schließen Sie die Zahlung mit den folgenden Angaben ab — danach schalten wir Ihren Pro-Zugang manuell frei.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;border:1px solid #e2e8f0;border-radius:16px;padding:0">
+      <tr><td style="padding:20px">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#64748b;font-weight:700">Zahlung — {{method_label}}</div>
+        <div style="font-size:26px;font-weight:800;color:#2563EB;margin:6px 0 12px">{{amount}}</div>
+        <div style="font-size:14px;line-height:1.7;color:#0f172a">{{method_instructions}}</div>
+        <div style="margin-top:12px;padding:10px 14px;background:#FEF3C7;border-radius:10px;font-size:13px;color:#92400e"><b>Verwendungszweck (Pflicht):</b> {{ref}}</div>
+      </td></tr>
+    </table>
+    <p style="margin:22px 0 8px;font-size:15px;font-weight:700;color:#0f172a">Was Sie mit Pro erhalten</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#334155;line-height:1.8">
+      <tr><td>🎤 KI-Aussprachebewertung Satz für Satz</td></tr>
+      <tr><td>📺 Shadowing direkt auf YouTube &amp; Netflix</td></tr>
+      <tr><td>📖 KI-Übersetzung im Kontext &amp; Wortschatz</td></tr>
+      <tr><td>♾️ Unbegrenzte Nutzung — kein Tageslimit</td></tr>
+    </table>
+    <p style="margin:24px 0 0;font-size:13px;color:#64748b">Nach Zahlungseingang aktivieren wir Pro für dieses Konto. Bei Fragen antworten Sie einfach auf diese E-Mail.</p>
+  </td></tr>
+  <tr><td style="padding:20px 32px;background:#0f172a;color:#94a3b8;font-size:12px;text-align:center">
+    NghienDeutsch · Deutsch lernen mit KI · <a href="mailto:thoatran21012@gmail.com" style="color:#93c5fd;text-decoration:none">Support</a>
+  </td></tr>
+</table></td></tr></table></body></html>`,
+};
+
+async function getProEmail(env) {
+  try {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings?key=eq.email_pro&select=value`, { headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY } });
+    if (r.ok) { const rows = await r.json().catch(() => []); const v = rows[0] && rows[0].value; if (v && v.html) return { subject: v.subject || DEFAULT_PRO_EMAIL.subject, html: v.html }; }
+  } catch (_) {}
+  return DEFAULT_PRO_EMAIL;
+}
+
+function methodInstructionsHtml(method, ref) {
+  if (!method) return '';
+  if (method.type === 'iban') return `IBAN: <b>${escapeHtml(method.iban || '')}</b><br>Empfänger: <b>${escapeHtml(method.beneficiary || '')}</b>` + (method.bank ? `<br>Bank: ${escapeHtml(method.bank)}` : '') + (method.bic ? `<br>BIC: ${escapeHtml(method.bic)}` : '');
+  if (method.type === 'vn_qr') return `Quét mã QR bằng app ngân hàng:` + (method.qr_image ? `<br><img src="${method.qr_image}" alt="QR" style="max-width:220px;margin-top:8px;border-radius:8px">` : '');
+  if (method.type === 'paypal') return `PayPal: <b>${escapeHtml(method.link || method.email || '')}</b>`;
+  return escapeHtml(method.note || '');
+}
+
+async function sendResend(env, to, subject, text) {
+  if (!env.RESEND_API_KEY) { console.error('[RESEND-MISSING]', subject); return; }
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST', headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: env.ALERT_FROM || 'NghienDeutsch <onboarding@resend.dev>', to: [to], subject, text }),
+    });
+  } catch (e) { console.error('[RESEND-FAIL]', e.message); }
+}
+
+async function sendBrevo(env, toEmail, toName, subject, html) {
+  if (!env.BREVO_API_KEY) { console.error('[BREVO-MISSING]'); return { ok: false, error: 'no_brevo' }; }
+  try {
+    const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST', headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json', 'accept': 'application/json' },
+      body: JSON.stringify({ sender: { name: 'NghienDeutsch', email: env.BREVO_SENDER || 'thoatran21012@gmail.com' }, to: [{ email: toEmail, name: toName || toEmail }], subject, htmlContent: html }),
+    });
+    return { ok: r.ok };
+  } catch (e) { console.error('[BREVO-FAIL]', e.message); return { ok: false }; }
+}
+
+async function handleUpgradeRequest(request, env, ctx) {
+  let body; try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
+  const name = String(body.name || '').trim().slice(0, 120);
+  const email = String(body.email || '').trim().slice(0, 160);
+  const methodId = String(body.method || '').trim();
+  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'bad_input', message: 'Vui lòng nhập Họ tên và email hợp lệ.' }, 400);
+
+  const sbHead = { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY };
+  const cfgRows = await (await fetch(`${env.SUPABASE_URL}/rest/v1/payout_config?select=*&limit=1`, { headers: sbHead })).json().catch(() => []);
+  const cfg = cfgRows[0] || {};
+  const methods = Array.isArray(cfg.payment_methods) ? cfg.payment_methods : [];
+  const method = methods.find((m) => m.id === methodId) || methods.find((m) => m.enabled) || methods[0] || null;
+  const pro = (cfg.price_table && cfg.price_table.pro) || {};
+  const currency = (method && method.type === 'vn_qr') ? 'VND' : 'EUR';
+  const amount = currency === 'VND' ? (pro.VND || 0) : (pro.EUR || 0);
+  const ref = genRef();
+
+  // Lưu đơn (pending) kèm thông tin khách → Doanh thu + email không cần join auth.
+  await fetch(`${env.SUPABASE_URL}/rest/v1/payments`, {
+    method: 'POST', headers: { ...sbHead, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ reference_code: ref, method: method ? method.type : (methodId || 'iban'), plan: 'pro', amount, currency, status: 'pending', customer_name: name, customer_email: email }),
+  }).catch(() => {});
+
+  const amountStr = currency === 'VND' ? (Number(amount).toLocaleString('en-US') + '₫') : ('€' + amount);
+  const tpl = await getProEmail(env);
+  const vars = { name: escapeHtml(name), ref, amount: amountStr, method_label: escapeHtml(method ? method.label : ''), method_instructions: methodInstructionsHtml(method, ref) };
+  const html = fillTpl(tpl.html, vars);
+  const subject = fillTpl(tpl.subject, { ref, name });
+  const ownerText = `Đơn nâng cấp Pro mới\n\nHọ tên: ${name}\nEmail: ${email}\nPhương thức: ${method ? method.label : methodId}\nVerwendungszweck: ${ref}\nSố tiền: ${amountStr}\nThời gian: ${new Date().toISOString()}`;
+
+  const send = (async () => {
+    await sendResend(env, env.ALERT_EMAIL || 'huytruong18122001@gmail.com', 'NghienDeutsch: Đơn Pro mới — ' + ref, ownerText);
+    await sendBrevo(env, email, name, subject, html);
+  })();
+  if (ctx && ctx.waitUntil) ctx.waitUntil(send); else await send;
+
+  return json({ ok: true, reference_code: ref, amount: amountStr, currency, method: method || null });
+}
+
+// Parse User-Agent thô → {device, os, browser} (đủ dùng cho bảng admin).
+function parseUA(ua) {
+  ua = String(ua || '');
+  const os = /Windows NT 10/.test(ua) ? 'Windows 10/11' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /(iPhone|iPad|iOS)/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : 'Unknown';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Unknown';
+  const device = /Mobile|Android|iPhone/.test(ua) ? 'Mobile' : /iPad|Tablet/.test(ua) ? 'Tablet' : 'Desktop';
+  return { device, os, browser };
+}
+
+// ── /session/ping  — ghi nhận đăng nhập/heartbeat + thiết bị + mạng (cho Admin Users 360°) ──
+async function handleSessionPing(request, env, user, ctx) {
+  let body = {}; try { body = await request.json(); } catch (_) {}
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  const cf = request.cf || {};
+  const ua = String(body.ua || request.headers.get('User-Agent') || '').slice(0, 400);
+  const p = parseUA(ua);
+  const ev = {
+    user_id: user.id,
+    event: (body.event === 'login' || body.event === 'logout') ? body.event : 'ping',
+    ip, ua, device: p.device, os: p.os, browser: p.browser,
+    screen: String(body.screen || '').slice(0, 20),
+    lang: String(body.lang || '').slice(0, 20),
+    timezone: String(body.timezone || '').slice(0, 60),
+    country: cf.country || '', city: cf.city || '', isp: cf.asOrganization || '',
+    method: 'supabase', success: true,
+  };
+  const sbHead = { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' };
+  const work = (async () => {
+    try { await fetch(`${env.SUPABASE_URL}/rest/v1/login_events`, { method: 'POST', headers: { ...sbHead, Prefer: 'return=minimal' }, body: JSON.stringify(ev) }); } catch (_) {}
+    // Cập nhật profiles.last_* (dời last_ip → prev_ip khi IP đổi).
+    try {
+      const cur = (await (await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=last_ip`, { headers: sbHead })).json().catch(() => []))[0] || {};
+      const patch = { last_seen_at: new Date().toISOString(), last_ip: ip, last_device: { device: p.device, os: p.os, browser: p.browser, screen: ev.screen, lang: ev.lang, timezone: ev.timezone } };
+      if (ev.event === 'login') patch.last_login_at = patch.last_seen_at;
+      if (cur.last_ip && cur.last_ip !== ip) patch.prev_ip = cur.last_ip;
+      await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, { method: 'PATCH', headers: { ...sbHead, Prefer: 'return=minimal' }, body: JSON.stringify(patch) });
+    } catch (_) {}
+  })();
+  if (ctx && ctx.waitUntil) ctx.waitUntil(work); else await work;
+  return json({ ok: true });
 }
 
 // Đọc nguồn model của user (server|local|dedicated). Fail-safe: 'server'.
