@@ -200,6 +200,12 @@ async function scoreOnce(provider, model, key, systemPrompt, userPrompt) {
 async function handleScoreAI(request, env, ctx) {
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
+  // Nếu có token: chặn user local (dùng máy) + user bị cấm → KHÔNG tốn Groq.
+  const gate = await publicUserGate(env, request);
+  if (gate && gate.block) return gate.resp;
+  // Free 60'/ngày (chỉ khi đăng nhập): hết giờ → chặn.
+  if (gate && gate.user) { const q = await freeHourGate(env, gate.user.id); if (q) return q; }
+
   // Burst rate limit per IP (reuse same binding as /log).
   if (env.RATE_LIMITER) {
     const ip = request.headers.get('CF-Connecting-IP') || 'anon';
@@ -299,6 +305,11 @@ async function maybeAlertGroqExhausted(env, keyCount) {
 
 async function handleTranscribe(request, env, ctx) {
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+
+  // Nếu có token: chặn user local + bị cấm (không tốn Groq), và free 60'/ngày.
+  const gate = await publicUserGate(env, request);
+  if (gate && gate.block) return gate.resp;
+  if (gate && gate.user) { const q = await freeHourGate(env, gate.user.id); if (q) return q; }
 
   if (env.RATE_LIMITER) {
     const ip = request.headers.get('CF-Connecting-IP') || 'anon';
@@ -404,6 +415,44 @@ async function handlePayInfo(env) {
   } catch (_) { return json({ error: 'unavailable' }, 200); }
 }
 
+// Đọc nguồn model của user (server|local|dedicated). Fail-safe: 'server'.
+async function userModelSource(env, userId) {
+  try {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=model_source`, {
+      headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY },
+    });
+    if (!r.ok) return 'server';
+    const rows = await r.json().catch(() => []);
+    return (rows[0] && rows[0].model_source) || 'server';
+  } catch (_) { return 'server'; }
+}
+
+// Cổng cho endpoint công khai (transcribe/score) khi có token: chặn nếu user = local.
+// Trả { block:true, resp } để caller return luôn; hoặc { user } khi cho qua; null khi không token.
+async function publicUserGate(env, request) {
+  const auth = request.headers.get('Authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token) return null;
+  const user = await verifyToken(token, env);
+  if (!user) return null;
+  if (await isBanned(env, user.id)) return { block: true, resp: json({ error: 'banned' }, 403) };
+  const ms = await userModelSource(env, user.id);
+  if (ms === 'local') return { block: true, resp: json({ error: 'use_local', message: 'Tài khoản đang dùng model LOCAL — không gọi server.' }, 403) };
+  return { user };
+}
+
+// Free 60'/ngày: gọi RPC free_hour_check (bắt đầu đồng hồ ở lần đầu trong ngày).
+// Trả Response 403 khi hết giờ; null khi cho phép (fail-open nếu RPC lỗi/chưa có).
+async function freeHourGate(env, userId) {
+  try {
+    const r = await sbRpc(env, 'free_hour_check', { p_user_id: userId });
+    if (r && r.allowed === false) {
+      return json({ error: 'free_hour_over', message: 'Đã hết 1 giờ dùng thử miễn phí hôm nay. Quay lại ngày mai hoặc nâng cấp Pro để dùng không giới hạn.', resets_tomorrow: true }, 403);
+    }
+  } catch (_) {}
+  return null;
+}
+
 // Kiểm tra user bị cấm (profiles.banned). Fail-open: lỗi DB KHÔNG tự khoá user.
 async function isBanned(env, userId) {
   try {
@@ -444,7 +493,7 @@ async function handleMe(env, user) {
   try {
     const [profileRes, usageRes] = await Promise.all([
       fetch(
-        `${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=plan,email,full_name`,
+        `${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=plan,email,full_name,model_source`,
         {
           headers: {
             'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
@@ -486,6 +535,7 @@ async function handleMe(env, user) {
       email: profile.email || user.email,
       plan: planName,
       planName: plan.display_name,
+      model_source: profile.model_source || 'server', // server | local | dedicated
       usage: {
         translations: { used: usage.translation_count, limit: plan.daily_translations },
         ai:           { used: usage.ai_count,          limit: plan.daily_ai_calls },
@@ -655,6 +705,9 @@ async function handleTranslate(request, env, userId, ctx) {
   const from = (body.from || body.source_lang || 'de').toLowerCase();
   const to   = (body.to   || body.target_lang || 'vi').toLowerCase();
   if (!text) return json({ error: 'empty_text' }, 400);
+
+  // Free 60'/ngày: hết giờ → chặn dịch (kể cả dịch miễn phí client).
+  { const q = await freeHourGate(env, userId); if (q) return q; }
 
   // Cấu hình dịch hiệu lực cho user (gói + override) qua RPC.
   const cfg = await sbRpc(env, 'translation_config_for', { p_user_id: userId });
