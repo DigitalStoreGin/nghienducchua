@@ -487,7 +487,7 @@
       const r = await Promise.race([
         fetch(WORKER_URL + '/score-ai', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: workerHeaders(),
           body: JSON.stringify({ target, transcript, targetLang: settings.targetLang || 'de', nativeLang: settings.nativeLang || 'vi' }),
         }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
@@ -694,9 +694,12 @@
       '<div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>' +
       (sc.lowConfidence ? '<div class="err" style="margin-top:6px">🤔 Nhận diện chưa chắc chắn — thử nói lại rõ hơn để chấm chính xác.</div>' : '') +
       '<div class="ai-score ai-score--loading">⏳ Đang chấm bằng AI…</div>';
-    // Async: AI (Groq Llama) scores in background, updates UI when ready
+    // Async: AI (Groq Llama) scores in background, updates UI when ready.
+    // LOCAL: KHÔNG gọi /score-ai (server Groq) — chỉ chấm bằng phonetic.js local.
     const aiBox = box.querySelector('.ai-score');
-    if (aiBox && sc.transcript && f.sentence && f.sentence.text) {
+    if ((settings.modelSource || 'server') === 'local') {
+      if (aiBox) aiBox.hidden = true;
+    } else if (aiBox && sc.transcript && f.sentence && f.sentence.text) {
       claudeScoreAsync(f.sentence.text, sc.transcript, aiBox);
     } else if (aiBox) {
       aiBox.hidden = true;
@@ -1048,7 +1051,6 @@
     const body = $('#vg-body'); if (!body) return;
     const ttl = $('#vg-title'); if (ttl) ttl.textContent = t('game_title', '🎮 Ôn tập từ vựng');
     const modes = [
-      { m: 'flashcard', icon: '🃏', label: t('game_flashcard', 'Lật thẻ') },
       { m: 'choice', icon: '🔤', label: t('game_choice', 'Trắc nghiệm') },
       { m: 'type', icon: '⌨️', label: t('game_type', 'Nghe & gõ') },
       { m: 'speak', icon: '🎤', label: t('game_speak', 'Nói & chấm') },
@@ -1078,7 +1080,6 @@
   }
   function renderGameStep() {
     const s = _vgState; if (!s) return;
-    if (s.mode === 'flashcard') return gameFlashcard();
     if (s.mode === 'choice') return gameChoice();
     if (s.mode === 'type') return gameType();
     if (s.mode === 'speak') return gameSpeak();
@@ -1150,7 +1151,7 @@
       if (!window.ShadowMic || !window.ShadowMic.recordAndTranscribe) { setStatus(t('mic_not_ready', 'Mic chưa sẵn sàng — tải lại extension.'), 'warn'); return; }
       rec.disabled = true; rec.textContent = '● ' + t('st_listening', 'Đang nghe…');
       let res;
-      try { res = await window.ShadowMic.recordAndTranscribe({ maxMs: 5000, lang2: it.lang || settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad }); }
+      try { res = await window.ShadowMic.recordAndTranscribe({ maxMs: 5000, lang2: it.lang || settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad, modelSource: settings.modelSource || 'server' }); }
       catch (e) { res = { error: 'rec' }; }
       rec.disabled = false; rec.textContent = '🎤 ' + t('game_speak_btn', 'Nói');
       const res2 = $('#vg-result'); res2.hidden = false;
@@ -2646,7 +2647,7 @@
     panelRecording = true; setPanelRecUI(true); startWaveform();
     let res;
     try {
-      res = await window.ShadowMic.recordAndTranscribe({ maxMs: 7000, lang2: settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad });
+      res = await window.ShadowMic.recordAndTranscribe({ maxMs: 7000, lang2: settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad, modelSource: settings.modelSource || 'server' });
     } catch (e) { res = { error: 'rec:' + ((e && e.message) || e) }; }
     panelRecording = false; setPanelRecUI(false); stopWaveform();
     cmd('releasePause');
@@ -2655,6 +2656,12 @@
       if (res && res.error === 'WHISPER_LOADING') {
         const st = $('#record-status-text'); if (st) st.textContent = t('st_ready');
         setStatus('⏳ Model phát âm offline đang tải (~2 phút). Hãy thử lại sau.', 'warn');
+        return;
+      }
+      if (res && res.error === 'free_hour_over') {
+        const st = $('#record-status-text'); if (st) st.textContent = t('st_ready');
+        setStatus('⏳ Đã hết 1 giờ dùng thử miễn phí hôm nay. Quay lại ngày mai hoặc nâng cấp Pro.', 'warn');
+        try { showUpgradeModal('Bạn đã dùng hết 1 giờ miễn phí hôm nay. Nâng cấp Pro để dùng không giới hạn.'); } catch (_) {}
         return;
       }
       renderFeedback({ error: (res && res.error) || 'unknown' });
@@ -2797,13 +2804,19 @@
   // Account UI updater
   function updateAccountUI(user, profile) {
     const emailEl = $('#account-email'); if (emailEl) emailEl.textContent = (user && user.email) || '—';
+    const plan = (profile && profile.plan) || 'free';
+    // Cache nguồn model + gói để các luồng khác dùng (mic local, free-hour…).
+    if (profile && profile.model_source) settings.modelSource = profile.model_source;
+    settings.plan = plan;
     const planEl  = $('#account-plan-badge');
     if (planEl) {
-      const plan = (profile && profile.plan) || 'free';
-      const names = { free: 'Free', basic: 'Basic', pro: 'Pro', lifetime: 'Lifetime' };
+      const names = { free: 'Free', pro: 'Pro' };
       planEl.textContent = names[plan] || plan;
       planEl.className = 'account-plan-badge plan-' + plan;
     }
+    // Đã là Pro → ẩn mọi nút "Nâng cấp Pro".
+    const isPro = plan === 'pro';
+    document.querySelectorAll('#btn-upgrade, .btn-upgrade').forEach((b) => { b.style.display = isPro ? 'none' : ''; });
   }
 
   async function updateUsageUI(profile) {
