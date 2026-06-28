@@ -114,6 +114,12 @@ export default {
       return handleTranscribe(request, env, ctx);
     }
 
+    // Public payment info (no auth) — chỉ field công khai để extension hiện khi user nâng cấp Pro.
+    // KHÔNG trả sepay key / bic nội bộ. Dùng POST để không bị cổng ASSETS (GET) nuốt.
+    if (url.pathname === '/pay-info') {
+      return handlePayInfo(env);
+    }
+
     // All other routes require Supabase JWT
     const authHeader = request.headers.get('Authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -376,6 +382,26 @@ async function verifyToken(token, env) {
   } catch {
     return null;
   }
+}
+
+// ── /pay-info  — thông tin thanh toán CÔNG KHAI cho extension (nâng cấp Pro) ──
+// Chỉ trả field an toàn; KHÔNG trả sepay key / bic. Admin sửa trong trang Thanh toán.
+async function handlePayInfo(env) {
+  try {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/payout_config?select=beneficiary_name,iban,bank_name,qr_image,price_table&limit=1`, {
+      headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY },
+    });
+    if (!r.ok) return json({ error: 'unavailable' }, 200);
+    const rows = await r.json().catch(() => []);
+    const c = (rows && rows[0]) || {};
+    return json({
+      beneficiary_name: c.beneficiary_name || '',
+      iban: c.iban || '',
+      bank_name: c.bank_name || '',
+      qr_image: c.qr_image || '',
+      price_table: c.price_table || {},
+    });
+  } catch (_) { return json({ error: 'unavailable' }, 200); }
 }
 
 // Kiểm tra user bị cấm (profiles.banned). Fail-open: lỗi DB KHÔNG tự khoá user.
