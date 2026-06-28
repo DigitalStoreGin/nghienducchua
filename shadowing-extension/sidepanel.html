@@ -696,13 +696,30 @@
           <button class="upgrade-plan-btn" data-plan="pro" id="btn-choose-pro">Chọn Pro</button>
         </div>
       </div>
-      <!-- Thông tin thanh toán (điền từ Worker /pay-info; admin sửa trong trang Thanh toán) -->
-      <div class="pay-info" id="pay-info" hidden>
-        <h3 class="pay-info-title">💳 Thanh toán gói Pro</h3>
-        <div class="pay-info-price" id="pay-price"></div>
-        <div class="pay-info-rows" id="pay-rows"></div>
-        <img class="pay-info-qr" id="pay-qr" alt="QR chuyển khoản" hidden>
-        <p class="pay-info-note">Sau khi chuyển khoản, liên hệ admin để được nâng cấp lên Pro.</p>
+      <!-- Bước thanh toán: (1) chọn phương thức → (2) điền thông tin → (3) xác nhận -->
+      <div class="pay-flow" id="pay-flow" hidden>
+        <!-- Bước 1: chọn phương thức -->
+        <div id="pay-step-method">
+          <h3 class="pay-info-title">💳 Chọn phương thức thanh toán</h3>
+          <div class="pay-methods" id="pay-methods"><div class="pay-info-note">Đang tải…</div></div>
+        </div>
+        <!-- Bước 2: điền thông tin -->
+        <div id="pay-step-form" hidden>
+          <h3 class="pay-info-title">📝 Thông tin của bạn</h3>
+          <div class="pay-info-price" id="pay-price"></div>
+          <input type="text" id="pay-name" class="auth-input" placeholder="Họ và tên" autocomplete="name" style="margin:8px 0">
+          <input type="email" id="pay-email" class="auth-input" placeholder="Email nhận hướng dẫn" autocomplete="email" style="margin-bottom:8px">
+          <div class="pay-info-rows" id="pay-rows"></div>
+          <img class="pay-info-qr" id="pay-qr" alt="QR chuyển khoản" hidden>
+          <button class="auth-btn-primary" id="pay-submit" style="margin-top:10px">Gửi yêu cầu nâng cấp</button>
+          <div class="pay-info-note" id="pay-form-err" style="color:#d63b3b"></div>
+        </div>
+        <!-- Bước 3: xác nhận -->
+        <div id="pay-step-done" hidden>
+          <h3 class="pay-info-title">✅ Đã gửi yêu cầu</h3>
+          <div class="pay-info-rows" id="pay-done-rows"></div>
+          <p class="pay-info-note">Đã gửi hướng dẫn thanh toán tới email của bạn. Sau khi chuyển khoản (đúng nội dung), admin sẽ kích hoạt Pro cho tài khoản này.</p>
+        </div>
       </div>
       <p class="upgrade-contact">Liên hệ: <a href="mailto:thoatran21012@gmail.com">thoatran21012@gmail.com</a></p>
     </div>
