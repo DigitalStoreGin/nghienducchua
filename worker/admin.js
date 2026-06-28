@@ -439,7 +439,7 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     }
     case '/admin/payout-config/update': {
       const fields = {};
-      ['beneficiary_name', 'iban', 'bic', 'bank_name', 'paypal_link', 'sepay_account_number', 'sepay_bank_code', 'iban_ref_prefix', 'sepay_ref_prefix', 'price_table'].forEach((k) => { if (body[k] !== undefined) fields[k] = body[k]; });
+      ['beneficiary_name', 'iban', 'bic', 'bank_name', 'paypal_link', 'sepay_account_number', 'sepay_bank_code', 'iban_ref_prefix', 'sepay_ref_prefix', 'price_table', 'qr_image'].forEach((k) => { if (body[k] !== undefined) fields[k] = body[k]; });
       fields.updated_at = new Date().toISOString();
       const existing = await sbGet(env, 'payout_config?select=id&limit=1');
       if (existing[0]) await sbPatch(env, 'payout_config', `id=eq.${existing[0].id}`, fields);
