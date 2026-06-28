@@ -447,37 +447,128 @@ function genRef() {
 
 // Email NghienDeutsch (mặc định) — admin override trong app_settings key 'email_pro'.
 const DEFAULT_PRO_EMAIL = {
-  subject: 'NghienDeutsch Pro — Zahlungsanweisungen ({{ref}})',
-  html: `<!doctype html><html lang="de"><body style="margin:0;background:#F8FAFC;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;padding:24px 0"><tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.08)">
-  <tr><td style="background:linear-gradient(135deg,#2563EB,#0EA5E9);padding:32px 32px 28px">
-    <div style="font-size:22px;font-weight:800;color:#ffffff;letter-spacing:.3px">NghienDeutsch</div>
-    <div style="font-size:13px;color:#dbeafe;margin-top:4px">Deutsch lernen mit KI</div>
+  subject: 'NghienDeutsch Pro — Ihre Zahlungsanweisungen ({{ref}})',
+  html: `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;-webkit-font-smoothing:antialiased">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Deutsch lernen mit KI — Hören. Sprechen. Verstehen. Jeden Tag besser werden.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">
+
+  <!-- Logo -->
+  <tr><td style="padding:8px 8px 18px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="font-size:20px;font-weight:800;color:#2563EB;letter-spacing:.2px">Nghien<span style="color:#0EA5E9">Deutsch</span></td>
+      <td align="right" style="font-size:12px;color:#64748b">Deutsch lernen mit KI</td>
+    </tr></table>
   </td></tr>
-  <tr><td style="padding:32px">
-    <h1 style="margin:0 0 8px;font-size:24px;color:#0f172a">Willkommen bei Pro, {{name}}! 🎉</h1>
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#475569">Vielen Dank für Ihr Upgrade. Bitte schließen Sie die Zahlung mit den folgenden Angaben ab — danach schalten wir Ihren Pro-Zugang manuell frei.</p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;border:1px solid #e2e8f0;border-radius:16px;padding:0">
-      <tr><td style="padding:20px">
+
+  <!-- Hero Banner (placeholder: Hero-Bild als Hintergrund möglich) -->
+  <tr><td style="background:linear-gradient(135deg,#2563EB 0%,#0EA5E9 100%);border-radius:20px;padding:40px 32px">
+    <h1 style="margin:0;font-size:30px;line-height:1.2;color:#ffffff;font-weight:800">Deutsch lernen mit KI.</h1>
+    <p style="margin:14px 0 0;font-size:16px;line-height:1.7;color:#e0f2fe">Hören. Sprechen. Verstehen.<br>Jeden Tag besser werden.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:22px"><tr><td style="background:#F59E0B;border-radius:12px">
+      <a href="https://nghienducchua-proxy.thoatran21012.workers.dev" style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:700;color:#0f172a;text-decoration:none">Jetzt kostenlos testen</a>
+    </td></tr></table>
+  </td></tr>
+
+  <!-- Begrüßung + Zahlungsbox -->
+  <tr><td style="padding:28px 8px 8px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.06)"><tr><td style="padding:28px">
+      <h2 style="margin:0 0 6px;font-size:21px;color:#0f172a">Willkommen bei Pro, {{name}}! 🎉</h2>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#475569">Vielen Dank für Ihr Upgrade. Bitte überweisen Sie mit den folgenden Angaben — danach aktivieren wir Ihren Pro-Zugang.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;border:1px solid #e2e8f0;border-radius:16px"><tr><td style="padding:20px">
         <div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#64748b;font-weight:700">Zahlung — {{method_label}}</div>
-        <div style="font-size:26px;font-weight:800;color:#2563EB;margin:6px 0 12px">{{amount}}</div>
+        <div style="font-size:28px;font-weight:800;color:#2563EB;margin:6px 0 12px">{{amount}}</div>
         <div style="font-size:14px;line-height:1.7;color:#0f172a">{{method_instructions}}</div>
-        <div style="margin-top:12px;padding:10px 14px;background:#FEF3C7;border-radius:10px;font-size:13px;color:#92400e"><b>Verwendungszweck (Pflicht):</b> {{ref}}</div>
-      </td></tr>
-    </table>
-    <p style="margin:22px 0 8px;font-size:15px;font-weight:700;color:#0f172a">Was Sie mit Pro erhalten</p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#334155;line-height:1.8">
-      <tr><td>🎤 KI-Aussprachebewertung Satz für Satz</td></tr>
-      <tr><td>📺 Shadowing direkt auf YouTube &amp; Netflix</td></tr>
-      <tr><td>📖 KI-Übersetzung im Kontext &amp; Wortschatz</td></tr>
-      <tr><td>♾️ Unbegrenzte Nutzung — kein Tageslimit</td></tr>
-    </table>
-    <p style="margin:24px 0 0;font-size:13px;color:#64748b">Nach Zahlungseingang aktivieren wir Pro für dieses Konto. Bei Fragen antworten Sie einfach auf diese E-Mail.</p>
+        <div style="margin-top:14px;padding:11px 14px;background:#FEF3C7;border-radius:10px;font-size:13px;color:#92400e"><b>Verwendungszweck (Pflicht):</b> {{ref}}</div>
+      </td></tr></table>
+    </td></tr></table>
   </td></tr>
-  <tr><td style="padding:20px 32px;background:#0f172a;color:#94a3b8;font-size:12px;text-align:center">
-    NghienDeutsch · Deutsch lernen mit KI · <a href="mailto:thoatran21012@gmail.com" style="color:#93c5fd;text-decoration:none">Support</a>
+
+  <!-- Intro -->
+  <tr><td style="padding:24px 16px 6px">
+    <p style="margin:0;font-size:15px;line-height:1.7;color:#334155">Sie möchten endlich flüssiger Deutsch sprechen? <b>NghienDeutsch</b> verwandelt YouTube und Netflix in einen interaktiven Deutschkurs. Unsere KI bewertet Ihre Aussprache, erklärt Fehler und hilft Ihnen, natürlicher zu sprechen.</p>
   </td></tr>
+
+  <!-- Feature Cards (2x2) -->
+  <tr><td style="padding:14px 8px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="50%" valign="top" style="padding:8px">
+        <table role="presentation" width="100%" style="background:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.06)"><tr><td style="padding:18px">
+          <div style="font-size:24px">🎤</div><div style="font-weight:700;margin:6px 0 4px;color:#0f172a">KI-Aussprachebewertung</div><div style="font-size:13px;color:#64748b;line-height:1.5">Feedback Satz für Satz.</div>
+        </td></tr></table>
+      </td>
+      <td width="50%" valign="top" style="padding:8px">
+        <table role="presentation" width="100%" style="background:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.06)"><tr><td style="padding:18px">
+          <div style="font-size:24px">📺</div><div style="font-weight:700;margin:6px 0 4px;color:#0f172a">YouTube Shadowing</div><div style="font-size:13px;color:#64748b;line-height:1.5">Direkt im Video üben.</div>
+        </td></tr></table>
+      </td>
+    </tr><tr>
+      <td width="50%" valign="top" style="padding:8px">
+        <table role="presentation" width="100%" style="background:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.06)"><tr><td style="padding:18px">
+          <div style="font-size:24px">🎬</div><div style="font-weight:700;margin:6px 0 4px;color:#0f172a">Netflix Learning</div><div style="font-size:13px;color:#64748b;line-height:1.5">Filme als Lernstoff.</div>
+        </td></tr></table>
+      </td>
+      <td width="50%" valign="top" style="padding:8px">
+        <table role="presentation" width="100%" style="background:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.06)"><tr><td style="padding:18px">
+          <div style="font-size:24px">📖</div><div style="font-weight:700;margin:6px 0 4px;color:#0f172a">KI-Übersetzung &amp; Wortschatz</div><div style="font-size:13px;color:#64748b;line-height:1.5">Im Kontext lernen.</div>
+        </td></tr></table>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- So funktioniert's -->
+  <tr><td style="padding:18px 16px 4px">
+    <h3 style="margin:0 0 12px;font-size:17px;color:#0f172a">So funktioniert's</h3>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#334155;line-height:1.9">
+      <tr><td><b style="color:#2563EB">①</b> &nbsp;Öffnen Sie YouTube oder Netflix.</td></tr>
+      <tr><td><b style="color:#2563EB">②</b> &nbsp;Wählen Sie einen Satz.</td></tr>
+      <tr><td><b style="color:#2563EB">③</b> &nbsp;Sprechen Sie ihn nach.</td></tr>
+      <tr><td><b style="color:#2563EB">④</b> &nbsp;Die KI bewertet Ihre Aussprache.</td></tr>
+      <tr><td><b style="color:#2563EB">⑤</b> &nbsp;Wiederholen, bis Sie Ihr Ziel erreichen.</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Warum -->
+  <tr><td style="padding:18px 16px 4px">
+    <h3 style="margin:0 0 10px;font-size:17px;color:#0f172a">Warum NghienDeutsch?</h3>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#334155;line-height:1.9">
+      <tr><td>✅ Lernen mit echten Videos</td></tr>
+      <tr><td>✅ Sofortiges Feedback</td></tr>
+      <tr><td>✅ Mehr Selbstvertrauen beim Sprechen</td></tr>
+      <tr><td>✅ Perfekt für Goethe, TELC und den Alltag</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Kundenstimme -->
+  <tr><td style="padding:16px 8px">
+    <table role="presentation" width="100%" style="background:#ffffff;border-left:4px solid #F59E0B;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.06)"><tr><td style="padding:18px 20px">
+      <div style="color:#F59E0B;font-size:15px">★★★★★</div>
+      <p style="margin:8px 0 0;font-size:14px;line-height:1.6;color:#334155;font-style:italic">„Seit ich NghienDeutsch benutze, verstehe ich Filme besser und meine Aussprache ist viel natürlicher geworden."</p>
+    </td></tr></table>
+  </td></tr>
+
+  <!-- CTA -->
+  <tr><td align="center" style="padding:22px 8px 8px">
+    <h3 style="margin:0 0 14px;font-size:18px;color:#0f172a">Deutsch intelligenter lernen.</h3>
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="background:#2563EB;border-radius:12px">
+      <a href="https://nghienducchua-proxy.thoatran21012.workers.dev" style="display:inline-block;padding:14px 30px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none">Jetzt kostenlos testen</a>
+    </td></tr></table>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="padding:26px 16px 8px">
+    <table role="presentation" width="100%" style="background:#0f172a;border-radius:16px"><tr><td style="padding:22px 24px;text-align:center">
+      <div style="font-size:14px;font-weight:800;color:#ffffff">Nghien<span style="color:#38bdf8">Deutsch</span></div>
+      <div style="margin:10px 0;font-size:12px;color:#94a3b8;line-height:1.8">
+        <a href="https://nghienducchua-proxy.thoatran21012.workers.dev" style="color:#93c5fd;text-decoration:none">Website</a> ·
+        <a href="mailto:thoatran21012@gmail.com" style="color:#93c5fd;text-decoration:none">Support</a> ·
+        <a href="mailto:thoatran21012@gmail.com" style="color:#93c5fd;text-decoration:none">E-Mail</a>
+      </div>
+      <div style="font-size:11px;color:#64748b;line-height:1.7">Impressum · Datenschutz · <a href="#" style="color:#64748b;text-decoration:underline">Unsubscribe</a><br>© NghienDeutsch — Deutsch lernen mit KI</div>
+    </td></tr></table>
+  </td></tr>
+
 </table></td></tr></table></body></html>`,
 };
 
