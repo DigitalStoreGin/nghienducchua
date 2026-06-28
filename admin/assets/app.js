@@ -54,6 +54,7 @@
       payout_cfg: 'Thông tin nhận tiền', beneficiary: 'Tên người nhận', iban: 'IBAN', bic: 'BIC', bank: 'Tên ngân hàng',
       paypal: 'Link PayPal donate', sepay_acc: 'Số tài khoản SePay', sepay_bank: 'Mã ngân hàng SePay', iban_prefix: 'Tiền tố mã IBAN',
       sepay_prefix: 'Tiền tố mã SePay', price_table: 'Bảng giá (JSON)', save: 'Lưu', create_order: 'Tạo đơn',
+      price_pro_eur: 'Giá Pro (EUR)', price_pro_vnd: 'Giá Pro (VND)', qr_upload: 'Ảnh QR ngân hàng (tải lên)',
       method: 'Phương thức', amount: 'Số tiền', currency: 'Tiền tệ', user_id_opt: 'User ID (tuỳ chọn)', orders: 'Đơn thanh toán',
       ref_code: 'Mã tham chiếu', mark_paid: 'Đánh dấu đã trả', order_instructions: 'Hướng dẫn chuyển khoản', reference: 'Nội dung CK',
       pending: 'Chờ', paid: 'Đã trả', theme: 'Sáng/Tối', lang: 'Ngôn ngữ', none: '—',
@@ -95,6 +96,7 @@
       payout_cfg: 'Zahlungsempfänger', beneficiary: 'Empfängername', iban: 'IBAN', bic: 'BIC', bank: 'Bankname',
       paypal: 'PayPal-Spendenlink', sepay_acc: 'SePay-Kontonummer', sepay_bank: 'SePay-Bankcode', iban_prefix: 'IBAN-Code-Präfix',
       sepay_prefix: 'SePay-Code-Präfix', price_table: 'Preistabelle (JSON)', save: 'Speichern', create_order: 'Auftrag erstellen',
+      price_pro_eur: 'Pro-Preis (EUR)', price_pro_vnd: 'Pro-Preis (VND)', qr_upload: 'Bank-QR-Bild (hochladen)',
       method: 'Methode', amount: 'Betrag', currency: 'Währung', user_id_opt: 'User-ID (optional)', orders: 'Zahlungsaufträge',
       ref_code: 'Referenzcode', mark_paid: 'Als bezahlt markieren', order_instructions: 'Überweisungsdetails', reference: 'Verwendungszweck',
       pending: 'Offen', paid: 'Bezahlt', theme: 'Hell/Dunkel', lang: 'Sprache', none: '—',
@@ -541,7 +543,7 @@
       const TRANS_PROVS = ['gemini', 'deepl', 'openrouter', 'mistral'];
       (r.items || []).forEach((u) => {
         const planSel = h('select', { class: 'select-inline', onchange: async (e) => { await api('users/set-plan', { user_id: u.id, plan: e.target.value }); toast(t('saved')); } },
-          ...['free', 'basic', 'pro', 'lifetime'].map((p) => h('option', { value: p, selected: (u.plan || 'free') === p ? 'selected' : null }, p)));
+          ...['free', 'pro'].map((p) => h('option', { value: p, selected: (u.plan || 'free') === p ? 'selected' : null }, p)));
         const srcSel = h('select', { class: 'select-inline', onchange: async (e) => { await api('users/model-source', { user_id: u.id, model_source: e.target.value }); toast(t('saved')); } },
           ...[['server', t('src_server')], ['local', t('src_local')], ['dedicated', t('src_dedicated')]].map((o) => h('option', { value: o[0], selected: (u.model_source || 'server') === o[0] ? 'selected' : null }, o[1])));
         // API dịch cho riêng user (rỗng = theo hệ thống) + ép dịch API kể cả gói free.
@@ -574,33 +576,50 @@
 
     const { config } = await api('payout-config/get', {});
     const c = config || {};
+    const pt = c.price_table || {};
+    const proPrice = pt.pro || { EUR: 9.99, VND: 249000 };
     const fields = {
       beneficiary_name: h('input', { type: 'text', value: c.beneficiary_name || '' }),
       iban: h('input', { type: 'text', value: c.iban || '' }),
       bic: h('input', { type: 'text', value: c.bic || '' }),
       bank_name: h('input', { type: 'text', value: c.bank_name || '' }),
-      paypal_link: h('input', { type: 'text', value: c.paypal_link || '' }),
       sepay_account_number: h('input', { type: 'text', value: c.sepay_account_number || '' }),
       sepay_bank_code: h('input', { type: 'text', value: c.sepay_bank_code || '' }),
-      iban_ref_prefix: h('input', { type: 'text', value: c.iban_ref_prefix || 'DE-' }),
-      sepay_ref_prefix: h('input', { type: 'text', value: c.sepay_ref_prefix || 'VN-' }),
-      price_table: h('textarea', { rows: '4' }, JSON.stringify(c.price_table || {}, null, 2)),
     };
-    const labels = { beneficiary_name: 'beneficiary', iban: 'iban', bic: 'bic', bank_name: 'bank', paypal_link: 'paypal', sepay_account_number: 'sepay_acc', sepay_bank_code: 'sepay_bank', iban_ref_prefix: 'iban_prefix', sepay_ref_prefix: 'sepay_prefix', price_table: 'price_table' };
+    const labels = { beneficiary_name: 'beneficiary', iban: 'iban', bic: 'bic', bank_name: 'bank', sepay_account_number: 'sepay_acc', sepay_bank_code: 'sepay_bank' };
+    // Giá gói Pro (chỉnh trực tiếp → ghi vào price_table). Free luôn = 0.
+    const proEur = h('input', { type: 'number', step: '0.01', value: String(proPrice.EUR != null ? proPrice.EUR : 9.99) });
+    const proVnd = h('input', { type: 'number', value: String(proPrice.VND != null ? proPrice.VND : 249000) });
+    // Ảnh QR ngân hàng VN (lưu base64 data-URI vào payout_config.qr_image).
+    let qrData = c.qr_image || '';
+    const qrImg = h('img', { alt: 'QR', style: 'max-width:170px;border-radius:8px;margin-top:8px;display:' + (qrData ? 'block' : 'none') });
+    if (qrData) qrImg.src = qrData;
+    const qrFile = h('input', { type: 'file', accept: 'image/*', onchange: (e) => {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      if (f.size > 700 * 1024) { toast(t('error') + ': ≤ 700KB', true); return; }
+      const rd = new FileReader();
+      rd.onload = () => { qrData = String(rd.result || ''); qrImg.src = qrData; qrImg.style.display = 'block'; };
+      rd.readAsDataURL(f);
+    } });
     const grid = h('div', { class: 'form-grid' });
-    Object.keys(fields).forEach((k) => grid.append(h('div', { class: 'field' + (k === 'price_table' ? '' : '') }, h('label', null, t(labels[k])), fields[k])));
+    Object.keys(fields).forEach((k) => grid.append(h('div', { class: 'field' }, h('label', null, t(labels[k])), fields[k])));
+    grid.append(
+      h('div', { class: 'field' }, h('label', null, t('price_pro_eur')), proEur),
+      h('div', { class: 'field' }, h('label', null, t('price_pro_vnd')), proVnd));
     clear(cfgPanel).append(h('h2', null, t('payout_cfg')), grid,
+      h('div', { class: 'field', style: 'margin-top:12px' }, h('label', null, t('qr_upload')), qrFile, qrImg),
       h('div', { style: 'margin-top:14px' }, h('button', { class: 'btn btn--primary', onclick: async () => {
         const payload = {};
-        Object.keys(fields).forEach((k) => { payload[k] = k === 'price_table' ? safeJson(fields[k].value) : fields[k].value; });
+        Object.keys(fields).forEach((k) => { payload[k] = fields[k].value; });
+        payload.price_table = { free: { EUR: 0, VND: 0 }, pro: { EUR: parseFloat(proEur.value) || 0, VND: parseInt(proVnd.value, 10) || 0 } };
+        payload.qr_image = qrData;
         await api('payout-config/update', payload); toast(t('saved'));
       } }, t('save'))));
-    function safeJson(s) { try { return JSON.parse(s); } catch (_) { return {}; } }
 
     // create order
     const oUser = h('input', { type: 'text', placeholder: 'uuid' });
     const oMethod = h('select', null, h('option', { value: 'iban' }, 'IBAN (DE)'), h('option', { value: 'sepay' }, 'SePay (VN)'), h('option', { value: 'paypal' }, 'PayPal'));
-    const oPlan = h('select', null, ...['basic', 'pro', 'lifetime'].map((p) => h('option', { value: p }, p)));
+    const oPlan = h('select', null, ...['pro'].map((p) => h('option', { value: p }, p)));
     const oAmount = h('input', { type: 'number', value: '0' });
     const oCur = h('select', null, h('option', { value: 'EUR' }, 'EUR'), h('option', { value: 'VND' }, 'VND'));
     const oOut = h('div');
