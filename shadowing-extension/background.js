@@ -84,8 +84,9 @@ async function handleGroqTranscribe(msg) {
     const ext = mime.includes('ogg') ? 'ogg' : 'webm';
     form.append('file', blob, 'recording.' + ext);
     form.append('lang', msg.lang || 'de');
+    const _tok = await bgSessionToken();
     const resp = await Promise.race([
-      fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
+      fetch(WORKER_URL + '/transcribe', { method: 'POST', headers: _tok ? { 'Authorization': 'Bearer ' + _tok } : {}, body: form }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
     ]);
     const data = await resp.json().catch(() => null);
