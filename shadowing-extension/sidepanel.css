@@ -2159,7 +2159,7 @@ body.dark .pop--word .pop-phon-c { color: #ffd966; }
 body.dark .pop--word .pop-save.saved { background: rgba(52,168,83,.18); border-color: #34a853; color: #81c995; }
 
 /* Hover popup (di chuột vào từ — A6): gọn hơn popup click */
-.pop--hover { gap: 5px; min-width: 160px; max-width: 260px; padding: 9px 11px; }
+.pop--hover { gap: 6px; min-width: 210px; max-width: 280px; padding: 10px 12px; }
 .pop--hover .pop-head { display: flex; align-items: center; gap: 7px; }
 .pop--hover .pop-word { font-size: 15px; font-weight: 700; color: #1a73e8; }
 .pop--hover .pop-trans { font-size: 12.5px; color: #137333; line-height: 1.35; min-height: 16px; }
@@ -3041,6 +3041,23 @@ body.dark .upgrade-plan-features { color: #9aa0a6; }
   text-align: center; font-size: 12px; color: #80868b; margin: 0;
 }
 .upgrade-contact a { color: #1a73e8; }
+
+/* Khối thông tin thanh toán (hiện khi bấm "Chọn Pro") */
+.pay-info {
+  margin: 14px 0 8px; padding: 14px; border: 1px solid #dadce0; border-radius: 12px;
+  background: #f8fbff; display: flex; flex-direction: column; gap: 8px;
+}
+.pay-info-title { margin: 0; font-size: 15px; }
+.pay-info-price { font-weight: 700; color: #137333; font-size: 14px; }
+.pay-info-rows { display: flex; flex-direction: column; gap: 5px; }
+.pay-info-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.pay-info-row span { color: #5f6368; }
+.pay-info-row b { color: #202124; word-break: break-all; text-align: right; }
+.pay-info-qr { display: block; max-width: 180px; margin: 4px auto 0; border-radius: 8px; border: 1px solid #e0e0e0; }
+.pay-info-note { margin: 4px 0 0; font-size: 12px; color: #b06000; }
+body.dark .pay-info { background: rgba(100,130,255,.08); border-color: #33333d; }
+body.dark .pay-info-row b { color: #e8eaed; }
+body.dark .pay-info-row span { color: #9aa0a6; }
 
 /* ============================================================
    FEATURE: FLASHCARD SRS (improved)
