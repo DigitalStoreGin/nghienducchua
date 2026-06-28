@@ -3055,6 +3055,13 @@ body.dark .upgrade-plan-features { color: #9aa0a6; }
 .pay-info-row b { color: #202124; word-break: break-all; text-align: right; }
 .pay-info-qr { display: block; max-width: 180px; margin: 4px auto 0; border-radius: 8px; border: 1px solid #e0e0e0; }
 .pay-info-note { margin: 4px 0 0; font-size: 12px; color: #b06000; }
+.pay-flow { margin: 14px 0 8px; padding: 14px; border: 1px solid #dadce0; border-radius: 12px; background: #f8fbff; }
+.pay-methods { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.pay-method-btn { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid #c9d6f0; border-radius: 12px; background: #fff; font-weight: 600; font-size: 14px; cursor: pointer; text-align: left; transition: background .12s, border-color .12s; }
+.pay-method-btn:hover { background: #eef4ff; border-color: #2563EB; }
+.pay-info-title { margin: 0 0 6px; font-size: 15px; }
+body.dark .pay-flow { background: rgba(100,130,255,.08); border-color: #33333d; }
+body.dark .pay-method-btn { background: #1c1c22; border-color: #33333d; color: #e8eaed; }
 body.dark .pay-info { background: rgba(100,130,255,.08); border-color: #33333d; }
 body.dark .pay-info-row b { color: #e8eaed; }
 body.dark .pay-info-row span { color: #9aa0a6; }
