@@ -687,39 +687,28 @@
             <li>Shadowing cơ bản</li>
           </ul>
         </div>
-        <div class="upgrade-plan upgrade-plan--basic">
-          <div class="upgrade-plan-name">Basic</div>
-          <div class="upgrade-plan-price">$4.99<span>/tháng</span></div>
-          <ul class="upgrade-plan-features">
-            <li>200 dịch/ngày</li>
-            <li>100 AI calls/ngày</li>
-            <li>Tất cả tính năng</li>
-          </ul>
-          <button class="upgrade-plan-btn" data-plan="basic">Chọn Basic</button>
-        </div>
         <div class="upgrade-plan upgrade-plan--pro">
           <div class="upgrade-plan-badge">⭐ Phổ biến</div>
           <div class="upgrade-plan-name">Pro</div>
-          <div class="upgrade-plan-price">$9.99<span>/tháng</span></div>
+          <div class="upgrade-plan-price" id="upgrade-pro-price">$9.99<span>/tháng</span></div>
           <ul class="upgrade-plan-features">
             <li>2,000 dịch/ngày</li>
             <li>1,000 AI calls/ngày</li>
+            <li>Ghi âm &amp; chấm điểm AI</li>
             <li>Ưu tiên hỗ trợ</li>
           </ul>
-          <button class="upgrade-plan-btn" data-plan="pro">Chọn Pro</button>
-        </div>
-        <div class="upgrade-plan upgrade-plan--lifetime">
-          <div class="upgrade-plan-name">Lifetime</div>
-          <div class="upgrade-plan-price">$49.99<span> 1 lần</span></div>
-          <ul class="upgrade-plan-features">
-            <li>Không giới hạn</li>
-            <li>Truy cập mãi mãi</li>
-            <li>Mọi tính năng tương lai</li>
-          </ul>
-          <button class="upgrade-plan-btn" data-plan="lifetime">Chọn Lifetime</button>
+          <button class="upgrade-plan-btn" data-plan="pro" id="btn-choose-pro">Chọn Pro</button>
         </div>
       </div>
-      <p class="upgrade-contact">Liên hệ mua: <a href="mailto:contact@spiragiving.dev">contact@spiragiving.dev</a></p>
+      <!-- Thông tin thanh toán (điền từ Worker /pay-info; admin sửa trong trang Thanh toán) -->
+      <div class="pay-info" id="pay-info" hidden>
+        <h3 class="pay-info-title">💳 Thanh toán gói Pro</h3>
+        <div class="pay-info-price" id="pay-price"></div>
+        <div class="pay-info-rows" id="pay-rows"></div>
+        <img class="pay-info-qr" id="pay-qr" alt="QR chuyển khoản" hidden>
+        <p class="pay-info-note">Sau khi chuyển khoản, liên hệ admin để được nâng cấp lên Pro.</p>
+      </div>
+      <p class="upgrade-contact">Liên hệ: <a href="mailto:contact@spiragiving.dev">contact@spiragiving.dev</a></p>
     </div>
   </div>
 
