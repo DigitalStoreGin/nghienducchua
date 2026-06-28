@@ -203,8 +203,15 @@
   }
 
   // Also listen via chrome.runtime.onMessage for events not going through port
+  let pendingScore = false; // true khi đang chờ user cấp quyền micro để chấm lại
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.sd === 'evt') handleEvent(msg);
+    // Trang mic-permission.html báo đã cấp quyền micro xong → tự chấm lại nếu đang chờ.
+    if (msg && msg.sd === 'mic-granted') {
+      try { const b = $('#micButton'); if (b) { b.classList.remove('pending'); b.classList.add('ready'); b.dataset.ready = '1'; } } catch (_) {}
+      setStatus('🎤 Đã cấp quyền micro — sẵn sàng.', 'ok');
+      if (pendingScore) { pendingScore = false; setTimeout(() => { try { scoreNow(); } catch (_) {} }, 200); }
+    }
   });
 
   function setStatus(t, kind) { const s = $('#status'); s.textContent = t; s.className = 'status' + (kind ? ' ' + kind : ''); }
@@ -344,7 +351,18 @@
     card.hidden = !has;
     if (!has) return;
     const s = sentences[current] || sentences[0];
-    const txt = $('#try-card-text'); if (txt) txt.textContent = s ? '”' + s.text + '”' : '—';
+    // Render từng từ tương tác (hover/click → popup dịch + phát âm + Lưu + DWDS/LEO).
+    const txt = $('#try-card-text');
+    if (txt) {
+      if (s) {
+        txt.innerHTML = '';
+        const inner = document.createElement('span');
+        txt.appendChild(document.createTextNode('”'));
+        txt.appendChild(inner);
+        txt.appendChild(document.createTextNode('”'));
+        wireWordLookup(inner, s.text, {});
+      } else txt.textContent = '—';
+    }
     // Trạng thái nút ⭐ theo câu hiện tại
     const favB = $('#try-fav-btn');
     if (favB && s) {
@@ -762,63 +780,36 @@
       // hoverOnly (danh sách câu): KHÔNG bắt click để click vẫn chọn câu; chỉ hover dịch.
       if (!opts.hoverOnly) sp.onclick = (e) => { e.stopPropagation(); lookup(w, text, e.clientX, e.clientY); };
       if (_canHover) {
-        sp.addEventListener('mouseenter', () => { clearHoverTimers(); const r = sp.getBoundingClientRect(); _hoverTimer = setTimeout(() => hoverPopup(w, r.left, r.bottom), 350); });
+        sp.addEventListener('mouseenter', () => { clearHoverTimers(); const r = sp.getBoundingClientRect(); _hoverTimer = setTimeout(() => hoverPopup(w, text, r.left, r.bottom), 250); });
         sp.addEventListener('mouseleave', () => scheduleHoverHide());
       }
       container.appendChild(sp);
     });
   }
 
-  // ===== Popup HOVER (di chuột vào từ → dịch + IPA + 🔊), nhẹ hơn popup click =====
+  // ===== Popup từ vựng dùng chung (hover & click): dịch + IPA + phát âm + DWDS/LEO + nút Lưu =====
   let _hoverPop = null, _hoverTimer = null, _hoverHideTimer = null;
   function clearHoverTimers() { if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; } if (_hoverHideTimer) { clearTimeout(_hoverHideTimer); _hoverHideTimer = null; } }
   function removeHoverPop() { if (_hoverPop) { try { _hoverPop.remove(); } catch (_) {} _hoverPop = null; } }
-  function scheduleHoverHide() { clearHoverTimers(); _hoverHideTimer = setTimeout(removeHoverPop, 220); }
-  function hoverPopup(word, x, y) {
-    removeHoverPop();
-    const clean = String(word || '').replace(/[^A-Za-zÀ-ÿäöüÄÖÜß]/g, '');
-    if (!clean) return;
+  function scheduleHoverHide() { clearHoverTimers(); _hoverHideTimer = setTimeout(removeHoverPop, 260); }
+
+  // Dựng 1 popup ĐẦY ĐỦ cho 1 từ. ctx = câu chứa từ (lưu kèm ngữ cảnh). hover=true → bản hover.
+  function buildWordPop(clean, ctx, hover) {
     const lang = settings.targetLang || 'de';
+    const isDe = lang === 'de';
     const pop = document.createElement('div');
-    pop.className = 'pop pop--hover';
-    pop.style.left = Math.min(x, innerWidth - 240) + 'px';
-    pop.style.top = (y + 6) + 'px';
-    pop.innerHTML =
-      '<div class="pop-head"><b class="pop-word">' + esc(clean) + '</b>' +
-      '<span class="pop-ipa"></span>' +
-      '<button class="pop-tts" title="' + esc(t('pop_listen')) + '">🔊</button></div>' +
-      '<div class="pop-trans">' + esc(t('pop_loading')) + '</div>';
-    const ttsB = pop.querySelector('.pop-tts'); if (ttsB) ttsB.onclick = (e) => { e.stopPropagation(); speakText(clean); };
-    pop.addEventListener('mouseenter', () => clearHoverTimers());
-    pop.addEventListener('mouseleave', () => scheduleHoverHide());
-    document.body.appendChild(pop);
-    _hoverPop = pop;
-    const gloss = pop.querySelector('.pop-trans');
-    fetchGloss(clean).then((g) => { if (_hoverPop === pop && gloss) gloss.textContent = g || t('pop_nomean'); });
-    fetchWordCard(clean, lang).then((c) => { if (_hoverPop === pop && c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
-  }
-  // Ẩn hover popup khi cuộn (vị trí cũ không còn đúng).
-  window.addEventListener('scroll', removeHoverPop, true);
-  function lookup(word, ctx, x, y) {
-    document.querySelectorAll('.pop').forEach((p) => p.remove());
-    const clean = word.replace(/[^A-Za-zäöüÄÖÜß]/g, '');
-    const isDe = (settings.targetLang || 'de') === 'de';
-    const pop = document.createElement('div');
-    pop.className = 'pop pop--word';
-    pop.style.left = Math.min(x, innerWidth - 230) + 'px';
-    pop.style.top = (y + 8) + 'px';
-    // Gợi ý phát âm (chỉ tiếng Đức) từ germanHints().
+    // Luôn gắn pop--word để hưởng style giàu (hint/links/nút Lưu); thêm pop--hover khi hover (gọn hơn).
+    pop.className = 'pop pop--word' + (hover ? ' pop--hover' : '');
     let phonHtml = '';
     if (isDe) {
       const hints = germanHints(clean);
       if (hints.length) phonHtml = '<div class="pop-phon">🗣 ' + esc(t('pop_pron')) + ': ' +
         hints.map((h) => '<span class="pop-phon-c">' + esc(h.cluster) + '</span> ' + esc(h.hint)).join(' · ') + '</div>';
     }
-    // Liên kết từ điển theo ngôn ngữ học: Đức → DWDS/LEO; Anh → Cambridge/Wiktionary.
     const links = isDe
       ? '<a target="_blank" href="https://www.dwds.de/wb/' + encodeURIComponent(clean) + '">DWDS</a>' +
         '<a target="_blank" href="https://dict.leo.org/german-english/' + encodeURIComponent(clean) + '">LEO</a>'
-      : ((settings.targetLang || '') === 'en'
+      : (lang === 'en'
         ? '<a target="_blank" href="https://dictionary.cambridge.org/dictionary/english/' + encodeURIComponent(clean) + '">Cambridge</a>' +
           '<a target="_blank" href="https://en.wiktionary.org/wiki/' + encodeURIComponent(clean) + '">Wiktionary</a>'
         : '');
@@ -830,19 +821,47 @@
       phonHtml +
       (links ? '<div class="pop-links">' + links + '</div>' : '') +
       '<div class="pop-actions"><button class="pop-save">⭐ ' + esc(t('pop_save')) + '</button></div>';
-    pop.querySelector('.pop-tts').onclick = (e) => { e.stopPropagation(); speakText(clean); };
+    const ttsB = pop.querySelector('.pop-tts'); if (ttsB) ttsB.onclick = (e) => { e.stopPropagation(); speakText(clean); };
     const saveBtn = pop.querySelector('.pop-save');
-    saveBtn.onclick = (e) => {
-      e.stopPropagation();
-      cmd('saveWord', { word: clean, context: ctx, lang: settings.targetLang });
-      markWordSaved(clean);
-      saveBtn.textContent = '✅ ' + t('pop_saved');
-      saveBtn.classList.add('saved'); saveBtn.disabled = true;
-    };
-    isWordSaved(clean).then((saved) => { if (saved) { saveBtn.textContent = '✅ ' + t('pop_saved'); saveBtn.classList.add('saved'); saveBtn.disabled = true; } });
+    if (saveBtn) {
+      saveBtn.onclick = (e) => {
+        e.stopPropagation();
+        cmd('saveWord', { word: clean, context: ctx || '', lang: settings.targetLang });
+        markWordSaved(clean);
+        saveBtn.textContent = '✅ ' + t('pop_saved');
+        saveBtn.classList.add('saved'); saveBtn.disabled = true;
+      };
+      isWordSaved(clean).then((saved) => { if (saved) { saveBtn.textContent = '✅ ' + t('pop_saved'); saveBtn.classList.add('saved'); saveBtn.disabled = true; } });
+    }
     const gloss = pop.querySelector('.pop-trans');
-    fetchGloss(clean).then((g) => { gloss.textContent = g || t('pop_nomean'); });
-    fetchWordCard(clean, settings.targetLang).then((c) => { if (c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
+    fetchGloss(clean).then((g) => { if (gloss) gloss.textContent = g || t('pop_nomean'); });
+    fetchWordCard(clean, lang).then((c) => { if (c && c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
+    return pop;
+  }
+
+  function hoverPopup(word, ctx, x, y) {
+    removeHoverPop();
+    const clean = String(word || '').replace(/[^A-Za-zÀ-ÿäöüÄÖÜß]/g, '');
+    if (!clean) return;
+    const pop = buildWordPop(clean, ctx, true);
+    pop.style.left = Math.min(x, innerWidth - 250) + 'px';
+    pop.style.top = (y + 6) + 'px';
+    pop.addEventListener('mouseenter', () => clearHoverTimers());
+    pop.addEventListener('mouseleave', () => scheduleHoverHide());
+    document.body.appendChild(pop);
+    _hoverPop = pop;
+  }
+  // Ẩn hover popup khi cuộn (vị trí cũ không còn đúng).
+  window.addEventListener('scroll', removeHoverPop, true);
+  // Click = ghim popup (giống hover nhưng không tự ẩn). Tái dùng buildWordPop.
+  function lookup(word, ctx, x, y) {
+    document.querySelectorAll('.pop').forEach((p) => p.remove());
+    clearHoverTimers(); _hoverPop = null;
+    const clean = word.replace(/[^A-Za-zäöüÄÖÜß]/g, '');
+    if (!clean) return;
+    const pop = buildWordPop(clean, ctx, false);
+    pop.style.left = Math.min(x, innerWidth - 230) + 'px';
+    pop.style.top = (y + 8) + 'px';
     document.body.appendChild(pop);
     setTimeout(() => document.addEventListener('click', function h() { pop.remove(); document.removeEventListener('click', h); }), 50);
   }
@@ -1162,7 +1181,9 @@
       if (c === 'stop') { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (e) {} pageMicSignal('abort'); const fb = $('#finalizeBtn'); if (fb) fb.hidden = true; }
       cmd(c, { target: settings.targetLang, native: settings.nativeLang });
     };
-    if (c === 'mic') b.onclick = () => enableMic();
+    // "Bật mic": luôn mở trang cấp quyền (cùng origin extension) — Side Panel không tự hiện
+    // được hộp thoại micro. Cấp xong, mic-permission.html gửi 'mic-granted' về để dùng ngay.
+    if (c === 'mic') b.onclick = () => { openMicPermissionPage(); enableMic(); };
     if (c === 'live') b.onclick = async () => { const r = await cmd('live'); if (r) b.classList.toggle('on', !!r.running); };
     if (c === 'loop') b.onclick = async () => { const r = await cmd('loop'); if (r) b.classList.toggle('on', !!r.loop); };
     if (c === 'shadowCur') b.onclick = () => startShadow(current);
@@ -1685,6 +1706,7 @@
     const modal = document.getElementById('upgrade-modal');
     const reasonEl = document.getElementById('upgrade-reason');
     if (reasonEl && reason) reasonEl.textContent = reason;
+    const payBox = document.getElementById('pay-info'); if (payBox) payBox.hidden = true; // reset mỗi lần mở
     if (modal) modal.hidden = false;
   }
 
@@ -1700,15 +1722,36 @@
     const backdrop = document.getElementById('upgrade-modal');
     if (backdrop) backdrop.onclick = (e) => { if (e.target === backdrop) hideUpgradeModal(); };
 
-    // Plan buttons — open email contact
-    document.querySelectorAll('.upgrade-plan-btn').forEach((btn) => {
-      btn.onclick = () => {
-        const plan = btn.dataset.plan;
-        const subject = encodeURIComponent('NghienDe Upgrade — ' + plan);
-        const body = encodeURIComponent('Hi, I want to upgrade to the ' + plan + ' plan.\n\nEmail: ' + (ShadowAuth.getUser()?.email || ''));
-        window.open('mailto:contact@spiragiving.dev?subject=' + subject + '&body=' + body, '_blank');
-      };
-    });
+    // "Chọn Pro" → tải thông tin thanh toán (/pay-info) → hiện giá + IBAN + QR ngân hàng VN.
+    const proBtn = document.getElementById('btn-choose-pro');
+    if (proBtn) proBtn.onclick = async () => {
+      const box = document.getElementById('pay-info');
+      const priceEl = document.getElementById('pay-price');
+      const rowsEl = document.getElementById('pay-rows');
+      const qrEl = document.getElementById('pay-qr');
+      if (box) box.hidden = false;
+      if (rowsEl) rowsEl.textContent = 'Đang tải…';
+      try {
+        const r = await fetch(WORKER_URL + '/pay-info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const info = await r.json();
+        const pro = (info.price_table || {}).pro || {};
+        if (priceEl) {
+          const vnd = pro.VND ? (Number(pro.VND).toLocaleString('vi-VN') + '₫') : '';
+          const eur = pro.EUR ? ('€' + pro.EUR) : '';
+          priceEl.textContent = 'Gói Pro: ' + ([vnd, eur].filter(Boolean).join(' · ') || 'liên hệ admin');
+        }
+        if (rowsEl) {
+          rowsEl.innerHTML = '';
+          const add = (label, val) => { if (!val) return; const d = document.createElement('div'); d.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); d.appendChild(s); d.appendChild(b); rowsEl.appendChild(d); };
+          add('Người nhận', info.beneficiary_name);
+          add('Ngân hàng', info.bank_name);
+          add('Số TK / IBAN', info.iban);
+        }
+        if (qrEl) { if (info.qr_image) { qrEl.src = info.qr_image; qrEl.hidden = false; } else qrEl.hidden = true; }
+      } catch (_) {
+        if (rowsEl) rowsEl.textContent = 'Không tải được thông tin thanh toán. Liên hệ admin.';
+      }
+    };
 
     // btn-upgrade in menu
     const upgradeMenuBtn = document.getElementById('btn-upgrade');
@@ -2574,16 +2617,23 @@
     const idx = Math.max(0, Math.min(current, sentences.length - 1));
     const s = sentences[idx]; if (!s) return;
     current = idx;
-    // Pre-flight quyền micro: Side Panel KHÔNG hiện được hộp thoại xin quyền (getUserMedia sẽ
-    // trả "Permission dismissed"). Nếu chưa 'granted' → enableMic() (thử trên trang, rồi mở
-    // mic-permission.html). Chưa cấp xong thì dừng, không ghi âm để khỏi dính lỗi.
+    // Pre-flight quyền micro: KHÔNG tin navigator.permissions.query (trong Side Panel luôn trả
+    // 'prompt' kể cả khi đã cấp ở tab khác). Thay vào đó PROBE getUserMedia trực tiếp: thử mở mic
+    // rồi tắt ngay. OK → đã được phép, ghi âm bình thường. Lỗi quyền → mở trang cấp quyền và đặt
+    // cờ pendingScore; khi tab cấp xong gửi 'mic-granted' về (onMessage) → tự chấm lại.
     try {
-      const micState = window.ShadowMic.checkMicPermission ? await window.ShadowMic.checkMicPermission() : 'unknown';
-      if (micState !== 'granted') {
-        const ok = await enableMic({ silent: false });
-        if (!ok) { renderFeedback({ error: 'mic:blocked' }); return; }
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+      probe.getTracks().forEach((tr) => tr.stop());
+    } catch (err) {
+      if (isMicBlocked(err)) {
+        pendingScore = true;
+        openMicPermissionPage();
+        setStatus('🎤 Cửa sổ cấp quyền micro vừa mở — bấm "Cho phép / Allow", rồi quay lại đây (sẽ tự chấm).', 'warn');
+        renderFeedback({ error: 'mic:blocked' });
+        return;
       }
-    } catch (_) {}
+      // Lỗi khác (không phải quyền) → vẫn thử ghi âm, mic-service sẽ báo lỗi cụ thể.
+    }
     showRecordPanel(true);
     setRecordScore(null);
     { const el = $('#you-said-text'); if (el) el.textContent = ''; }
