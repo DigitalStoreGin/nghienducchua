@@ -439,13 +439,45 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     }
     case '/admin/payout-config/update': {
       const fields = {};
-      ['beneficiary_name', 'iban', 'bic', 'bank_name', 'paypal_link', 'sepay_account_number', 'sepay_bank_code', 'iban_ref_prefix', 'sepay_ref_prefix', 'price_table', 'qr_image'].forEach((k) => { if (body[k] !== undefined) fields[k] = body[k]; });
+      ['beneficiary_name', 'iban', 'bic', 'bank_name', 'paypal_link', 'sepay_account_number', 'sepay_bank_code', 'iban_ref_prefix', 'sepay_ref_prefix', 'price_table', 'qr_image', 'payment_methods'].forEach((k) => { if (body[k] !== undefined) fields[k] = body[k]; });
       fields.updated_at = new Date().toISOString();
       const existing = await sbGet(env, 'payout_config?select=id&limit=1');
       if (existing[0]) await sbPatch(env, 'payout_config', `id=eq.${existing[0].id}`, fields);
       else await sbInsert(env, 'payout_config', fields, 'return=minimal');
       await audit(env, admin.sub, 'payout_config.update', 'config', null, null, Object.keys(fields), ip);
       return json({ success: true });
+    }
+    // ───────── Doanh thu: đơn Pro (kèm thông tin khách) ─────────
+    case '/admin/revenue/list': {
+      const rows = await sbGet(env, 'payments?select=reference_code,customer_name,customer_email,plan,amount,currency,status,created_at,paid_at&order=created_at.desc&limit=200');
+      const paid = rows.filter((p) => p.status === 'paid');
+      const totals = {}; paid.forEach((p) => { const c = p.currency || 'EUR'; totals[c] = (totals[c] || 0) + Number(p.amount || 0); });
+      return json({ items: rows, totals, paid_count: paid.length });
+    }
+    // ───────── Email template (Pro) ─────────
+    case '/admin/email-template/get': {
+      const rows = await sbGet(env, "app_settings?key=eq.email_pro&select=value");
+      return json({ value: (rows[0] && rows[0].value) || null });
+    }
+    case '/admin/email-template/set': {
+      const value = { subject: String(body.subject || '').slice(0, 300), html: String(body.html || '').slice(0, 60000) };
+      await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings`, { method: 'POST', headers: { ...sbHeaders(env), Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ key: 'email_pro', value, updated_at: new Date().toISOString() }) });
+      await audit(env, admin.sub, 'email_template.set', 'email', 'email_pro', null, null, ip);
+      return json({ success: true });
+    }
+    // ───────── User 360°: chi tiết hồ sơ + thiết bị + mạng + lịch sử đăng nhập ─────────
+    case '/admin/users/detail': {
+      if (!isUuid(body.user_id)) return json({ error: 'bad_id' }, 400);
+      const uid = body.user_id;
+      const prof = (await sbGet(env, `profiles?id=eq.${uid}&select=*`))[0] || null;
+      const events = await sbGet(env, `login_events?user_id=eq.${uid}&select=*&order=ts.desc&limit=50`);
+      // Phiên/thiết bị hoạt động: ping trong 15 phút gần nhất, đếm device khác nhau.
+      const since = new Date(Date.now() - 15 * 60000).toISOString();
+      const active = events.filter((e) => e.event === 'ping' && e.ts > since);
+      const devices = new Set(active.map((e) => (e.device || '') + '|' + (e.os || '') + '|' + (e.browser || '')));
+      const anomaly = events.length >= 2 && events[0].country && events[1].country && events[0].country !== events[1].country;
+      const subs = await sbGet(env, `subscriptions?user_id=eq.${uid}&select=plan,status,current_period_end&order=created_at.desc&limit=1`);
+      return json({ profile: prof, events, active_sessions: devices.size, anomaly, subscription: subs[0] || null });
     }
     case '/admin/payments/list': {
       const rows = await sbGet(env, 'payments?select=*&order=created_at.desc&limit=100');
