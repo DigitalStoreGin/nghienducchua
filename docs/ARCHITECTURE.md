@@ -529,6 +529,64 @@ flowchart LR
 
 ---
 
+## D12. API Rate Limits & Capacity Planning
+
+### Giới hạn từng provider (per API key)
+
+| Provider | Capability | RPM | RPD | Token/Tháng | Ghi chú |
+|----------|-----------|-----|-----|-------------|---------|
+| **Groq** Whisper turbo | STT | 20 | 2,000 | — | 7,200 audio-sec/ngày/key |
+| **Groq** Llama-3.3-70B | Score | 30 | 14,400 | 500K TPD | — |
+| **Groq** Llama-3.1-8B | Score fallback | 30 | 14,400 | 500K TPD | — |
+| **Gemini** 2.0 Flash (free) | Translate | 15 | 1,500 | 1.5B/ngày | 1M TPM |
+| **DeepL** Free | Translate | không giới hạn | — | 500K chars/tháng | ~5K câu/ngày |
+| **Mistral** Free | Translate | ~1 | — | 500K tokens/tháng | Bottleneck nặng |
+| **OpenRouter** | Score/Translate | credits | credits | pay-as-go | Tùy số dư |
+| **Resend** Free | Email owner | — | 100 | 3,000/tháng | Cho email quản trị |
+| **Brevo** Free | Email khách | — | 300 | không giới hạn | Cho email Pro upgrade |
+
+### Tổng hợp với 5 Groq keys
+
+| Capability | RPM tổng | RPD tổng | Audio-sec/ngày |
+|-----------|---------|---------|---------------|
+| STT (Whisper) | **100 RPM** | **10,000 RPD** | ~10 giờ |
+| Score (Llama 70B) | **150 RPM** | **72,000 RPD** | — |
+| Score fallback (8B) | **150 RPM** | **72,000 RPD** | — |
+
+### Mô hình sử dụng điển hình (1 session/ngày, 60 phút)
+
+| Tier | STT calls | Score calls | Translate calls |
+|------|-----------|-------------|----------------|
+| Free (60 min/ngày) | ~80–120 | ~80–120 | ~30–50 |
+| Pro (không giới hạn giờ) | ~200–400 | ~200–400 | ~100–200 |
+
+### Capacity tối đa hiện tại
+
+| Metric | Giá trị | Bottleneck |
+|--------|---------|-----------|
+| **Free DAU** (daily active users) | ~**100 users/ngày** | Groq STT: 10,000 RPD / 100 calls = 100 |
+| **Free concurrent** (đồng thời) | ~**30 users** | 100 RPM / ~3 req/user/phút = 33 |
+| **Pro DAU** | ~**30–50 users/ngày** | Gemini: 1,500 RPD / 50 calls = 30 |
+| **Pro concurrent** | ~**10–15 users** | — |
+| **Email upgrade (Resend)** | **100 emails/ngày** | Resend free tier |
+
+### Bottleneck & Scale plan
+
+| Mục tiêu | Giải pháp | Chi phí |
+|---------|----------|---------|
+| 500 free users/ngày | Thêm 20 Groq keys (5 accounts mới) | Free |
+| 200 pro users/ngày | Upgrade Gemini pay-as-go | ~$5–10/tháng |
+| 1,000+ users | Groq paid: $0.04/audio-min Whisper | ~$50–100/100 users/tháng |
+| Giảm STT calls | Cache transcript kết quả (KV by hash) | Free (Cloudflare KV 100K/day) |
+| Giảm translate calls | Cache dịch câu giống nhau | Free (Cloudflare KV) |
+
+### Worker rate limit (Cloudflare native)
+
+- `/translate` và `/ai-translate`: **30 requests / 60 giây** per user (Cloudflare GA rate limiting)
+- Không áp dụng cho `/transcribe` và `/score-ai` (giới hạn bởi Groq quota)
+
+---
+
 ## Ghi chú kỹ thuật
 
 - **RLS**: Tất cả bảng bật RLS. `profiles/usage/subscriptions/plans` có policy cho `authenticated` role. Admin/API/Payment tables chỉ `service_role` (Worker) truy cập.
