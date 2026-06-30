@@ -593,4 +593,12 @@ flowchart LR
 - **model_source routing**: `local` → extension chỉ dùng Whisper offline, Worker trả 403 `use_local` nếu lỡ gọi. `server` → Groq pool. `dedicated` → key riêng của user (`profiles.dedicated_api_key_id`).
 - **Key pool**: `consume_api_key` dùng `FOR UPDATE SKIP LOCKED` để atomic và tránh race condition khi nhiều Worker instances cùng chọn key.
 - **Email template**: Lưu trong `app_settings.email_pro = {subject, html}`. Admin sửa qua `/admin/email-template/set`. Default template = HTML tiếng Đức DW-style, seeded khi deploy.
-- **Migrations**: 001 (core) → 002 (admin+API) → 003 (translation) → 004 (api_models+routing) → 006 (plans free/pro+QR) → 007 (login_events, first_used_at, payment_methods, customer_*, email_pro).
+- **Migrations**: 001 (core) → 002 (admin+API) → 003 (translation) → 004 (api_models+routing) → 006 (plans free/pro+QR) → 007 (login_events, first_used_at, payment_methods, customer_*, email_pro) → **008 (giá 3.99€, RPC `rollup_usage_daily`, bảng `user_data` đồng bộ từ vựng)**.
+
+## Cập nhật mới nhất (2026-06)
+
+- **Tiền tệ**: Giá Pro chuẩn = **3.99 €** (đơn vị euro, không còn cent). VND **quy đổi LIVE** trong Worker (`eurToVnd` qua Frankfurter/ECB → open.er-api → hằng số dự phòng, cache 6h). IBAN→EUR, QR VN→VND.
+- **Mã đơn**: `genRef()` → **`DE-#####`** (5 số) — khớp regex webhook SePay, tự cập nhật Doanh thu.
+- **Email**: thêm placeholder `{{plan}}`; `/upgrade-request` tự điền name + plan, gửi Brevo.
+- **Đồng bộ tài khoản**: endpoint **`POST /sync`** (pull/push) + bảng `user_data` → từ vựng/câu/yêu thích theo tài khoản trên mọi thiết bị. Background SW pull-merge khi đăng nhập, push (debounce) khi đổi.
+- **Khắc phục audit**: verifyToken cache 30s; log fail-open `free_hour_check`; cron điền `usage_rollup_daily`; Brevo log status+body. Chi tiết & khuyến nghị: xem [`REVIEW.md`](./REVIEW.md).
