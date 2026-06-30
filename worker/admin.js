@@ -424,6 +424,9 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       out.providers = Object.values(byProv);
       out.groqEnvKeys = [env.GROQ_API_KEY_1, env.GROQ_API_KEY_2, env.GROQ_API_KEY_3, env.GROQ_API_KEY_4, env.GROQ_API_KEY_5].filter(Boolean).length;
       out.deepl = !!env.DEEPL_API_KEY; out.openrouter = !!env.OPENROUTER_API_KEY;
+      // Trạng thái email (vấn đề #8): có cấu hình key không + lỗi gần nhất (lưu ở ALERT_KV).
+      out.email = { brevo: !!env.BREVO_API_KEY, resend: !!env.RESEND_API_KEY, sender: env.BREVO_SENDER || 'thoatran21012@gmail.com', last_error: null };
+      try { if (env.ALERT_KV) { const e = await env.ALERT_KV.get('email_last_error'); if (e) out.email.last_error = JSON.parse(e); } } catch (_) {}
       // Số model theo capability (cho biết ghi âm/chấm/dịch đã có model chưa).
       const models = await sbGet(env, 'api_models?select=capability,enabled');
       const mc = {};
@@ -549,7 +552,18 @@ export async function handleSepayWebhook(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const key = auth.startsWith('Apikey ') ? auth.slice(7).trim() : '';
   if (!env.SEPAY_WEBHOOK_KEY || key !== env.SEPAY_WEBHOOK_KEY) return json({ success: false, error: 'unauthorized' }, 401);
-  const body = await request.json().catch(() => ({}));
+  // Đọc raw để (tuỳ chọn) xác thực HMAC-SHA256 khi đã cấu hình SEPAY_HMAC_SECRET (vấn đề #4/#5).
+  const raw = await request.text();
+  if (env.SEPAY_HMAC_SECRET) {
+    const sig = (request.headers.get('X-Sepay-Signature') || request.headers.get('X-Signature') || '').trim().toLowerCase();
+    try {
+      const k = await crypto.subtle.importKey('raw', enc.encode(env.SEPAY_HMAC_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const mac = await crypto.subtle.sign('HMAC', k, enc.encode(raw));
+      const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      if (!sig || sig !== hex) return json({ success: false, error: 'bad_signature' }, 401);
+    } catch (_) { return json({ success: false, error: 'sig_error' }, 401); }
+  }
+  let body = {}; try { body = JSON.parse(raw || '{}'); } catch (_) { body = {}; }
   const txnId = String(body.id || body.referenceCode || '');
   const content = String(body.content || body.description || '');
   const amount = Number(body.transferAmount || body.amount || 0);

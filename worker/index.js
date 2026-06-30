@@ -467,21 +467,32 @@ function genRef() {
   return 'DE-' + s;
 }
 
-// ── Tỷ giá EUR→VND trực tiếp (ECB Frankfurter → open.er-api → dự phòng), cache 6h ──
-// ECB (Frankfurter) thường KHÔNG công bố VND nên sẽ rơi xuống nguồn 2 (open.er-api, free, no key).
+// ── Tỷ giá EUR→VND trực tiếp, cache 6h. Nhiều nguồn free (không cần key) để chính xác cao:
+//   1) open.er-api.com  (ExchangeRate-API open access — cập nhật hằng ngày, có VND)
+//   2) @fawazahmed0/currency-api qua jsDelivr (rất phổ biến với dev, free, có VND)
+//   3) Frankfurter (ECB) — thường KHÔNG có VND, để cuối cho chắc.
+// Lọc giá trị bất thường (EUR→VND thực tế > 25.000); dự phòng 30.500 nếu mọi nguồn lỗi.
 let _fxCache = { rate: 0, at: 0 };
 const _FX_TTL = 6 * 60 * 60 * 1000;
-const _FX_FALLBACK = 27300; // ₫/€ dự phòng khi cả 2 API lỗi
+const _FX_FALLBACK = 30500; // ₫/€ dự phòng (xấp xỉ giá thị trường, luôn > 30.000)
+function _validVnd(v) { const n = Number(v); return n && n > 25000 && n < 40000 ? n : 0; }
 async function eurToVndRate() {
   const now = Date.now();
   if (_fxCache.rate && now - _fxCache.at < _FX_TTL) return _fxCache.rate;
-  try {
-    const r = await fetch('https://api.frankfurter.app/latest?from=EUR&to=VND');
-    if (r.ok) { const j = await r.json().catch(() => null); const v = j && j.rates && j.rates.VND; if (v) { _fxCache = { rate: v, at: now }; return v; } }
-  } catch (_) {}
+  // 1) open.er-api.com
   try {
     const r = await fetch('https://open.er-api.com/v6/latest/EUR');
-    if (r.ok) { const j = await r.json().catch(() => null); const v = j && j.rates && j.rates.VND; if (v) { _fxCache = { rate: v, at: now }; return v; } }
+    if (r.ok) { const j = await r.json().catch(() => null); const v = _validVnd(j && j.rates && j.rates.VND); if (v) { _fxCache = { rate: v, at: now }; return v; } }
+  } catch (_) {}
+  // 2) fawazahmed0 currency-api (jsDelivr CDN)
+  try {
+    const r = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/eur.json');
+    if (r.ok) { const j = await r.json().catch(() => null); const v = _validVnd(j && j.eur && j.eur.vnd); if (v) { _fxCache = { rate: v, at: now }; return v; } }
+  } catch (_) {}
+  // 3) Frankfurter (ECB) — ít khi có VND
+  try {
+    const r = await fetch('https://api.frankfurter.app/latest?from=EUR&to=VND');
+    if (r.ok) { const j = await r.json().catch(() => null); const v = _validVnd(j && j.rates && j.rates.VND); if (v) { _fxCache = { rate: v, at: now }; return v; } }
   } catch (_) {}
   return _FX_FALLBACK;
 }
@@ -636,14 +647,26 @@ function methodInstructionsHtml(method, ref) {
   return escapeHtml(method.note || '');
 }
 
+// Lưu lỗi email gần nhất vào KV để Admin → Health hiển thị (vấn đề #8).
+async function noteEmailError(env, provider, status, detail) {
+  try { if (env.ALERT_KV) await env.ALERT_KV.put('email_last_error', JSON.stringify({ provider, status, detail: String(detail).slice(0, 300), at: new Date().toISOString() }), { expirationTtl: 7 * 864e5 }); } catch (_) {}
+}
 async function sendResend(env, to, subject, text) {
-  if (!env.RESEND_API_KEY) { console.error('[RESEND-MISSING]', subject); return; }
+  if (!env.RESEND_API_KEY) { console.error('[RESEND-MISSING]', subject); return { ok: false, error: 'no_resend' }; }
   try {
-    await fetch('https://api.resend.com/emails', {
+    const r = await fetch('https://api.resend.com/emails', {
       method: 'POST', headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from: env.ALERT_FROM || 'NghienDeutsch <onboarding@resend.dev>', to: [to], subject, text }),
     });
-  } catch (e) { console.error('[RESEND-FAIL]', e.message); }
+    if (!r.ok) { let d = ''; try { d = JSON.stringify(await r.json()); } catch (_) {} console.error('[RESEND-ERR]', r.status, d.slice(0, 300)); await noteEmailError(env, 'resend', r.status, d); return { ok: false, status: r.status, error: d }; }
+    return { ok: true };
+  } catch (e) { console.error('[RESEND-FAIL]', e.message); return { ok: false, error: e.message }; }
+}
+// Gửi email cho CHỦ (owner): ưu tiên Resend, lỗi/thiếu → fallback Brevo (sender đã verify).
+async function sendOwnerEmail(env, to, subject, text, html) {
+  const r = await sendResend(env, to, subject, text);
+  if (r && r.ok) return r;
+  return sendBrevo(env, to, 'Admin', subject, html || ('<pre style="font:14px/1.6 monospace;white-space:pre-wrap">' + escapeHtml(text) + '</pre>'));
 }
 
 async function sendBrevo(env, toEmail, toName, subject, html) {
@@ -657,10 +680,11 @@ async function sendBrevo(env, toEmail, toName, subject, html) {
       // Log rõ status + body (vd 400 "sender not verified") để debug trong admin/health.
       let detail = ''; try { detail = JSON.stringify(await r.json()); } catch (_) { try { detail = await r.text(); } catch (__) {} }
       console.error('[BREVO-ERR]', r.status, String(detail).slice(0, 300));
+      await noteEmailError(env, 'brevo', r.status, detail);
       return { ok: false, status: r.status, error: String(detail).slice(0, 300) };
     }
     return { ok: true };
-  } catch (e) { console.error('[BREVO-FAIL]', e.message); return { ok: false, error: e.message }; }
+  } catch (e) { console.error('[BREVO-FAIL]', e.message); await noteEmailError(env, 'brevo', 0, e.message); return { ok: false, error: e.message }; }
 }
 
 async function handleUpgradeRequest(request, env, ctx) {
@@ -679,7 +703,9 @@ async function handleUpgradeRequest(request, env, ctx) {
   const eurPrice = normEur(pro.EUR);
   const currency = (method && method.type === 'vn_qr') ? 'VND' : 'EUR';
   const amount = currency === 'VND' ? await eurToVnd(eurPrice) : eurPrice;
-  const ref = genRef();
+  // Dùng mã DE-##### mà extension đã HIỂN THỊ cho khách (nếu hợp lệ) để khớp nội dung CK.
+  const provided = String(body.ref || '').trim().toUpperCase();
+  const ref = /^DE-\d{5}$/.test(provided) ? provided : genRef();
 
   // Lưu đơn (pending) kèm thông tin khách → Doanh thu + email không cần join auth.
   await fetch(`${env.SUPABASE_URL}/rest/v1/payments`, {
@@ -696,7 +722,8 @@ async function handleUpgradeRequest(request, env, ctx) {
   const ownerText = `Đơn nâng cấp Pro mới\n\nHọ tên: ${name}\nEmail: ${email}\nPhương thức: ${method ? method.label : methodId}\nVerwendungszweck: ${ref}\nSố tiền: ${amountStr}\nThời gian: ${new Date().toISOString()}`;
 
   const send = (async () => {
-    await sendResend(env, env.ALERT_EMAIL || 'huytruong18122001@gmail.com', 'NghienDeutsch: Đơn Pro mới — ' + ref, ownerText);
+    // Email cho CHỦ (Resend → fallback Brevo nếu Resend thiếu/lỗi) + email cho KHÁCH (Brevo).
+    await sendOwnerEmail(env, env.ALERT_EMAIL || 'thoatran21012@gmail.com', 'NghienDeutsch: Đơn Pro mới — ' + ref, ownerText);
     await sendBrevo(env, email, name, subject, html);
   })();
   if (ctx && ctx.waitUntil) ctx.waitUntil(send); else await send;
@@ -898,11 +925,15 @@ async function handleMe(env, user) {
     const plans = planRes.ok ? await planRes.json() : [];
     const plan  = plans[0] || { daily_translations: 20, daily_ai_calls: 10, display_name: 'Free' };
 
+    // Trạng thái giờ free CÒN LẠI (read-only, KHÔNG khởi động đồng hồ). Pro → unlimited.
+    const fh = await sbRpc(env, 'free_hour_status', { p_user_id: user.id });
+
     return json({
       email: profile.email || user.email,
       plan: planName,
       planName: plan.display_name,
       model_source: profile.model_source || 'server', // server | local | dedicated
+      free_hour: fh || { plan: planName, unlimited: planName !== 'free', remaining_min: 60, limit_min: 60 },
       usage: {
         translations: { used: usage.translation_count, limit: plan.daily_translations },
         ai:           { used: usage.ai_count,          limit: plan.daily_ai_calls },
