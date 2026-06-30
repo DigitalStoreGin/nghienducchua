@@ -658,16 +658,13 @@
       });
     }
     renderMethods();
-    const addType = h('select', null, h('option', { value: 'iban' }, 'IBAN (EU)'), h('option', { value: 'vn_qr' }, 'QR ngân hàng (VN)'), h('option', { value: 'paypal' }, 'PayPal'));
-    const addBtn = h('button', { class: 'btn', onclick: () => { const ty = addType.value; methods.push({ id: rid(ty), type: ty, label: ty === 'iban' ? 'Chuyển khoản IBAN (EU)' : ty === 'vn_qr' ? 'QR ngân hàng (VN)' : 'PayPal', enabled: true }); renderMethods(); } }, '+ ' + t('add'));
 
     clear(cfgPanel).append(h('h2', null, t('payout_cfg')),
       h('div', { class: 'form-grid' },
-        h('div', { class: 'field' }, h('label', null, t('price_pro_eur')), proEur),
-        h('div', { class: 'field' }, h('label', null, t('price_pro_vnd')), proVnd)),
-      h('div', { class: 'muted', style: 'margin:16px 0 8px;font-weight:700' }, t('pay_methods')),
+        h('div', { class: 'field' }, h('label', null, t('price_pro_eur')), proEur)),
+      h('div', { class: 'muted', style: 'margin:4px 0 14px;font-size:12px' }, t('price_vnd_auto')),
+      h('div', { class: 'muted', style: 'margin:8px 0 8px;font-weight:700' }, t('pay_methods')),
       methodsWrap,
-      h('div', { class: 'panel-row' }, addType, addBtn),
       h('div', { style: 'margin-top:14px' }, h('button', { class: 'btn btn--primary', onclick: async () => {
         const fi = methods.find((m) => m.type === 'iban') || {};
         const fq = methods.find((m) => m.type === 'vn_qr') || {};

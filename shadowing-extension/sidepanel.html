@@ -418,18 +418,13 @@
       <button class="btn-logout" id="btn-logout" title="Đăng xuất" data-i18n-title="menu_logout">&#8594;</button>
     </div>
 
-    <!-- USAGE METER -->
+    <!-- USAGE METER — Free: thời gian còn lại hôm nay · Pro: không giới hạn -->
     <div class="usage-meter" id="usage-meter">
       <div class="usage-row">
-        <span class="usage-label" data-i18n="usage_trans">Dịch hôm nay</span>
-        <span class="usage-count" id="usage-trans-count">0 / 20</span>
+        <span class="usage-label" data-i18n="usage_today">Hôm nay</span>
+        <span class="usage-count" id="usage-status">—</span>
       </div>
-      <div class="usage-bar-wrap"><div class="usage-bar-fill" id="usage-trans-bar" style="width:0%"></div></div>
-      <div class="usage-row">
-        <span class="usage-label" data-i18n="usage_ai">AI hôm nay</span>
-        <span class="usage-count" id="usage-ai-count">0 / 10</span>
-      </div>
-      <div class="usage-bar-wrap"><div class="usage-bar-fill usage-bar-fill--ai" id="usage-ai-bar" style="width:0%"></div></div>
+      <div class="usage-bar-wrap"><div class="usage-bar-fill" id="usage-status-bar" style="width:0%"></div></div>
       <button class="btn-upgrade" id="btn-upgrade" data-i18n="btn_upgrade">&#9889; Nâng cấp Pro</button>
     </div>
 

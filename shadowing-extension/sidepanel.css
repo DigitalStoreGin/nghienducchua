@@ -3078,6 +3078,13 @@ body.dark .pay-info-price { background: rgba(85,128,255,.12); border-color: #333
 body.dark .pay-info-price span { color: #c9d6f0; }
 body.dark .pay-info-price b { color: #8AACFF; }
 .upgrade-plan--pro { box-shadow: 0 6px 20px rgba(26,115,232,.18); }
+/* Nội dung CK (Verwendungszweck) — làm nổi để khách ghi đúng khi chuyển khoản */
+.pay-info-row--ref { margin-top: 6px; padding: 8px 10px; background: #fff7e0; border: 1px solid #f5d98a; border-radius: 8px; }
+.pay-info-row--ref span { color: #92600a; font-weight: 600; }
+.pay-info-row--ref b { color: #92600a; font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; letter-spacing: .5px; }
+body.dark .pay-info-row--ref { background: rgba(240,164,41,.12); border-color: rgba(240,164,41,.35); }
+body.dark .pay-info-row--ref span, body.dark .pay-info-row--ref b { color: #f0c46a; }
+.usage-bar-fill--ok { background: #2dc98c !important; }
 
 /* ============================================================
    FEATURE: FLASHCARD SRS (improved)

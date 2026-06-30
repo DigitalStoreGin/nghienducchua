@@ -40,10 +40,10 @@
 | 2 | 🟡 Medium | `verifyToken()` không cache | ✅ Đã thêm cache in-memory 30s (giảm gọi `/auth/v1/user`, có giới hạn 500 token/isolate). |
 | 3 | 🟡 Medium | `free_hour_check` fail-open im lặng | ✅ Vẫn fail-open (UX) nhưng **log `[FREE_HOUR_FAIL_OPEN]`** khi RPC null để giám sát. |
 | 4 | 🟡 Medium | `usage_rollup_daily` không được điền | ✅ Thêm RPC `rollup_usage_daily()` + gọi trong cron hằng ngày. |
-| 5 | 🟡 Medium | SePay webhook chỉ verify Apikey | ⚠️ Giữ Apikey (SePay chỉ hỗ trợ vậy) + dedupe theo `provider_txn_id` + kiểm tra số tiền/tiền tệ. HMAC: để ngỏ nếu SePay hỗ trợ. |
+| 5 | 🟡 Medium | SePay webhook chỉ verify Apikey | ✅ Thêm **HMAC-SHA256 tuỳ chọn** (`SEPAY_HMAC_SECRET`, header `X-Sepay-Signature`) + giữ Apikey + dedupe `provider_txn_id` + kiểm số tiền/tiền tệ. |
 | 6 | 🔵 Low | Admin TOTP UI chưa đủ | ✅ **Thực ra đã đầy đủ**: trang Bảo mật có enroll/verify/disable (`/admin/2fa/*`). Không cần sửa. |
-| 7 | 🔵 Low | `subscriptions` ít dùng | 📝 Ghi chú: giữ nguyên (không xoá để tránh mất dữ liệu lịch sử). Có thể gộp `plan_expires_at` vào `profiles` ở đợt dọn schema sau. |
-| 8 | 🔵 Low | Brevo 400 không log rõ | ✅ Log `[BREVO-ERR]` kèm status + body; trả `{ok:false,status,error}`. |
+| 7 | 🔵 Low | `subscriptions` ít dùng | ✅ Thêm `profiles.plan_expires_at`; `admin_set_plan` set thẳng vào profiles (subscriptions giữ để tương thích). |
+| 8 | 🔵 Low | Brevo 400 không log rõ | ✅ Log `[BREVO-ERR]`/`[RESEND-ERR]` kèm status+body + lưu `email_last_error` vào KV → **hiện trong Admin → Health** (`health.email`). |
 
 ---
 
@@ -65,10 +65,26 @@
 
 ---
 
-## 6. ⚠️ Việc NGƯỜI DÙNG phải tự làm (không thể làm thay)
+## 6. 📧 Vì sao KHÔNG nhận được email (Resend + Brevo)?
 
-1. **Rotate toàn bộ API key đã lộ trong chat** (CRITICAL): GitHub PAT, Cloudflare tokens, Supabase service key, Brevo key, Groq keys ×5. Tạo key mới trên dashboard tương ứng và đặt lại secret cho Worker (`wrangler secret put ...`).
-2. **Chạy migration `008_pricing_sync_rollup.sql`** trên Supabase (SQL Editor) — tạo bảng `user_data`, RPC `rollup_usage_daily`, đặt giá 3.99€.
-3. **Verify sender Brevo** `thoatran21012@gmail.com` (nếu chưa) để email khách không lỗi 400.
-4. **Deploy Worker** (`wrangler deploy`) và **reload extension** để áp thay đổi.
-5. (Tuỳ chọn) Đặt biến `BREVO_SENDER`, `ALERT_EMAIL` cho đúng địa chỉ của bạn.
+**Nguyên nhân chính**: Worker thiếu secret. `wrangler.toml` trước đây **không khai báo `BREVO_API_KEY`** ⇒ `sendBrevo` trả `[BREVO-MISSING]` ⇒ khách không nhận email; `RESEND_API_KEY` để trống ⇒ chủ cũng không nhận. (Sender Brevo `thoatran21012@gmail.com` của bạn **đã Verified** nên chỉ cần set key là chạy.)
+
+**Đã sửa trong code**: email chủ ưu tiên Resend, **lỗi/thiếu → tự fallback Brevo**; log chi tiết status+body; hiện lỗi gần nhất ở **Admin → Health**.
+
+**Bạn cần set secret rồi deploy**:
+```
+cd worker
+npx wrangler secret put BREVO_API_KEY     # dán Brevo API key MỚI (đã rotate)
+npx wrangler secret put BREVO_SENDER       # thoatran21012@gmail.com
+npx wrangler secret put ALERT_EMAIL        # email bạn muốn nhận đơn Pro
+# (tuỳ chọn) npx wrangler secret put RESEND_API_KEY
+npx wrangler deploy
+```
+
+## 7. ⚠️ Việc NGƯỜI DÙNG phải tự làm (không thể làm thay)
+
+1. **Rotate toàn bộ API key đã lộ trong chat** (CRITICAL — lần này gồm Cloudflare, Supabase, Brevo bạn vừa gửi): tạo key mới trên dashboard, đặt lại secret cho Worker. **Không dán key vào chat nữa.**
+2. **Chạy migration** trên Supabase SQL Editor (theo thứ tự): `008_pricing_sync_rollup.sql` rồi `009_freehour_status_planexp.sql` — tạo `user_data`, `rollup_usage_daily`, `free_hour_status`, `profiles.plan_expires_at`, giá 3.99€.
+3. **Set secret email** (mục 6) — đây là lý do chưa có email.
+4. **Deploy Worker** (`wrangler deploy`) + **reload extension** (chrome://extensions → Update). `/sync` chỉ hoạt động sau khi deploy + chạy migration 008.
+5. **Verify sender Brevo** đã xong (Verified) — chỉ cần set key.

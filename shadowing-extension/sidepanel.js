@@ -1712,7 +1712,9 @@
     if (backdrop) backdrop.onclick = (e) => { if (e.target === backdrop) hideUpgradeModal(); };
 
     // "Chọn Pro" → luồng 3 bước: chọn phương thức → điền thông tin → gửi yêu cầu (email).
-    let _payInfo = null, _paySelected = null;
+    let _payInfo = null, _paySelected = null, _payRef = '';
+    // Mã nội dung chuyển khoản DE-##### (hiện NGAY trên form để khách ghi khi CK).
+    const genDeRef = () => 'DE-' + String(Math.floor(Math.random() * 100000)).padStart(5, '0');
     // Định dạng tiền: EUR luôn hiện cho IBAN/PayPal, VND cho QR ngân hàng VN.
     const fmtEur = (x) => (Number(x) || 0).toFixed(2) + ' €';
     const fmtVnd = (x) => String(Math.round(Number(x) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' ₫';
@@ -1728,12 +1730,16 @@
       const priceStr = isVnd ? fmtVnd(pro.VND) : fmtEur(pro.EUR);
       const pEl = document.getElementById('pay-price');
       if (pEl) { pEl.innerHTML = ''; const s = document.createElement('span'); s.textContent = t('plan_pro_name', 'Pro'); const b = document.createElement('b'); b.textContent = priceStr; pEl.appendChild(s); pEl.appendChild(b); }
+      // Mã nội dung CK sinh ngay khi chọn phương thức → hiện trên form + gửi kèm khi đặt đơn.
+      _payRef = genDeRef();
       if (rowsEl) {
         rowsEl.innerHTML = '';
-        const add = (label, val) => { if (!val) return; const d = document.createElement('div'); d.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); d.appendChild(s); d.appendChild(b); rowsEl.appendChild(d); };
+        const add = (label, val, hl) => { if (!val) return; const d = document.createElement('div'); d.className = 'pay-info-row' + (hl ? ' pay-info-row--ref' : ''); const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); d.appendChild(s); d.appendChild(b); rowsEl.appendChild(d); };
         if (m.type === 'iban') { add(t('pay_beneficiary', 'Người nhận'), m.beneficiary); add('IBAN', m.iban); add(t('pay_bank', 'Ngân hàng'), m.bank); add('BIC', m.bic); }
         else if (m.type === 'paypal') { add('PayPal', m.link || m.email); }
         else if (m.type === 'vn_qr') { add(t('pay_form_label', 'Hình thức'), t('pay_scan_qr', 'Quét QR ngân hàng')); }
+        // Nội dung CK (Verwendungszweck) — BẮT BUỘC ghi đúng để tự kích hoạt Pro.
+        add(t('pay_ref', 'Nội dung CK (Verwendungszweck)'), _payRef, true);
       }
       if (qrEl) { if (m.type === 'vn_qr' && m.qr_image) { qrEl.src = m.qr_image; qrEl.hidden = false; } else qrEl.hidden = true; }
     };
@@ -1781,7 +1787,7 @@
       if (!name.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { if (errEl) errEl.textContent = t('pay_invalid', 'Vui lòng nhập Họ tên và email hợp lệ.'); return; }
       paySubmit.disabled = true; paySubmit.textContent = t('pay_sending', 'Đang gửi…');
       try {
-        const r = await fetch(WORKER_URL + '/upgrade-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), email: email.trim(), method: (_paySelected && _paySelected.id) || '' }) });
+        const r = await fetch(WORKER_URL + '/upgrade-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), email: email.trim(), method: (_paySelected && _paySelected.id) || '', ref: _payRef }) });
         const d = await r.json();
         if (!r.ok || !d.ok) throw new Error(d.message || 'fail');
         const rowsEl = document.getElementById('pay-done-rows');
@@ -2242,9 +2248,9 @@
       // Gói & thanh toán
       plan_free_chip:'Free: 1 giờ/ngày', plan_pro_chip:'Pro: Không giới hạn',
       plan_free_name:'Free', plan_free_price:'Miễn phí', plan_pro_name:'Pro', plan_popular:'⭐ Phổ biến', per_month:'/tháng', choose_pro:'Chọn Pro',
-      feat_free_hour:'1 giờ luyện tập / ngày', feat_free_basic:'Đầy đủ tính năng cơ bản', feat_free_shadow:'Shadowing cùng video',
-      feat_pro_unlimited:'Không giới hạn thời gian', feat_pro_ai:'Ghi âm & chấm điểm AI', feat_pro_translate:'Dịch chất lượng cao (Gemini/DeepL)', feat_pro_support:'Ưu tiên hỗ trợ',
-      unlimited:'Không giới hạn',
+      feat_free_hour:'1 giờ luyện tập / ngày', feat_free_basic:'Ghi âm & chấm điểm AI', feat_free_shadow:'Shadowing cùng video',
+      feat_pro_unlimited:'AI không giới hạn thời gian', feat_pro_ai:'Ghi âm & chấm điểm AI', feat_pro_translate:'Dịch chất lượng cao (Gemini/DeepL)', feat_pro_support:'Ưu tiên hỗ trợ',
+      unlimited:'Không giới hạn', usage_today:'Hôm nay', free_remaining:'Còn {n} phút',
       upgrade_title:'Nâng cấp NghienDeutsch Pro', upgrade_subtitle:'Học không giới hạn — luyện phát âm với AI mỗi ngày.',
       pay_choose_method:'💳 Chọn phương thức thanh toán', pay_your_info:'📝 Thông tin của bạn',
       pay_name_ph:'Họ và tên', pay_email_ph:'Email nhận hướng dẫn', pay_submit:'Gửi yêu cầu nâng cấp',
@@ -2288,9 +2294,9 @@
       // Plan & payment
       plan_free_chip:'Free: 1 hour/day', plan_pro_chip:'Pro: Unlimited',
       plan_free_name:'Free', plan_free_price:'Free', plan_pro_name:'Pro', plan_popular:'⭐ Popular', per_month:'/month', choose_pro:'Choose Pro',
-      feat_free_hour:'1 hour of practice / day', feat_free_basic:'All core features', feat_free_shadow:'Shadowing with videos',
-      feat_pro_unlimited:'Unlimited time', feat_pro_ai:'Recording & AI scoring', feat_pro_translate:'High-quality translation (Gemini/DeepL)', feat_pro_support:'Priority support',
-      unlimited:'Unlimited',
+      feat_free_hour:'1 hour of practice / day', feat_free_basic:'Recording & AI scoring', feat_free_shadow:'Shadowing with videos',
+      feat_pro_unlimited:'Unlimited AI time', feat_pro_ai:'Recording & AI scoring', feat_pro_translate:'High-quality translation (Gemini/DeepL)', feat_pro_support:'Priority support',
+      unlimited:'Unlimited', usage_today:'Today', free_remaining:'{n} min left',
       upgrade_title:'Upgrade to NghienDeutsch Pro', upgrade_subtitle:'Learn without limits — practice pronunciation with AI every day.',
       pay_choose_method:'💳 Choose a payment method', pay_your_info:'📝 Your details',
       pay_name_ph:'Full name', pay_email_ph:'Email for instructions', pay_submit:'Send upgrade request',
@@ -2334,9 +2340,9 @@
       // Paket & Zahlung
       plan_free_chip:'Free: 1 Stunde/Tag', plan_pro_chip:'Pro: Unbegrenzt',
       plan_free_name:'Free', plan_free_price:'Kostenlos', plan_pro_name:'Pro', plan_popular:'⭐ Beliebt', per_month:'/Monat', choose_pro:'Pro wählen',
-      feat_free_hour:'1 Stunde Übung / Tag', feat_free_basic:'Alle Grundfunktionen', feat_free_shadow:'Shadowing mit Videos',
-      feat_pro_unlimited:'Unbegrenzte Zeit', feat_pro_ai:'Aufnahme & KI-Bewertung', feat_pro_translate:'Hochwertige Übersetzung (Gemini/DeepL)', feat_pro_support:'Priorisierter Support',
-      unlimited:'Unbegrenzt',
+      feat_free_hour:'1 Stunde Übung / Tag', feat_free_basic:'Aufnahme & KI-Bewertung', feat_free_shadow:'Shadowing mit Videos',
+      feat_pro_unlimited:'KI ohne Zeitlimit', feat_pro_ai:'Aufnahme & KI-Bewertung', feat_pro_translate:'Hochwertige Übersetzung (Gemini/DeepL)', feat_pro_support:'Priorisierter Support',
+      unlimited:'Unbegrenzt', usage_today:'Heute', free_remaining:'Noch {n} Min',
       upgrade_title:'Auf NghienDeutsch Pro upgraden', upgrade_subtitle:'Ohne Limit lernen — täglich Aussprache mit KI üben.',
       pay_choose_method:'💳 Zahlungsart wählen', pay_your_info:'📝 Ihre Angaben',
       pay_name_ph:'Vollständiger Name', pay_email_ph:'E-Mail für die Anleitung', pay_submit:'Upgrade anfragen',
@@ -2912,25 +2918,20 @@
   }
 
   async function updateUsageUI(profile) {
-    if (!profile || !profile.usage) return;
-    const { translations, ai } = profile.usage;
-    const tc = $('#usage-trans-count'); const ac = $('#usage-ai-count');
-    const tb = $('#usage-trans-bar');   const ab = $('#usage-ai-bar');
-    // Pro = không giới hạn (ẩn số); Free = hiển thị 1 giờ dùng thử/ngày + số lượt còn lại.
-    if ((profile.plan || 'free') === 'pro') {
-      const unlim = t('unlimited', 'Không giới hạn');
-      if (tc) tc.textContent = unlim;
-      if (ac) ac.textContent = unlim;
-      if (tb) tb.style.width = '100%';
-      if (ab) ab.style.width = '100%';
+    if (!profile) return;
+    const statusEl = $('#usage-status'); const barEl = $('#usage-status-bar');
+    const fh = profile.free_hour || null;
+    const isPro = (profile.plan || 'free') === 'pro' || (fh && fh.unlimited);
+    if (isPro) {
+      if (statusEl) statusEl.textContent = t('unlimited', 'Không giới hạn');
+      if (barEl) { barEl.style.width = '100%'; barEl.classList.add('usage-bar-fill--ok'); }
       return;
     }
-    const tPct = Math.min(100, Math.round((translations.used / (translations.limit || 1)) * 100));
-    const aPct = Math.min(100, Math.round((ai.used / (ai.limit || 1)) * 100));
-    if (tc) tc.textContent = translations.used + ' / ' + translations.limit;
-    if (ac) ac.textContent = ai.used + ' / ' + ai.limit;
-    if (tb) tb.style.width = tPct + '%';
-    if (ab) ab.style.width = aPct + '%';
+    // Free: số phút còn lại trong ngày (1 giờ/ngày).
+    const lim = (fh && fh.limit_min) || 60;
+    const rem = fh && typeof fh.remaining_min === 'number' ? fh.remaining_min : lim;
+    if (statusEl) statusEl.textContent = t('free_remaining', 'Còn {n} phút').replace('{n}', rem);
+    if (barEl) { barEl.classList.remove('usage-bar-fill--ok'); barEl.style.width = Math.max(0, Math.min(100, Math.round((rem / lim) * 100))) + '%'; }
   }
 
   // Vocab/flashcard sections in slide menu
