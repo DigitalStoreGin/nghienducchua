@@ -3066,6 +3066,19 @@ body.dark .pay-info { background: rgba(100,130,255,.08); border-color: #33333d; 
 body.dark .pay-info-row b { color: #e8eaed; }
 body.dark .pay-info-row span { color: #9aa0a6; }
 
+/* Pro upgrade UI — tinh chỉnh kiểu sàn TMĐT (icon + nhãn + chip tiền tệ + thẻ giá) */
+.pay-method-btn .pm-ico { font-size: 18px; }
+.pay-method-btn .pm-label { flex: 1; }
+.pay-method-btn .pm-cur { font-size: 11px; font-weight: 700; color: #2563EB; background: #eef4ff; border: 1px solid #c9d6f0; border-radius: 999px; padding: 2px 9px; }
+body.dark .pay-method-btn .pm-cur { background: rgba(85,128,255,.14); border-color: #33333d; color: #8AACFF; }
+.pay-info-price { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: linear-gradient(135deg,#e8f0fe,#d2e3fc); border: 1px solid #c9d6f0; margin-bottom: 10px; }
+.pay-info-price span { color: #1a3a8f; font-weight: 600; font-size: 13px; }
+.pay-info-price b { color: #1a73e8; font-weight: 800; font-size: 20px; }
+body.dark .pay-info-price { background: rgba(85,128,255,.12); border-color: #33333d; }
+body.dark .pay-info-price span { color: #c9d6f0; }
+body.dark .pay-info-price b { color: #8AACFF; }
+.upgrade-plan--pro { box-shadow: 0 6px 20px rgba(26,115,232,.18); }
+
 /* ============================================================
    FEATURE: FLASHCARD SRS (improved)
    ============================================================ */

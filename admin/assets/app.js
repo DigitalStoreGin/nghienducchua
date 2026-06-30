@@ -54,9 +54,10 @@
       payout_cfg: 'Thông tin nhận tiền', beneficiary: 'Tên người nhận', iban: 'IBAN', bic: 'BIC', bank: 'Tên ngân hàng',
       paypal: 'Link PayPal donate', sepay_acc: 'Số tài khoản SePay', sepay_bank: 'Mã ngân hàng SePay', iban_prefix: 'Tiền tố mã IBAN',
       sepay_prefix: 'Tiền tố mã SePay', price_table: 'Bảng giá (JSON)', save: 'Lưu', create_order: 'Tạo đơn',
-      price_pro_eur: 'Giá Pro (EUR)', price_pro_vnd: 'Giá Pro (VND)', qr_upload: 'Ảnh QR ngân hàng (tải lên)',
+      price_pro_eur: 'Giá Pro (EUR) — giá niêm yết', price_pro_vnd: 'Giá Pro (VND) — tự động', qr_upload: 'Ảnh QR ngân hàng (tải lên)',
+      qr_help: 'Tải ảnh QR ngân hàng của bạn (VietQR) để khách quét bằng app ngân hàng. IBAN ở trên không cần ảnh vì chỉ là số tài khoản dạng chữ.', note_optional: 'Ghi chú (tuỳ chọn)', iban_help: 'Chỉ cần nhập chữ — không cần ảnh.', price_vnd_auto: 'VND tự động quy đổi LIVE theo tỷ giá ECB từ giá EUR.',
       nav_revenue: 'Doanh thu', nav_emails: 'Email', pay_methods: 'Phương thức thanh toán', email: 'Email',
-      email_subject: 'Tiêu đề email', email_html: 'Nội dung HTML', email_preview: 'Xem trước', email_tpl_note: 'Email gửi cho khách khi nâng cấp Pro. Dùng placeholder: {{name}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
+      email_subject: 'Tiêu đề email', email_html: 'Nội dung HTML', email_preview: 'Xem trước', email_tpl_note: 'Email gửi cho khách khi nâng cấp Pro (tự động điền tên & gói). Placeholder: {{name}}, {{plan}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
       last_login: 'Đăng nhập gần nhất', last_seen: 'Hoạt động gần nhất', detail: 'Chi tiết', device: 'Thiết bị', network: 'Mạng',
       login_history: 'Lịch sử đăng nhập', security: 'Bảo mật', email_verified: 'Email đã xác minh', active_sessions: 'Phiên hoạt động', anomaly: 'Đăng nhập bất thường',
       ip: 'IP', country: 'Quốc gia', city: 'Thành phố', isp: 'ISP', browser: 'Trình duyệt', os: 'Hệ điều hành', screen: 'Màn hình', tz: 'Múi giờ', time: 'Thời gian', yes: 'Có', no: 'Không',
@@ -101,9 +102,10 @@
       payout_cfg: 'Zahlungsempfänger', beneficiary: 'Empfängername', iban: 'IBAN', bic: 'BIC', bank: 'Bankname',
       paypal: 'PayPal-Spendenlink', sepay_acc: 'SePay-Kontonummer', sepay_bank: 'SePay-Bankcode', iban_prefix: 'IBAN-Code-Präfix',
       sepay_prefix: 'SePay-Code-Präfix', price_table: 'Preistabelle (JSON)', save: 'Speichern', create_order: 'Auftrag erstellen',
-      price_pro_eur: 'Pro-Preis (EUR)', price_pro_vnd: 'Pro-Preis (VND)', qr_upload: 'Bank-QR-Bild (hochladen)',
+      price_pro_eur: 'Pro-Preis (EUR) — Listenpreis', price_pro_vnd: 'Pro-Preis (VND) — automatisch', qr_upload: 'Bank-QR-Bild (hochladen)',
+      qr_help: 'Laden Sie Ihr Bank-QR-Bild (VietQR) hoch, damit Kunden mit ihrer Banking-App scannen können. IBAN oben braucht kein Bild — nur Text.', note_optional: 'Notiz (optional)', iban_help: 'Nur Text eingeben — kein Bild nötig.', price_vnd_auto: 'VND wird automatisch live nach EZB-Kurs aus dem EUR-Preis umgerechnet.',
       nav_revenue: 'Umsatz', nav_emails: 'E-Mail', pay_methods: 'Zahlungsmethoden', email: 'E-Mail',
-      email_subject: 'Betreff', email_html: 'HTML-Inhalt', email_preview: 'Vorschau', email_tpl_note: 'E-Mail an Kunden beim Pro-Upgrade. Platzhalter: {{name}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
+      email_subject: 'Betreff', email_html: 'HTML-Inhalt', email_preview: 'Vorschau', email_tpl_note: 'E-Mail an Kunden beim Pro-Upgrade (Name & Paket automatisch). Platzhalter: {{name}}, {{plan}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
       last_login: 'Letzter Login', last_seen: 'Zuletzt aktiv', detail: 'Details', device: 'Gerät', network: 'Netzwerk',
       login_history: 'Login-Verlauf', security: 'Sicherheit', email_verified: 'E-Mail verifiziert', active_sessions: 'Aktive Sitzungen', anomaly: 'Ungewöhnlicher Login',
       ip: 'IP', country: 'Land', city: 'Stadt', isp: 'ISP', browser: 'Browser', os: 'Betriebssystem', screen: 'Bildschirm', tz: 'Zeitzone', time: 'Zeit', yes: 'Ja', no: 'Nein',
@@ -618,9 +620,10 @@
     const { config } = await api('payout-config/get', {});
     const c = config || {};
     const pt = c.price_table || {};
-    const proPrice = pt.pro || { EUR: 9.99, VND: 249000 };
-    const proEur = h('input', { type: 'number', step: '0.01', value: String(proPrice.EUR != null ? proPrice.EUR : 9.99) });
-    const proVnd = h('input', { type: 'number', value: String(proPrice.VND != null ? proPrice.VND : 249000) });
+    const proPrice = pt.pro || { EUR: 3.99 };
+    const proEur = h('input', { type: 'number', step: '0.01', value: String(proPrice.EUR != null ? proPrice.EUR : 3.99) });
+    // VND tự động quy đổi LIVE theo tỷ giá ECB trong Worker (chỉ hiển thị, không cần nhập).
+    const proVnd = h('input', { type: 'number', value: String(proPrice.VND != null ? proPrice.VND : ''), readonly: 'readonly', title: t('price_vnd_auto') });
 
     // Danh sách phương thức thanh toán (clone để chỉnh cục bộ; Lưu ghi cả mảng).
     let methods = Array.isArray(c.payment_methods) ? JSON.parse(JSON.stringify(c.payment_methods)) : [];
@@ -643,8 +646,8 @@
             fieldsBox.append(h('div', { class: 'field' }, h('label', null, lbl), h('input', { type: 'text', value: m[key] || '', oninput: (e) => { m[key] = e.target.value; } })));
           }
         };
-        if (m.type === 'iban') { addF('beneficiary', t('beneficiary')); addF('iban', t('iban')); addF('bic', t('bic')); addF('bank', t('bank')); }
-        else if (m.type === 'vn_qr') { addF('qr_image', t('qr_upload'), true); addF('note', t('none')); }
+        if (m.type === 'iban') { addF('beneficiary', t('beneficiary')); addF('iban', t('iban')); addF('bic', t('bic')); addF('bank', t('bank')); fieldsBox.append(h('div', { class: 'muted', style: 'font-size:12px;grid-column:1/-1' }, t('iban_help'))); }
+        else if (m.type === 'vn_qr') { addF('qr_image', t('qr_upload'), true); fieldsBox.append(h('div', { class: 'muted', style: 'font-size:12px;grid-column:1/-1' }, t('qr_help'))); addF('note', t('note_optional')); }
         else if (m.type === 'paypal') { addF('link', 'PayPal link'); addF('email', 'PayPal email'); }
         methodsWrap.append(h('div', { class: 'panel', style: 'margin-bottom:12px;background:var(--panel2)' },
           h('div', { class: 'panel-row', style: 'justify-content:space-between' },
@@ -670,7 +673,8 @@
         const fq = methods.find((m) => m.type === 'vn_qr') || {};
         await api('payout-config/update', {
           payment_methods: methods,
-          price_table: { free: { EUR: 0, VND: 0 }, pro: { EUR: parseFloat(proEur.value) || 0, VND: parseInt(proVnd.value, 10) || 0 } },
+          // Chỉ lưu EUR (nguồn chuẩn). VND do Worker quy đổi LIVE theo tỷ giá ECB khi hiển thị.
+          price_table: { free: { EUR: 0 }, pro: { EUR: parseFloat(proEur.value) || 3.99 } },
           beneficiary_name: fi.beneficiary || '', iban: fi.iban || '', bic: fi.bic || '', bank_name: fi.bank || '', qr_image: fq.qr_image || '',
         });
         toast(t('saved'));
@@ -751,7 +755,7 @@
     const subj = h('input', { type: 'text', value: v.subject || 'NghienDeutsch Pro — Zahlungsanweisungen ({{ref}})' });
     const html = h('textarea', { rows: '16', style: 'font-family:monospace;font-size:12px;width:100%' }, v.html || '');
     const frame = h('iframe', { style: 'width:100%;height:420px;border:1px solid var(--border);border-radius:10px;background:#fff' });
-    const sample = (s) => String(s || '').replace(/\{\{name\}\}/g, 'Nguyễn Văn A').replace(/\{\{ref\}\}/g, 'PRO-ABC123').replace(/\{\{amount\}\}/g, '249.000₫').replace(/\{\{method_label\}\}/g, 'QR ngân hàng (VN)').replace(/\{\{method_instructions\}\}/g, 'IBAN: <b>DE...</b>');
+    const sample = (s) => String(s || '').replace(/\{\{name\}\}/g, 'Nguyễn Văn A').replace(/\{\{plan\}\}/g, 'Pro').replace(/\{\{ref\}\}/g, 'DE-48217').replace(/\{\{amount\}\}/g, '3.99 €').replace(/\{\{method_label\}\}/g, 'Chuyển khoản IBAN (EU)').replace(/\{\{method_instructions\}\}/g, 'IBAN: <b>DE89 3704 0044 0532 0130 00</b>');
     clear(panel).append(h('h2', null, t('nav_emails')),
       h('div', { class: 'muted', style: 'margin-bottom:10px' }, t('email_tpl_note')),
       h('div', { class: 'field' }, h('label', null, t('email_subject')), subj),

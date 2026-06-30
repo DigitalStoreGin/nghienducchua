@@ -72,8 +72,8 @@
       </div>
 
       <div class="auth-plans">
-        <div class="auth-plan-chip">Free: 20 dịch/ngày</div>
-        <div class="auth-plan-chip auth-plan-chip--pro">Pro: Không giới hạn</div>
+        <div class="auth-plan-chip" data-i18n="plan_free_chip">Free: 1 giờ/ngày</div>
+        <div class="auth-plan-chip auth-plan-chip--pro" data-i18n="plan_pro_chip">Pro: Không giới hạn</div>
       </div>
     </div>
   </div>
@@ -670,58 +670,58 @@
       <button class="upgrade-close" id="upgrade-close">&#10005;</button>
       <div class="upgrade-header">
         <div class="upgrade-icon">⚡</div>
-        <h2 class="upgrade-title">Nâng cấp gói</h2>
-        <p class="upgrade-subtitle" id="upgrade-reason">Nâng cấp để dùng không giới hạn.</p>
+        <h2 class="upgrade-title" data-i18n="upgrade_title">Nâng cấp NghienDeutsch Pro</h2>
+        <p class="upgrade-subtitle" id="upgrade-reason" data-i18n="upgrade_subtitle">Học không giới hạn — luyện phát âm với AI mỗi ngày.</p>
       </div>
       <div class="upgrade-plans">
         <div class="upgrade-plan">
-          <div class="upgrade-plan-name">Free</div>
-          <div class="upgrade-plan-price">$0</div>
+          <div class="upgrade-plan-name" data-i18n="plan_free_name">Free</div>
+          <div class="upgrade-plan-price" data-i18n="plan_free_price">Miễn phí</div>
           <ul class="upgrade-plan-features">
-            <li>20 dịch/ngày</li>
-            <li>10 AI calls/ngày</li>
-            <li>Shadowing cơ bản</li>
+            <li data-i18n="feat_free_hour">1 giờ luyện tập / ngày</li>
+            <li data-i18n="feat_free_basic">Đầy đủ tính năng cơ bản</li>
+            <li data-i18n="feat_free_shadow">Shadowing cùng video</li>
           </ul>
         </div>
         <div class="upgrade-plan upgrade-plan--pro">
-          <div class="upgrade-plan-badge">⭐ Phổ biến</div>
-          <div class="upgrade-plan-name">Pro</div>
-          <div class="upgrade-plan-price" id="upgrade-pro-price">$9.99<span>/tháng</span></div>
+          <div class="upgrade-plan-badge" data-i18n="plan_popular">⭐ Phổ biến</div>
+          <div class="upgrade-plan-name" data-i18n="plan_pro_name">Pro</div>
+          <div class="upgrade-plan-price" id="upgrade-pro-price">3.99 €<span data-i18n="per_month">/tháng</span></div>
           <ul class="upgrade-plan-features">
-            <li>2,000 dịch/ngày</li>
-            <li>1,000 AI calls/ngày</li>
-            <li>Ghi âm &amp; chấm điểm AI</li>
-            <li>Ưu tiên hỗ trợ</li>
+            <li data-i18n="feat_pro_unlimited">Không giới hạn thời gian</li>
+            <li data-i18n="feat_pro_ai">Ghi âm &amp; chấm điểm AI</li>
+            <li data-i18n="feat_pro_translate">Dịch chất lượng cao (Gemini/DeepL)</li>
+            <li data-i18n="feat_pro_support">Ưu tiên hỗ trợ</li>
           </ul>
-          <button class="upgrade-plan-btn" data-plan="pro" id="btn-choose-pro">Chọn Pro</button>
+          <button class="upgrade-plan-btn" data-plan="pro" id="btn-choose-pro" data-i18n="choose_pro">Chọn Pro</button>
         </div>
       </div>
       <!-- Bước thanh toán: (1) chọn phương thức → (2) điền thông tin → (3) xác nhận -->
       <div class="pay-flow" id="pay-flow" hidden>
         <!-- Bước 1: chọn phương thức -->
         <div id="pay-step-method">
-          <h3 class="pay-info-title">💳 Chọn phương thức thanh toán</h3>
-          <div class="pay-methods" id="pay-methods"><div class="pay-info-note">Đang tải…</div></div>
+          <h3 class="pay-info-title" data-i18n="pay_choose_method">💳 Chọn phương thức thanh toán</h3>
+          <div class="pay-methods" id="pay-methods"><div class="pay-info-note" data-i18n="loading">Đang tải…</div></div>
         </div>
         <!-- Bước 2: điền thông tin -->
         <div id="pay-step-form" hidden>
-          <h3 class="pay-info-title">📝 Thông tin của bạn</h3>
+          <h3 class="pay-info-title" data-i18n="pay_your_info">📝 Thông tin của bạn</h3>
           <div class="pay-info-price" id="pay-price"></div>
-          <input type="text" id="pay-name" class="auth-input" placeholder="Họ và tên" autocomplete="name" style="margin:8px 0">
-          <input type="email" id="pay-email" class="auth-input" placeholder="Email nhận hướng dẫn" autocomplete="email" style="margin-bottom:8px">
+          <input type="text" id="pay-name" class="auth-input" placeholder="Họ và tên" data-i18n-ph="pay_name_ph" autocomplete="name" style="margin:8px 0">
+          <input type="email" id="pay-email" class="auth-input" placeholder="Email nhận hướng dẫn" data-i18n-ph="pay_email_ph" autocomplete="email" style="margin-bottom:8px">
           <div class="pay-info-rows" id="pay-rows"></div>
-          <img class="pay-info-qr" id="pay-qr" alt="QR chuyển khoản" hidden>
-          <button class="auth-btn-primary" id="pay-submit" style="margin-top:10px">Gửi yêu cầu nâng cấp</button>
+          <img class="pay-info-qr" id="pay-qr" alt="QR" hidden>
+          <button class="auth-btn-primary" id="pay-submit" data-i18n="pay_submit" style="margin-top:10px">Gửi yêu cầu nâng cấp</button>
           <div class="pay-info-note" id="pay-form-err" style="color:#d63b3b"></div>
         </div>
         <!-- Bước 3: xác nhận -->
         <div id="pay-step-done" hidden>
-          <h3 class="pay-info-title">✅ Đã gửi yêu cầu</h3>
+          <h3 class="pay-info-title" data-i18n="pay_done_title">✅ Đã gửi yêu cầu</h3>
           <div class="pay-info-rows" id="pay-done-rows"></div>
-          <p class="pay-info-note">Đã gửi hướng dẫn thanh toán tới email của bạn. Sau khi chuyển khoản (đúng nội dung), admin sẽ kích hoạt Pro cho tài khoản này.</p>
+          <p class="pay-info-note" data-i18n="pay_done_note">Đã gửi hướng dẫn thanh toán tới email của bạn. Sau khi chuyển khoản đúng nội dung, chúng tôi sẽ kích hoạt Pro cho tài khoản này.</p>
         </div>
       </div>
-      <p class="upgrade-contact">Liên hệ: <a href="mailto:thoatran21012@gmail.com">thoatran21012@gmail.com</a></p>
+      <p class="upgrade-contact"><span data-i18n="contact_label">Liên hệ</span>: <a href="mailto:thoatran21012@gmail.com">thoatran21012@gmail.com</a></p>
     </div>
   </div>
 

@@ -987,7 +987,7 @@
     const closeB = box.querySelector('.vd-close'); if (closeB) closeB.onclick = () => { box.hidden = true; };
     const ta = box.querySelector('.vd-notes'); if (ta) ta.onchange = () => { w.notes = ta.value; cmd('updateWord', { word: w.word, fields: { notes: ta.value } }); };
     const forgetB = box.querySelector('.vd-forget'); if (forgetB) forgetB.onclick = async () => { await cmd('removeWord', { word: w.word }); markWordRemoved(w.word); box.hidden = true; renderVocabView(); };
-    const reviewB = box.querySelector('.vd-review'); if (reviewB) reviewB.onclick = () => { if (typeof openVocabGame === 'function') openVocabGame({ mode: 'speak', words: [w] }); };
+    const reviewB = box.querySelector('.vd-review'); if (reviewB) reviewB.onclick = () => { if (typeof openVocabGame === 'function') openVocabGame({ mode: 'choice', words: [w] }); };
     // Lưu lại card đã tra để lần sau khỏi gọi mạng.
     const patch = {};
     if (ipa && !w.ipa) { w.ipa = ipa; patch.ipa = ipa; }
@@ -1053,7 +1053,6 @@
     const modes = [
       { m: 'choice', icon: '🔤', label: t('game_choice', 'Trắc nghiệm') },
       { m: 'type', icon: '⌨️', label: t('game_type', 'Nghe & gõ') },
-      { m: 'speak', icon: '🎤', label: t('game_speak', 'Nói & chấm') },
     ];
     body.innerHTML =
       (msg ? '<div class="vg-msg">' + esc(msg) + '</div>' : '') +
@@ -1082,7 +1081,6 @@
     const s = _vgState; if (!s) return;
     if (s.mode === 'choice') return gameChoice();
     if (s.mode === 'type') return gameType();
-    if (s.mode === 'speak') return gameSpeak();
   }
   async function gameFlashcard() {
     const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
@@ -1138,33 +1136,6 @@
       setTimeout(gameNext, 1100);
     }
     const cb = $('#vg-check'); if (cb) cb.onclick = doCheck;
-  }
-  async function gameSpeak() {
-    const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
-    body.innerHTML = gameProgressHtml() +
-      '<div class="vg-card"><div class="vg-word">' + esc(it.word) + '</div><button class="vg-tts">🔊</button></div>' +
-      '<div class="vg-actions"><button class="vg-btn vg-btn--primary" id="vg-rec">🎤 ' + esc(t('game_speak_btn', 'Nói')) + '</button><button class="vg-btn" id="vg-skip">' + esc(t('game_skip', 'Bỏ qua')) + '</button></div>' +
-      '<div class="vg-result" id="vg-result" hidden></div>';
-    body.querySelector('.vg-tts').onclick = () => speakText(it.word);
-    const sk = $('#vg-skip'); if (sk) sk.onclick = () => gameNext();
-    const rec = $('#vg-rec'); if (rec) rec.onclick = async () => {
-      if (!window.ShadowMic || !window.ShadowMic.recordAndTranscribe) { setStatus(t('mic_not_ready', 'Mic chưa sẵn sàng — tải lại extension.'), 'warn'); return; }
-      rec.disabled = true; rec.textContent = '● ' + t('st_listening', 'Đang nghe…');
-      let res;
-      try { res = await window.ShadowMic.recordAndTranscribe({ maxMs: 5000, lang2: it.lang || settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad, modelSource: settings.modelSource || 'server' }); }
-      catch (e) { res = { error: 'rec' }; }
-      rec.disabled = false; rec.textContent = '🎤 ' + t('game_speak_btn', 'Nói');
-      const res2 = $('#vg-result'); res2.hidden = false;
-      if (!res || res.error || !res.transcript) { res2.className = 'vg-result bad'; res2.textContent = '✗ ' + t('empty_heard', 'Không nghe rõ — thử lại.'); return; }
-      let score = null;
-      try { if (window.SD && window.SD.phonetic) score = window.SD.phonetic.analyze(it.word, res.transcript, { lang: it.lang || settings.targetLang || 'de' }); } catch (_) {}
-      const pct = score ? Math.round(score.overall) : 0;
-      const ok = pct >= 70;
-      res2.className = 'vg-result ' + (ok ? 'ok' : 'bad');
-      res2.textContent = (ok ? '✓ ' : '✗ ') + pct + '% · ' + t('you_said', 'Bạn nói') + ': ' + (res.transcript || '');
-      if (ok) { s.correct++; gameMarkLearned(it.word); }
-      setTimeout(gameNext, 1600);
-    };
   }
   function gameMarkLearned(word) {
     const key = String(word || '').toLowerCase();
@@ -1742,48 +1713,63 @@
 
     // "Chọn Pro" → luồng 3 bước: chọn phương thức → điền thông tin → gửi yêu cầu (email).
     let _payInfo = null, _paySelected = null;
+    // Định dạng tiền: EUR luôn hiện cho IBAN/PayPal, VND cho QR ngân hàng VN.
+    const fmtEur = (x) => (Number(x) || 0).toFixed(2) + ' €';
+    const fmtVnd = (x) => String(Math.round(Number(x) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' ₫';
     const showPayStep = (step) => {
       ['method', 'form', 'done'].forEach((s) => { const el = document.getElementById('pay-step-' + s); if (el) el.hidden = (s !== step); });
       const flow = document.getElementById('pay-flow'); if (flow) flow.hidden = false;
     };
     const renderMethodInstr = (m) => {
       const rowsEl = document.getElementById('pay-rows'); const qrEl = document.getElementById('pay-qr');
+      // Giá hiển thị theo đúng phương thức: VN QR → VND, IBAN/PayPal → EUR.
+      const pro = (_payInfo && _payInfo.price_table && _payInfo.price_table.pro) || {};
+      const isVnd = m.type === 'vn_qr';
+      const priceStr = isVnd ? fmtVnd(pro.VND) : fmtEur(pro.EUR);
+      const pEl = document.getElementById('pay-price');
+      if (pEl) { pEl.innerHTML = ''; const s = document.createElement('span'); s.textContent = t('plan_pro_name', 'Pro'); const b = document.createElement('b'); b.textContent = priceStr; pEl.appendChild(s); pEl.appendChild(b); }
       if (rowsEl) {
         rowsEl.innerHTML = '';
         const add = (label, val) => { if (!val) return; const d = document.createElement('div'); d.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); d.appendChild(s); d.appendChild(b); rowsEl.appendChild(d); };
-        if (m.type === 'iban') { add('Người nhận', m.beneficiary); add('IBAN', m.iban); add('Bank', m.bank); add('BIC', m.bic); }
+        if (m.type === 'iban') { add(t('pay_beneficiary', 'Người nhận'), m.beneficiary); add('IBAN', m.iban); add(t('pay_bank', 'Ngân hàng'), m.bank); add('BIC', m.bic); }
         else if (m.type === 'paypal') { add('PayPal', m.link || m.email); }
-        else if (m.type === 'vn_qr') { add('Hình thức', 'Quét QR ngân hàng'); }
+        else if (m.type === 'vn_qr') { add(t('pay_form_label', 'Hình thức'), t('pay_scan_qr', 'Quét QR ngân hàng')); }
       }
       if (qrEl) { if (m.type === 'vn_qr' && m.qr_image) { qrEl.src = m.qr_image; qrEl.hidden = false; } else qrEl.hidden = true; }
+    };
+    // Cập nhật giá niêm yết (EUR) trên thẻ Pro ngay khi mở modal.
+    const refreshProPrice = async () => {
+      try {
+        const r = await fetch(WORKER_URL + '/pay-info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        _payInfo = await r.json();
+        const pro = (_payInfo.price_table || {}).pro || {};
+        const cardPrice = document.getElementById('upgrade-pro-price');
+        if (cardPrice && pro.EUR) { cardPrice.innerHTML = ''; cardPrice.appendChild(document.createTextNode(fmtEur(pro.EUR))); const sp = document.createElement('span'); sp.textContent = t('per_month', '/tháng'); cardPrice.appendChild(sp); }
+      } catch (_) {}
     };
     const proBtn = document.getElementById('btn-choose-pro');
     if (proBtn) proBtn.onclick = async () => {
       const methodsEl = document.getElementById('pay-methods');
       showPayStep('method');
-      if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">Đang tải…</div>';
+      if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">' + esc(t('loading', 'Đang tải…')) + '</div>';
       try {
-        const r = await fetch(WORKER_URL + '/pay-info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        _payInfo = await r.json();
-        const pro = (_payInfo.price_table || {}).pro || {};
-        const vnd = pro.VND ? (Number(pro.VND).toLocaleString('vi-VN') + '₫') : '';
-        const eur = pro.EUR ? ('€' + pro.EUR) : '';
-        const priceStr = 'Gói Pro: ' + ([vnd, eur].filter(Boolean).join(' · ') || 'liên hệ admin');
-        const pEl = document.getElementById('pay-price'); if (pEl) pEl.textContent = priceStr;
-        const methods = (_payInfo.methods || []).filter((m) => m && m.enabled !== false);
+        if (!_payInfo) await refreshProPrice();
+        const methods = (_payInfo && _payInfo.methods || []).filter((m) => m && m.enabled !== false);
         if (methodsEl) {
           methodsEl.innerHTML = '';
-          if (!methods.length) { methodsEl.innerHTML = '<div class="pay-info-note">Chưa cấu hình phương thức. Liên hệ admin.</div>'; return; }
+          if (!methods.length) { methodsEl.innerHTML = '<div class="pay-info-note">' + esc(t('pay_no_method', 'Chưa cấu hình phương thức. Liên hệ admin.')) + '</div>'; return; }
           methods.forEach((m) => {
+            const cur = m.type === 'vn_qr' ? 'VND' : (m.type === 'paypal' ? '' : 'EUR');
+            const ico = m.type === 'vn_qr' ? '🏦' : m.type === 'paypal' ? '🅿️' : '🇪🇺';
             const b = document.createElement('button');
             b.className = 'pay-method-btn';
-            b.innerHTML = '<span>' + (m.type === 'vn_qr' ? '🏦' : m.type === 'paypal' ? '🅿️' : '🇪🇺') + '</span> ' + (m.label || m.type);
+            b.innerHTML = '<span class="pm-ico">' + ico + '</span><span class="pm-label">' + esc(m.label || m.type) + '</span>' + (cur ? '<span class="pm-cur">' + cur + '</span>' : '');
             b.onclick = () => { _paySelected = m; renderMethodInstr(m); showPayStep('form'); };
             methodsEl.appendChild(b);
           });
         }
       } catch (_) {
-        if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">Không tải được thông tin thanh toán. Liên hệ admin.</div>';
+        if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">' + esc(t('pay_load_err', 'Không tải được thông tin thanh toán. Liên hệ admin.')) + '</div>';
       }
     };
     const paySubmit = document.getElementById('pay-submit');
@@ -1792,8 +1778,8 @@
       const email = (document.getElementById('pay-email') || {}).value || '';
       const errEl = document.getElementById('pay-form-err');
       if (errEl) errEl.textContent = '';
-      if (!name.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { if (errEl) errEl.textContent = 'Vui lòng nhập Họ tên và email hợp lệ.'; return; }
-      paySubmit.disabled = true; paySubmit.textContent = 'Đang gửi…';
+      if (!name.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { if (errEl) errEl.textContent = t('pay_invalid', 'Vui lòng nhập Họ tên và email hợp lệ.'); return; }
+      paySubmit.disabled = true; paySubmit.textContent = t('pay_sending', 'Đang gửi…');
       try {
         const r = await fetch(WORKER_URL + '/upgrade-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), email: email.trim(), method: (_paySelected && _paySelected.id) || '' }) });
         const d = await r.json();
@@ -1802,14 +1788,14 @@
         if (rowsEl) {
           rowsEl.innerHTML = '';
           const add = (label, val) => { const dv = document.createElement('div'); dv.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); dv.appendChild(s); dv.appendChild(b); rowsEl.appendChild(dv); };
-          add('Số tiền', d.amount || '');
-          add('Nội dung CK (Verwendungszweck)', d.reference_code || '');
-          add('Phương thức', (_paySelected && _paySelected.label) || '');
+          add(t('pay_amount', 'Số tiền'), d.amount || '');
+          add(t('pay_ref', 'Nội dung CK (Verwendungszweck)'), d.reference_code || '');
+          add(t('pay_method', 'Phương thức'), (_paySelected && _paySelected.label) || '');
         }
         showPayStep('done');
       } catch (e) {
-        if (errEl) errEl.textContent = 'Lỗi gửi yêu cầu: ' + (e.message || e) + '. Thử lại hoặc liên hệ admin.';
-      } finally { paySubmit.disabled = false; paySubmit.textContent = 'Gửi yêu cầu nâng cấp'; }
+        if (errEl) errEl.textContent = t('pay_send_err', 'Lỗi gửi yêu cầu') + ': ' + (e.message || e) + '.';
+      } finally { paySubmit.disabled = false; paySubmit.textContent = t('pay_submit', 'Gửi yêu cầu nâng cấp'); }
     };
 
     // btn-upgrade in menu
@@ -1819,8 +1805,11 @@
       const menuOverlay = document.getElementById('menu-overlay');
       if (slideMenu) slideMenu.hidden = true;
       if (menuOverlay) menuOverlay.hidden = true;
-      showUpgradeModal('Nâng cấp để có nhiều lượt dịch và AI hơn mỗi ngày.');
+      showUpgradeModal(t('upgrade_subtitle', 'Học không giới hạn — luyện phát âm với AI mỗi ngày.'));
     };
+
+    // Lấy giá niêm yết EUR (live) cho thẻ Pro ngay khi khởi động.
+    refreshProPrice();
   }
 
   // ===== 🎵 WAVEFORM VISUALIZER =====
@@ -2250,6 +2239,21 @@
       game_pool:'Nguồn từ', game_pool_sent:'Câu đã lưu', game_reveal:'Hiện nghĩa', game_done:'Hoàn thành!', game_again:'🔁 Chơi lại', game_menu:'☰ Chọn chế độ', game_correct:'Chính xác!', game_check:'Kiểm tra', game_type_ph:'Gõ từ bạn nghe…', game_replay:'Nghe lại', game_speak_btn:'Nói', game_skip:'Bỏ qua',
       you_said:'Bạn nói', empty_heard:'Không nghe rõ — thử lại.', mic_not_ready:'Mic chưa sẵn sàng — tải lại extension.',
       tc_pause_tt:'Tự dừng cuối mỗi câu để bạn luyện',
+      // Gói & thanh toán
+      plan_free_chip:'Free: 1 giờ/ngày', plan_pro_chip:'Pro: Không giới hạn',
+      plan_free_name:'Free', plan_free_price:'Miễn phí', plan_pro_name:'Pro', plan_popular:'⭐ Phổ biến', per_month:'/tháng', choose_pro:'Chọn Pro',
+      feat_free_hour:'1 giờ luyện tập / ngày', feat_free_basic:'Đầy đủ tính năng cơ bản', feat_free_shadow:'Shadowing cùng video',
+      feat_pro_unlimited:'Không giới hạn thời gian', feat_pro_ai:'Ghi âm & chấm điểm AI', feat_pro_translate:'Dịch chất lượng cao (Gemini/DeepL)', feat_pro_support:'Ưu tiên hỗ trợ',
+      unlimited:'Không giới hạn',
+      upgrade_title:'Nâng cấp NghienDeutsch Pro', upgrade_subtitle:'Học không giới hạn — luyện phát âm với AI mỗi ngày.',
+      pay_choose_method:'💳 Chọn phương thức thanh toán', pay_your_info:'📝 Thông tin của bạn',
+      pay_name_ph:'Họ và tên', pay_email_ph:'Email nhận hướng dẫn', pay_submit:'Gửi yêu cầu nâng cấp',
+      pay_done_title:'✅ Đã gửi yêu cầu', pay_done_note:'Đã gửi hướng dẫn thanh toán tới email của bạn. Sau khi chuyển khoản đúng nội dung, chúng tôi sẽ kích hoạt Pro cho tài khoản này.',
+      contact_label:'Liên hệ', loading:'Đang tải…',
+      pay_no_method:'Chưa cấu hình phương thức. Liên hệ admin.', pay_load_err:'Không tải được thông tin thanh toán. Liên hệ admin.',
+      pay_beneficiary:'Người nhận', pay_bank:'Ngân hàng', pay_form_label:'Hình thức', pay_scan_qr:'Quét QR ngân hàng',
+      pay_invalid:'Vui lòng nhập Họ tên và email hợp lệ.', pay_sending:'Đang gửi…',
+      pay_amount:'Số tiền', pay_ref:'Nội dung CK (Verwendungszweck)', pay_method:'Phương thức', pay_send_err:'Lỗi gửi yêu cầu',
     },
     en: {
       tab_practice:'Practice', tab_vocab:'Words', tab_flash:'Cards', tab_progress:'Progress',
@@ -2281,6 +2285,21 @@
       game_pool:'Word source', game_pool_sent:'Saved sentences', game_reveal:'Reveal', game_done:'Done!', game_again:'🔁 Play again', game_menu:'☰ Modes', game_correct:'Correct!', game_check:'Check', game_type_ph:'Type what you hear…', game_replay:'Replay', game_speak_btn:'Speak', game_skip:'Skip',
       you_said:'You said', empty_heard:"Didn't catch that — try again.", mic_not_ready:'Mic not ready — reload the extension.',
       tc_pause_tt:'Auto-pause at the end of each sentence',
+      // Plan & payment
+      plan_free_chip:'Free: 1 hour/day', plan_pro_chip:'Pro: Unlimited',
+      plan_free_name:'Free', plan_free_price:'Free', plan_pro_name:'Pro', plan_popular:'⭐ Popular', per_month:'/month', choose_pro:'Choose Pro',
+      feat_free_hour:'1 hour of practice / day', feat_free_basic:'All core features', feat_free_shadow:'Shadowing with videos',
+      feat_pro_unlimited:'Unlimited time', feat_pro_ai:'Recording & AI scoring', feat_pro_translate:'High-quality translation (Gemini/DeepL)', feat_pro_support:'Priority support',
+      unlimited:'Unlimited',
+      upgrade_title:'Upgrade to NghienDeutsch Pro', upgrade_subtitle:'Learn without limits — practice pronunciation with AI every day.',
+      pay_choose_method:'💳 Choose a payment method', pay_your_info:'📝 Your details',
+      pay_name_ph:'Full name', pay_email_ph:'Email for instructions', pay_submit:'Send upgrade request',
+      pay_done_title:'✅ Request sent', pay_done_note:'Payment instructions were sent to your email. After you transfer with the correct reference, we will activate Pro for this account.',
+      contact_label:'Contact', loading:'Loading…',
+      pay_no_method:'No payment method configured. Contact admin.', pay_load_err:'Could not load payment info. Contact admin.',
+      pay_beneficiary:'Beneficiary', pay_bank:'Bank', pay_form_label:'Method', pay_scan_qr:'Scan bank QR',
+      pay_invalid:'Please enter a valid name and email.', pay_sending:'Sending…',
+      pay_amount:'Amount', pay_ref:'Transfer reference (Verwendungszweck)', pay_method:'Method', pay_send_err:'Failed to send request',
     },
     de: {
       tab_practice:'Üben', tab_vocab:'Wörter', tab_flash:'Karten', tab_progress:'Fortschritt',
@@ -2312,6 +2331,21 @@
       game_pool:'Wortquelle', game_pool_sent:'Gespeicherte Sätze', game_reveal:'Aufdecken', game_done:'Fertig!', game_again:'🔁 Nochmal', game_menu:'☰ Modi', game_correct:'Richtig!', game_check:'Prüfen', game_type_ph:'Tippe, was du hörst…', game_replay:'Wiederholen', game_speak_btn:'Sprechen', game_skip:'Überspringen',
       you_said:'Du sagtest', empty_heard:'Nicht verstanden — versuch es nochmal.', mic_not_ready:'Mikro nicht bereit — Extension neu laden.',
       tc_pause_tt:'Nach jedem Satz automatisch pausieren',
+      // Paket & Zahlung
+      plan_free_chip:'Free: 1 Stunde/Tag', plan_pro_chip:'Pro: Unbegrenzt',
+      plan_free_name:'Free', plan_free_price:'Kostenlos', plan_pro_name:'Pro', plan_popular:'⭐ Beliebt', per_month:'/Monat', choose_pro:'Pro wählen',
+      feat_free_hour:'1 Stunde Übung / Tag', feat_free_basic:'Alle Grundfunktionen', feat_free_shadow:'Shadowing mit Videos',
+      feat_pro_unlimited:'Unbegrenzte Zeit', feat_pro_ai:'Aufnahme & KI-Bewertung', feat_pro_translate:'Hochwertige Übersetzung (Gemini/DeepL)', feat_pro_support:'Priorisierter Support',
+      unlimited:'Unbegrenzt',
+      upgrade_title:'Auf NghienDeutsch Pro upgraden', upgrade_subtitle:'Ohne Limit lernen — täglich Aussprache mit KI üben.',
+      pay_choose_method:'💳 Zahlungsart wählen', pay_your_info:'📝 Ihre Angaben',
+      pay_name_ph:'Vollständiger Name', pay_email_ph:'E-Mail für die Anleitung', pay_submit:'Upgrade anfragen',
+      pay_done_title:'✅ Anfrage gesendet', pay_done_note:'Die Zahlungsanweisungen wurden an Ihre E-Mail gesendet. Nach Überweisung mit korrektem Verwendungszweck aktivieren wir Pro für dieses Konto.',
+      contact_label:'Kontakt', loading:'Lädt…',
+      pay_no_method:'Keine Zahlungsart konfiguriert. Admin kontaktieren.', pay_load_err:'Zahlungsinfo konnte nicht geladen werden. Admin kontaktieren.',
+      pay_beneficiary:'Empfänger', pay_bank:'Bank', pay_form_label:'Art', pay_scan_qr:'Bank-QR scannen',
+      pay_invalid:'Bitte gültigen Namen und E-Mail eingeben.', pay_sending:'Senden…',
+      pay_amount:'Betrag', pay_ref:'Verwendungszweck', pay_method:'Methode', pay_send_err:'Anfrage fehlgeschlagen',
     },
   };
   // Tra cứu chuỗi UI theo ngôn ngữ đang chọn (cho chuỗi động trong JS).
@@ -2880,12 +2914,23 @@
   async function updateUsageUI(profile) {
     if (!profile || !profile.usage) return;
     const { translations, ai } = profile.usage;
+    const tc = $('#usage-trans-count'); const ac = $('#usage-ai-count');
+    const tb = $('#usage-trans-bar');   const ab = $('#usage-ai-bar');
+    // Pro = không giới hạn (ẩn số); Free = hiển thị 1 giờ dùng thử/ngày + số lượt còn lại.
+    if ((profile.plan || 'free') === 'pro') {
+      const unlim = t('unlimited', 'Không giới hạn');
+      if (tc) tc.textContent = unlim;
+      if (ac) ac.textContent = unlim;
+      if (tb) tb.style.width = '100%';
+      if (ab) ab.style.width = '100%';
+      return;
+    }
     const tPct = Math.min(100, Math.round((translations.used / (translations.limit || 1)) * 100));
     const aPct = Math.min(100, Math.round((ai.used / (ai.limit || 1)) * 100));
-    const tc = $('#usage-trans-count'); if (tc) tc.textContent = translations.used + ' / ' + translations.limit;
-    const ac = $('#usage-ai-count');    if (ac) ac.textContent = ai.used + ' / ' + ai.limit;
-    const tb = $('#usage-trans-bar');   if (tb) tb.style.width = tPct + '%';
-    const ab = $('#usage-ai-bar');      if (ab) ab.style.width = aPct + '%';
+    if (tc) tc.textContent = translations.used + ' / ' + translations.limit;
+    if (ac) ac.textContent = ai.used + ' / ' + ai.limit;
+    if (tb) tb.style.width = tPct + '%';
+    if (ab) ab.style.width = aPct + '%';
   }
 
   // Vocab/flashcard sections in slide menu

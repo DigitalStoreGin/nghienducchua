@@ -259,3 +259,66 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
     relayToSidePanel({ _tabUpdated: tabId });
   }
 });
+
+/* ── Đồng bộ từ vựng theo TÀI KHOẢN (qua Worker /sync) ──────────────────────
+ * Vấn đề: từ vựng/câu đã lưu trước đây chỉ nằm ở chrome.storage.local (theo trình
+ * duyệt), nên đăng nhập máy/trình duyệt mới sẽ KHÔNG thấy. Nay đồng bộ qua server:
+ *  - pull khi đăng nhập / SW khởi động → MERGE (hợp nhất) vào local, rồi push superset.
+ *  - mỗi khi sd_data_v1 đổi → push (replace) sau 2.5s (debounce).
+ * Background SW có host_permissions nên gọi được Worker (content script bị page-CSP chặn). */
+const STORE_KEY = 'sd_data_v1';
+let _syncTimer = null;
+function _unionBy(a, b, keyFn) {
+  const m = new Map();
+  for (const x of [].concat(a || [], b || [])) { const k = keyFn(x); if (k == null || k === '') continue; if (!m.has(k)) m.set(k, x); }
+  return Array.from(m.values());
+}
+async function _getLocalData() { try { const r = await chrome.storage.local.get(STORE_KEY); return (r && r[STORE_KEY]) || null; } catch (_) { return null; } }
+async function syncPull() {
+  const token = await bgSessionToken(); if (!token) return;
+  try {
+    const r = await fetch(WORKER_URL + '/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ action: 'pull' }) });
+    if (!r.ok) return;
+    const srv = await r.json().catch(() => null); if (!srv || !srv.ok) return;
+    const d = (await _getLocalData()) || {};
+    d.savedWords = _unionBy(d.savedWords, srv.saved_words, (w) => (w && (w.word || '')).toLowerCase());
+    d.savedSentences = _unionBy(d.savedSentences, srv.saved_sentences, (s) => (s && (s.text || '')));
+    d.favorites = _unionBy(d.favorites, srv.favorites, (f) => (f && (f.text || '')));
+    await chrome.storage.local.set({ [STORE_KEY]: d });
+    await syncPush(true); // đẩy superset để server có đủ dữ liệu của mọi thiết bị
+  } catch (_) {}
+}
+async function syncPush(force) {
+  const token = await bgSessionToken(); if (!token) return;
+  const d = await _getLocalData(); if (!d) return;
+  try {
+    await fetch(WORKER_URL + '/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ action: 'push', saved_words: d.savedWords || [], saved_sentences: d.savedSentences || [], favorites: d.favorites || [], force: !!force }) });
+  } catch (_) {}
+}
+function scheduleSyncPush() { if (_syncTimer) clearTimeout(_syncTimer); _syncTimer = setTimeout(() => { _syncTimer = null; syncPush(false); }, 2500); }
+
+// Đăng nhập / đổi tài khoản: nếu user khác lần trước trên CÙNG trình duyệt → xoá
+// từ vựng cục bộ của người trước (chống trộn dữ liệu), rồi mới kéo dữ liệu user mới.
+async function onSessionChanged(nv) {
+  if (!nv || !nv.access_token) return;
+  const uid = (nv.user && nv.user.id) || '';
+  try {
+    const r = await chrome.storage.local.get('sd_sync_uid');
+    const prev = r && r.sd_sync_uid;
+    if (uid && prev && prev !== uid) {
+      const d = (await _getLocalData()) || {};
+      d.savedWords = []; d.savedSentences = []; d.favorites = [];
+      await chrome.storage.local.set({ [STORE_KEY]: d });
+    }
+    if (uid) await chrome.storage.local.set({ sd_sync_uid: uid });
+  } catch (_) {}
+  syncPull();
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes[STORE_KEY]) scheduleSyncPush();
+  if (changes['shadowecho_session']) { onSessionChanged(changes['shadowecho_session'].newValue); }
+});
+// SW khởi động khi đã đăng nhập sẵn → đồng bộ ngay.
+syncPull();
