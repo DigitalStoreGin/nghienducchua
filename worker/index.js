@@ -173,6 +173,11 @@ export default {
       return handleSessionPing(request, env, user, ctx);
     }
 
+    // Đồng bộ từ vựng/câu đã lưu theo tài khoản (đăng nhập máy nào cũng có dữ liệu).
+    if (url.pathname === '/sync') {
+      return handleSync(request, env, user);
+    }
+
     return json({ error: 'not_found' }, 404);
   },
 
@@ -391,8 +396,14 @@ async function handleTranscribe(request, env, ctx) {
   return json({ error: 'groq_unavailable' }, 503);
 }
 
-// ── Supabase JWT verification ────────────────────────────────
+// ── Supabase JWT verification (cache 30s trong isolate để giảm gọi /auth/v1/user) ──
+const _tokCache = new Map(); // token → { user, at }
+const _TOK_TTL = 30 * 1000;
 async function verifyToken(token, env) {
+  if (!token) return null;
+  const now = Date.now();
+  const hit = _tokCache.get(token);
+  if (hit && now - hit.at < _TOK_TTL) return hit.user;
   try {
     const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
       headers: {
@@ -400,8 +411,12 @@ async function verifyToken(token, env) {
         'apikey': env.SUPABASE_SERVICE_KEY,
       },
     });
-    if (!res.ok) return null;
-    return await res.json(); // { id, email, ... }
+    if (!res.ok) { _tokCache.delete(token); return null; }
+    const user = await res.json(); // { id, email, ... }
+    _tokCache.set(token, { user, at: now });
+    // Chặn phình bộ nhớ: giữ tối đa ~500 token gần nhất / isolate.
+    if (_tokCache.size > 500) { const k = _tokCache.keys().next().value; _tokCache.delete(k); }
+    return user;
   } catch {
     return null;
   }
@@ -424,12 +439,17 @@ async function handlePayInfo(env) {
       if (c.iban) methods.push({ id: 'iban', type: 'iban', label: 'Chuyển khoản IBAN (EU)', beneficiary: c.beneficiary_name || '', iban: c.iban, bank: c.bank_name || '' });
       if (c.qr_image) methods.push({ id: 'vn_qr', type: 'vn_qr', label: 'QR ngân hàng (VN)', qr_image: c.qr_image });
     }
+    // Giá Pro: EUR là nguồn chuẩn (3.99€); VND quy đổi trực tiếp theo tỷ giá ECB/live.
+    const pt = c.price_table || {};
+    const proEur = normEur(pt.pro && pt.pro.EUR);
+    const proVnd = await eurToVnd(proEur);
+    const price_table = Object.assign({}, pt, { pro: Object.assign({}, pt.pro, { EUR: proEur, VND: proVnd }) });
     return json({
       beneficiary_name: c.beneficiary_name || '',
       iban: c.iban || '',
       bank_name: c.bank_name || '',
       qr_image: c.qr_image || '',
-      price_table: c.price_table || {},
+      price_table,
       methods,
     });
   } catch (_) { return json({ error: 'unavailable' }, 200); }
@@ -438,12 +458,39 @@ async function handlePayInfo(env) {
 // ── Email + nâng cấp Pro ───────────────────────────────────────────────────
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function fillTpl(s, vars) { return String(s || '').replace(/\{\{(\w+)\}\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : '')); }
+
+// Mã tham chiếu chuyển khoản (Verwendungszweck): DE- + 5 chữ số ngẫu nhiên (vd DE-48217).
+// Khớp regex SePay webhook /\b([A-Z]{2}-[A-Z0-9]{5,9})\b/ → tự cập nhật đơn ở Doanh thu.
 function genRef() {
-  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const u = crypto.getRandomValues(new Uint8Array(6));
-  let s = ''; for (let i = 0; i < 6; i++) s += a[u[i] % a.length];
-  return 'PRO-' + s;
+  const u = crypto.getRandomValues(new Uint8Array(5));
+  let s = ''; for (let i = 0; i < 5; i++) s += String(u[i] % 10);
+  return 'DE-' + s;
 }
+
+// ── Tỷ giá EUR→VND trực tiếp (ECB Frankfurter → open.er-api → dự phòng), cache 6h ──
+// ECB (Frankfurter) thường KHÔNG công bố VND nên sẽ rơi xuống nguồn 2 (open.er-api, free, no key).
+let _fxCache = { rate: 0, at: 0 };
+const _FX_TTL = 6 * 60 * 60 * 1000;
+const _FX_FALLBACK = 27300; // ₫/€ dự phòng khi cả 2 API lỗi
+async function eurToVndRate() {
+  const now = Date.now();
+  if (_fxCache.rate && now - _fxCache.at < _FX_TTL) return _fxCache.rate;
+  try {
+    const r = await fetch('https://api.frankfurter.app/latest?from=EUR&to=VND');
+    if (r.ok) { const j = await r.json().catch(() => null); const v = j && j.rates && j.rates.VND; if (v) { _fxCache = { rate: v, at: now }; return v; } }
+  } catch (_) {}
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/EUR');
+    if (r.ok) { const j = await r.json().catch(() => null); const v = j && j.rates && j.rates.VND; if (v) { _fxCache = { rate: v, at: now }; return v; } }
+  } catch (_) {}
+  return _FX_FALLBACK;
+}
+// Chuẩn hoá giá EUR (nếu DB cũ lưu dạng cent như 999 → 9.99). Mặc định 3.99€.
+function normEur(x) { let e = Number(x) || 0; if (e >= 100) e = e / 100; return e || 3.99; }
+async function eurToVnd(eur) { const rate = await eurToVndRate(); return Math.round(((Number(eur) || 0) * rate) / 1000) * 1000; }
+function groupThousands(n) { return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function fmtEur(eur) { return Number(eur || 0).toFixed(2) + ' €'; }
+function fmtVnd(vnd) { return groupThousands(vnd) + ' ₫'; }
 
 // Email NghienDeutsch (mặc định) — admin override trong app_settings key 'email_pro'.
 const DEFAULT_PRO_EMAIL = {
@@ -474,11 +521,12 @@ const DEFAULT_PRO_EMAIL = {
   <!-- Begrüßung + Zahlungsbox -->
   <tr><td style="padding:28px 8px 8px">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.06)"><tr><td style="padding:28px">
-      <h2 style="margin:0 0 6px;font-size:21px;color:#0f172a">Willkommen bei Pro, {{name}}! 🎉</h2>
-      <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#475569">Vielen Dank für Ihr Upgrade. Bitte überweisen Sie mit den folgenden Angaben — danach aktivieren wir Ihren Pro-Zugang.</p>
+      <h2 style="margin:0 0 6px;font-size:21px;color:#0f172a">Willkommen bei {{plan}}, {{name}}! 🎉</h2>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#475569">Vielen Dank für Ihr Upgrade auf <b>NghienDeutsch {{plan}}</b>. Bitte überweisen Sie mit den folgenden Angaben — danach aktivieren wir Ihren {{plan}}-Zugang.</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;border:1px solid #e2e8f0;border-radius:16px"><tr><td style="padding:20px">
         <div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#64748b;font-weight:700">Zahlung — {{method_label}}</div>
-        <div style="font-size:28px;font-weight:800;color:#2563EB;margin:6px 0 12px">{{amount}}</div>
+        <div style="font-size:28px;font-weight:800;color:#2563EB;margin:6px 0 4px">{{amount}}</div>
+        <div style="font-size:13px;color:#64748b;margin-bottom:12px">Paket: <b style="color:#0f172a">NghienDeutsch {{plan}}</b></div>
         <div style="font-size:14px;line-height:1.7;color:#0f172a">{{method_instructions}}</div>
         <div style="margin-top:14px;padding:11px 14px;background:#FEF3C7;border-radius:10px;font-size:13px;color:#92400e"><b>Verwendungszweck (Pflicht):</b> {{ref}}</div>
       </td></tr></table>
@@ -605,8 +653,14 @@ async function sendBrevo(env, toEmail, toName, subject, html) {
       method: 'POST', headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json', 'accept': 'application/json' },
       body: JSON.stringify({ sender: { name: 'NghienDeutsch', email: env.BREVO_SENDER || 'thoatran21012@gmail.com' }, to: [{ email: toEmail, name: toName || toEmail }], subject, htmlContent: html }),
     });
-    return { ok: r.ok };
-  } catch (e) { console.error('[BREVO-FAIL]', e.message); return { ok: false }; }
+    if (!r.ok) {
+      // Log rõ status + body (vd 400 "sender not verified") để debug trong admin/health.
+      let detail = ''; try { detail = JSON.stringify(await r.json()); } catch (_) { try { detail = await r.text(); } catch (__) {} }
+      console.error('[BREVO-ERR]', r.status, String(detail).slice(0, 300));
+      return { ok: false, status: r.status, error: String(detail).slice(0, 300) };
+    }
+    return { ok: true };
+  } catch (e) { console.error('[BREVO-FAIL]', e.message); return { ok: false, error: e.message }; }
 }
 
 async function handleUpgradeRequest(request, env, ctx) {
@@ -622,8 +676,9 @@ async function handleUpgradeRequest(request, env, ctx) {
   const methods = Array.isArray(cfg.payment_methods) ? cfg.payment_methods : [];
   const method = methods.find((m) => m.id === methodId) || methods.find((m) => m.enabled) || methods[0] || null;
   const pro = (cfg.price_table && cfg.price_table.pro) || {};
+  const eurPrice = normEur(pro.EUR);
   const currency = (method && method.type === 'vn_qr') ? 'VND' : 'EUR';
-  const amount = currency === 'VND' ? (pro.VND || 0) : (pro.EUR || 0);
+  const amount = currency === 'VND' ? await eurToVnd(eurPrice) : eurPrice;
   const ref = genRef();
 
   // Lưu đơn (pending) kèm thông tin khách → Doanh thu + email không cần join auth.
@@ -632,11 +687,12 @@ async function handleUpgradeRequest(request, env, ctx) {
     body: JSON.stringify({ reference_code: ref, method: method ? method.type : (methodId || 'iban'), plan: 'pro', amount, currency, status: 'pending', customer_name: name, customer_email: email }),
   }).catch(() => {});
 
-  const amountStr = currency === 'VND' ? (Number(amount).toLocaleString('en-US') + '₫') : ('€' + amount);
+  const amountStr = currency === 'VND' ? fmtVnd(amount) : fmtEur(amount);
+  const planLabel = 'Pro';
   const tpl = await getProEmail(env);
-  const vars = { name: escapeHtml(name), ref, amount: amountStr, method_label: escapeHtml(method ? method.label : ''), method_instructions: methodInstructionsHtml(method, ref) };
+  const vars = { name: escapeHtml(name), plan: planLabel, ref, amount: amountStr, method_label: escapeHtml(method ? method.label : ''), method_instructions: methodInstructionsHtml(method, ref) };
   const html = fillTpl(tpl.html, vars);
-  const subject = fillTpl(tpl.subject, { ref, name });
+  const subject = fillTpl(tpl.subject, { ref, name, plan: planLabel });
   const ownerText = `Đơn nâng cấp Pro mới\n\nHọ tên: ${name}\nEmail: ${email}\nPhương thức: ${method ? method.label : methodId}\nVerwendungszweck: ${ref}\nSố tiền: ${amountStr}\nThời gian: ${new Date().toISOString()}`;
 
   const send = (async () => {
@@ -655,6 +711,42 @@ function parseUA(ua) {
   const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Unknown';
   const device = /Mobile|Android|iPhone/.test(ua) ? 'Mobile' : /iPad|Tablet/.test(ua) ? 'Tablet' : 'Desktop';
   return { device, os, browser };
+}
+
+// ── /sync  — đồng bộ từ vựng/câu đã lưu theo TÀI KHOẢN (Bearer JWT) ──────────
+// pull: trả dữ liệu server. push (replace): lưu nguyên trạng local của client.
+// Extension LUÔN pull→merge vào local khi đăng nhập TRƯỚC khi push → push sau đó là superset.
+// Guard: bỏ qua push rỗng khi server đang có dữ liệu (chống xoá trắng lúc chưa kịp đồng bộ).
+async function handleSync(request, env, user) {
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  let body = {}; try { body = await request.json(); } catch (_) {}
+  const sbHead = { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' };
+  const getRow = async () => {
+    try {
+      const r = await fetch(`${env.SUPABASE_URL}/rest/v1/user_data?user_id=eq.${encodeURIComponent(user.id)}&select=saved_words,saved_sentences,favorites,updated_at`, { headers: sbHead });
+      const rows = r.ok ? await r.json().catch(() => []) : [];
+      return rows[0] || { saved_words: [], saved_sentences: [], favorites: [] };
+    } catch (_) { return { saved_words: [], saved_sentences: [], favorites: [] }; }
+  };
+  if ((body.action || 'pull') === 'pull') {
+    const row = await getRow();
+    return json({ ok: true, saved_words: row.saved_words || [], saved_sentences: row.saved_sentences || [], favorites: row.favorites || [], updated_at: row.updated_at || null });
+  }
+  // push (replace)
+  const inW = Array.isArray(body.saved_words) ? body.saved_words : [];
+  const inS = Array.isArray(body.saved_sentences) ? body.saved_sentences : [];
+  const inF = Array.isArray(body.favorites) ? body.favorites : [];
+  if (!inW.length && !inS.length && !inF.length && !body.force) {
+    const cur = await getRow();
+    if ((cur.saved_words || []).length || (cur.saved_sentences || []).length || (cur.favorites || []).length) {
+      return json({ ok: true, skipped: 'empty_guard', saved_words: cur.saved_words || [], saved_sentences: cur.saved_sentences || [], favorites: cur.favorites || [], updated_at: cur.updated_at || null });
+    }
+  }
+  const payload = { user_id: user.id, saved_words: inW.slice(0, 5000), saved_sentences: inS.slice(0, 5000), favorites: inF.slice(0, 5000), updated_at: new Date().toISOString() };
+  try {
+    await fetch(`${env.SUPABASE_URL}/rest/v1/user_data`, { method: 'POST', headers: { ...sbHead, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(payload) });
+  } catch (_) { return json({ error: 'sync_failed' }, 200); }
+  return json({ ok: true, updated_at: payload.updated_at });
 }
 
 // ── /session/ping  — ghi nhận đăng nhập/heartbeat + thiết bị + mạng (cho Admin Users 360°) ──
@@ -719,12 +811,12 @@ async function publicUserGate(env, request) {
 // Free 60'/ngày: gọi RPC free_hour_check (bắt đầu đồng hồ ở lần đầu trong ngày).
 // Trả Response 403 khi hết giờ; null khi cho phép (fail-open nếu RPC lỗi/chưa có).
 async function freeHourGate(env, userId) {
-  try {
-    const r = await sbRpc(env, 'free_hour_check', { p_user_id: userId });
-    if (r && r.allowed === false) {
-      return json({ error: 'free_hour_over', message: 'Đã hết 1 giờ dùng thử miễn phí hôm nay. Quay lại ngày mai hoặc nâng cấp Pro để dùng không giới hạn.', resets_tomorrow: true }, 403);
-    }
-  } catch (_) {}
+  const r = await sbRpc(env, 'free_hour_check', { p_user_id: userId });
+  // Fail-open có chủ đích (UX > security): RPC lỗi/null → cho qua, nhưng LOG để giám sát.
+  if (r == null) { console.error('[FREE_HOUR_FAIL_OPEN] free_hour_check trả null cho user', userId); return null; }
+  if (r.allowed === false) {
+    return json({ error: 'free_hour_over', message: 'Đã hết 1 giờ dùng thử miễn phí hôm nay. Quay lại ngày mai hoặc nâng cấp Pro để dùng không giới hạn.', resets_tomorrow: true }, 403);
+  }
   return null;
 }
 

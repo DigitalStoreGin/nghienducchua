@@ -585,5 +585,7 @@ export async function scheduledAdmin(env) {
     }
     // Dọn session hết hạn.
     await sbDelete(env, 'admin_sessions', `expires_at=lt.${new Date(now - 864e5).toISOString()}`);
+    // Gộp usage_rollup_daily cho NGÀY HÔM QUA (vấn đề #4 — bảng trước đây không được điền).
+    try { await rpc(env, 'rollup_usage_daily', {}); } catch (e) { console.error('[ROLLUP-FAIL]', (e && e.message) || e); }
   } catch (_) {}
 }
