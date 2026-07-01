@@ -504,7 +504,8 @@ function fmtEur(eur) { return Number(eur || 0).toFixed(2) + ' €'; }
 function fmtVnd(vnd) { return groupThousands(vnd) + ' ₫'; }
 
 // Email NghienDeutsch (mặc định) — admin override trong app_settings key 'email_pro'.
-const DEFAULT_PRO_EMAIL = {
+// Export để admin.js dùng làm fallback hiển thị trong trang Email (nguồn chuẩn 1 chỗ).
+export const DEFAULT_PRO_EMAIL = {
   subject: 'NghienDeutsch Pro — Ihre Zahlungsanweisungen ({{ref}})',
   html: `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>
 <body style="margin:0;padding:0;background:#F8FAFC;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;-webkit-font-smoothing:antialiased">

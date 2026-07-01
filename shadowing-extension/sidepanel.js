@@ -1740,8 +1740,9 @@
         if (m.type === 'iban') { add(t('pay_beneficiary', 'Người nhận'), m.beneficiary); add('IBAN', m.iban); add(t('pay_bank', 'Ngân hàng'), m.bank); add('BIC', m.bic); }
         else if (m.type === 'paypal') { add('PayPal', m.link || m.email); }
         else if (m.type === 'vn_qr') { add(t('pay_form_label', 'Hình thức'), t('pay_scan_qr', 'Quét QR ngân hàng')); }
-        // Nội dung CK (Verwendungszweck) — BẮT BUỘC ghi đúng để tự kích hoạt Pro.
-        add(t('pay_ref', 'Nội dung CK (Verwendungszweck)'), _payRef, true);
+        // Nhãn nội dung CK theo phương thức: IBAN → Verwendungszweck (Đức); QR VN → Nội dung chuyển khoản.
+        const refLabel = m.type === 'iban' ? t('pay_ref_iban', 'Verwendungszweck') : t('pay_ref_qr', 'Nội dung chuyển khoản');
+        add(refLabel, _payRef, true);
       }
       if (qrEl) { if (m.type === 'vn_qr' && m.qr_image) { qrEl.src = m.qr_image; qrEl.hidden = false; } else qrEl.hidden = true; }
     };
@@ -1795,10 +1796,11 @@
         const rowsEl = document.getElementById('pay-done-rows');
         if (rowsEl) {
           rowsEl.innerHTML = '';
-          const add = (label, val) => { const dv = document.createElement('div'); dv.className = 'pay-info-row'; const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); dv.appendChild(s); dv.appendChild(b); rowsEl.appendChild(dv); };
+          const add = (label, val, hl) => { if (val == null || val === '') return; const dv = document.createElement('div'); dv.className = 'pay-info-row' + (hl ? ' pay-info-row--ref' : ''); const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); dv.appendChild(s); dv.appendChild(b); rowsEl.appendChild(dv); };
+          const doneRefLabel = (_paySelected && _paySelected.type === 'iban') ? t('pay_ref_iban', 'Verwendungszweck') : t('pay_ref_qr', 'Nội dung chuyển khoản');
           add(t('pay_amount', 'Số tiền'), d.amount || '');
-          add(t('pay_ref', 'Nội dung CK (Verwendungszweck)'), d.reference_code || '');
           add(t('pay_method', 'Phương thức'), (_paySelected && _paySelected.label) || '');
+          add(doneRefLabel, d.reference_code || _payRef, true);
         }
         showPayStep('done');
       } catch (e) {
@@ -2255,13 +2257,13 @@
       unlimited:'Không giới hạn', usage_today:'Hôm nay', free_remaining:'Còn {n} phút',
       upgrade_title:'Nâng cấp NghienDeutsch Pro', upgrade_subtitle:'Học không giới hạn — luyện phát âm với AI mỗi ngày.',
       pay_choose_method:'💳 Chọn phương thức thanh toán', pay_your_info:'📝 Thông tin của bạn',
-      pay_name_ph:'Họ và tên', pay_email_ph:'Email nhận hướng dẫn', pay_submit:'Gửi yêu cầu nâng cấp',
+      pay_name_ph:'Họ và tên', pay_email_ph:'Email', pay_submit:'Gửi yêu cầu nâng cấp',
       pay_done_title:'✅ Đã gửi yêu cầu', pay_done_note:'Đã gửi hướng dẫn thanh toán tới email của bạn. Sau khi chuyển khoản đúng nội dung, chúng tôi sẽ kích hoạt Pro cho tài khoản này.',
       contact_label:'Liên hệ', loading:'Đang tải…',
       pay_no_method:'Chưa cấu hình phương thức. Liên hệ admin.', pay_load_err:'Không tải được thông tin thanh toán. Liên hệ admin.',
       pay_beneficiary:'Người nhận', pay_bank:'Ngân hàng', pay_form_label:'Hình thức', pay_scan_qr:'Quét QR ngân hàng',
       pay_invalid:'Vui lòng nhập Họ tên và email hợp lệ.', pay_sending:'Đang gửi…',
-      pay_amount:'Số tiền', pay_ref:'Nội dung CK (Verwendungszweck)', pay_method:'Phương thức', pay_send_err:'Lỗi gửi yêu cầu',
+      pay_amount:'Số tiền', pay_ref:'Nội dung CK (Verwendungszweck)', pay_ref_iban:'Verwendungszweck', pay_ref_qr:'Nội dung chuyển khoản', pay_method:'Phương thức', pay_send_err:'Lỗi gửi yêu cầu',
     },
     en: {
       tab_practice:'Practice', tab_vocab:'Words', tab_flash:'Cards', tab_progress:'Progress',
@@ -2301,13 +2303,13 @@
       unlimited:'Unlimited', usage_today:'Today', free_remaining:'{n} min left',
       upgrade_title:'Upgrade to NghienDeutsch Pro', upgrade_subtitle:'Learn without limits — practice pronunciation with AI every day.',
       pay_choose_method:'💳 Choose a payment method', pay_your_info:'📝 Your details',
-      pay_name_ph:'Full name', pay_email_ph:'Email for instructions', pay_submit:'Send upgrade request',
+      pay_name_ph:'Full name', pay_email_ph:'Email', pay_submit:'Send upgrade request',
       pay_done_title:'✅ Request sent', pay_done_note:'Payment instructions were sent to your email. After you transfer with the correct reference, we will activate Pro for this account.',
       contact_label:'Contact', loading:'Loading…',
       pay_no_method:'No payment method configured. Contact admin.', pay_load_err:'Could not load payment info. Contact admin.',
       pay_beneficiary:'Beneficiary', pay_bank:'Bank', pay_form_label:'Method', pay_scan_qr:'Scan bank QR',
       pay_invalid:'Please enter a valid name and email.', pay_sending:'Sending…',
-      pay_amount:'Amount', pay_ref:'Transfer reference (Verwendungszweck)', pay_method:'Method', pay_send_err:'Failed to send request',
+      pay_amount:'Amount', pay_ref:'Transfer reference (Verwendungszweck)', pay_ref_iban:'Verwendungszweck', pay_ref_qr:'Transfer note', pay_method:'Method', pay_send_err:'Failed to send request',
     },
     de: {
       tab_practice:'Üben', tab_vocab:'Wörter', tab_flash:'Karten', tab_progress:'Fortschritt',
@@ -2347,13 +2349,13 @@
       unlimited:'Unbegrenzt', usage_today:'Heute', free_remaining:'Noch {n} Min',
       upgrade_title:'Auf NghienDeutsch Pro upgraden', upgrade_subtitle:'Ohne Limit lernen — täglich Aussprache mit KI üben.',
       pay_choose_method:'💳 Zahlungsart wählen', pay_your_info:'📝 Ihre Angaben',
-      pay_name_ph:'Vollständiger Name', pay_email_ph:'E-Mail für die Anleitung', pay_submit:'Upgrade anfragen',
+      pay_name_ph:'Vollständiger Name', pay_email_ph:'E-Mail', pay_submit:'Upgrade anfragen',
       pay_done_title:'✅ Anfrage gesendet', pay_done_note:'Die Zahlungsanweisungen wurden an Ihre E-Mail gesendet. Nach Überweisung mit korrektem Verwendungszweck aktivieren wir Pro für dieses Konto.',
       contact_label:'Kontakt', loading:'Lädt…',
       pay_no_method:'Keine Zahlungsart konfiguriert. Admin kontaktieren.', pay_load_err:'Zahlungsinfo konnte nicht geladen werden. Admin kontaktieren.',
       pay_beneficiary:'Empfänger', pay_bank:'Bank', pay_form_label:'Art', pay_scan_qr:'Bank-QR scannen',
       pay_invalid:'Bitte gültigen Namen und E-Mail eingeben.', pay_sending:'Senden…',
-      pay_amount:'Betrag', pay_ref:'Verwendungszweck', pay_method:'Methode', pay_send_err:'Anfrage fehlgeschlagen',
+      pay_amount:'Betrag', pay_ref:'Verwendungszweck', pay_ref_iban:'Verwendungszweck', pay_ref_qr:'Verwendungszweck', pay_method:'Methode', pay_send_err:'Anfrage fehlgeschlagen',
     },
   };
   // Tra cứu chuỗi UI theo ngôn ngữ đang chọn (cho chuỗi động trong JS).

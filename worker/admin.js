@@ -14,6 +14,8 @@
  *   ADMIN_KEY            (đã có) — chỉ dùng cho /admin/bootstrap lần đầu
  */
 
+import { DEFAULT_PRO_EMAIL } from './index.js';
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -460,7 +462,9 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     // ───────── Email template (Pro) ─────────
     case '/admin/email-template/get': {
       const rows = await sbGet(env, "app_settings?key=eq.email_pro&select=value");
-      return json({ value: (rows[0] && rows[0].value) || null });
+      // Chưa lưu → trả mẫu mặc định (thương hiệu) để admin thấy & sửa đúng nội dung đang gửi.
+      const value = (rows[0] && rows[0].value) || DEFAULT_PRO_EMAIL;
+      return json({ value, is_default: !(rows[0] && rows[0].value) });
     }
     case '/admin/email-template/set': {
       const value = { subject: String(body.subject || '').slice(0, 300), html: String(body.html || '').slice(0, 60000) };
