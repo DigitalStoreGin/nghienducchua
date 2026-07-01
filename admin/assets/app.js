@@ -60,6 +60,7 @@
       email_subject: 'Tiêu đề email', email_html: 'Nội dung HTML', email_preview: 'Xem trước', email_tpl_note: 'Email gửi cho khách khi nâng cấp Pro (tự động điền tên & gói). Placeholder: {{name}}, {{plan}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
       last_login: 'Đăng nhập gần nhất', last_seen: 'Hoạt động gần nhất', detail: 'Chi tiết', device: 'Thiết bị', network: 'Mạng',
       login_history: 'Lịch sử đăng nhập', security: 'Bảo mật', email_verified: 'Email đã xác minh', active_sessions: 'Phiên hoạt động', anomaly: 'Đăng nhập bất thường',
+      analytics_title: 'Phân tích sử dụng', cap_dau: 'Người dùng hôm nay (DAU)', cap_wau: 'Tuần', cap_calls24: 'Lượt gọi 24h', cap_tokens24: 'Token 24h', cap_capacity: 'Công suất ước tính', cap_bottleneck: 'Nghẽn: STT Groq / dịch Gemini', chart_calls_day: 'Lượt gọi API theo ngày (14 ngày)', top_users: 'Top người dùng (30 ngày)', plan_expires: 'Hết hạn gói', protocol: 'Giao thức', region: 'Vùng', prev: 'trước', impossible_travel: 'Di chuyển bất khả thi', geo_change: 'đổi quốc gia', ok: 'Bình thường', revoke_sessions: 'Thu hồi phiên', signout_confirm: 'Thu hồi mọi phiên đăng nhập của user này?', signed_out: 'Đã thu hồi phiên',
       ip: 'IP', country: 'Quốc gia', city: 'Thành phố', isp: 'ISP', browser: 'Trình duyệt', os: 'Hệ điều hành', screen: 'Màn hình', tz: 'Múi giờ', time: 'Thời gian', yes: 'Có', no: 'Không',
       method: 'Phương thức', amount: 'Số tiền', currency: 'Tiền tệ', user_id_opt: 'User ID (tuỳ chọn)', orders: 'Đơn thanh toán',
       ref_code: 'Mã tham chiếu', mark_paid: 'Đánh dấu đã trả', order_instructions: 'Hướng dẫn chuyển khoản', reference: 'Nội dung CK',
@@ -108,6 +109,7 @@
       email_subject: 'Betreff', email_html: 'HTML-Inhalt', email_preview: 'Vorschau', email_tpl_note: 'E-Mail an Kunden beim Pro-Upgrade (Name & Paket automatisch). Platzhalter: {{name}}, {{plan}}, {{ref}}, {{amount}}, {{method_label}}, {{method_instructions}}.',
       last_login: 'Letzter Login', last_seen: 'Zuletzt aktiv', detail: 'Details', device: 'Gerät', network: 'Netzwerk',
       login_history: 'Login-Verlauf', security: 'Sicherheit', email_verified: 'E-Mail verifiziert', active_sessions: 'Aktive Sitzungen', anomaly: 'Ungewöhnlicher Login',
+      analytics_title: 'Nutzungsanalyse', cap_dau: 'Nutzer heute (DAU)', cap_wau: 'Woche', cap_calls24: 'Aufrufe 24h', cap_tokens24: 'Token 24h', cap_capacity: 'Geschätzte Kapazität', cap_bottleneck: 'Engpass: Groq STT / Gemini', chart_calls_day: 'API-Aufrufe pro Tag (14 Tage)', top_users: 'Top-Nutzer (30 Tage)', plan_expires: 'Ablauf Paket', protocol: 'Protokoll', region: 'Region', prev: 'vorher', impossible_travel: 'Unmögliche Reise', geo_change: 'Länderwechsel', ok: 'Normal', revoke_sessions: 'Sitzungen widerrufen', signout_confirm: 'Alle Sitzungen dieses Nutzers widerrufen?', signed_out: 'Sitzungen widerrufen',
       ip: 'IP', country: 'Land', city: 'Stadt', isp: 'ISP', browser: 'Browser', os: 'Betriebssystem', screen: 'Bildschirm', tz: 'Zeitzone', time: 'Zeit', yes: 'Ja', no: 'Nein',
       method: 'Methode', amount: 'Betrag', currency: 'Währung', user_id_opt: 'User-ID (optional)', orders: 'Zahlungsaufträge',
       ref_code: 'Referenzcode', mark_paid: 'Als bezahlt markieren', order_instructions: 'Überweisungsdetails', reference: 'Verwendungszweck',
@@ -249,6 +251,60 @@
   }
   function planBadge(plan) { const p = (plan || 'free').toLowerCase(); return h('span', { class: 'badge badge--' + (p === 'free' ? 'free' : 'pro') }, plan || 'free'); }
 
+  // Biểu đồ vùng (area) bằng SVG nội tuyến — không phụ thuộc thư viện ngoài (hợp CSP).
+  function svgArea(values, color) {
+    const w = 680, H = 150, pad = 8;
+    const vals = (values && values.length) ? values : [0];
+    const max = Math.max(1, ...vals);
+    const n = vals.length;
+    const dx = (w - pad * 2) / Math.max(1, n - 1);
+    const pts = vals.map((v, i) => [pad + i * dx, H - pad - ((v || 0) / max) * (H - pad * 2)]);
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+    const area = line + ' L ' + (pad + (n - 1) * dx).toFixed(1) + ' ' + (H - pad) + ' L ' + pad + ' ' + (H - pad) + ' Z';
+    const c = color || '#3a66f0';
+    const last = pts[pts.length - 1];
+    const el = document.createElement('div');
+    el.className = 'chart';
+    el.innerHTML = '<svg viewBox="0 0 ' + w + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:150px;display:block">' +
+      '<path d="' + area + '" fill="' + c + '" fill-opacity="0.13"/>' +
+      '<path d="' + line + '" fill="none" stroke="' + c + '" stroke-width="2" stroke-linejoin="round"/>' +
+      (last ? '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="3.5" fill="' + c + '"/>' : '') +
+      '</svg>';
+    return el;
+  }
+  // Thẻ chỉ số nhỏ cho lưới capacity.
+  function metric(label, val, sub) { return h('div', { class: 'card' }, h('div', { class: 'kpi-label' }, label), h('div', { class: 'kpi-val' }, val), h('div', { class: 'kpi-sub' }, sub || '')); }
+
+  // Panel "Phân tích sử dụng" dùng chung cho Dashboard + System.
+  async function analyticsPanel() {
+    const panel = h('div', { class: 'panel' }, h('h2', null, t('analytics_title')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
+    (async () => {
+      try {
+        const [ts, cap, top] = await Promise.all([
+          api('analytics/timeseries', { days: 14 }),
+          api('analytics/capacity', {}),
+          api('analytics/top-users', { days: 30, limit: 8 }),
+        ]);
+        const c = cap.capacity || {};
+        const items = ts.items || [];
+        const calls = items.map((r) => Number(r.calls) || 0);
+        const capGrid = h('div', { class: 'cards' },
+          metric(t('cap_dau'), fmt(c.dau || 0), t('cap_wau') + ': ' + fmt(c.wau || 0) + ' · MAU: ' + fmt(c.mau || 0)),
+          metric(t('cap_calls24'), fmt(c.calls_24h || 0), 'STT: ' + fmt(c.stt_24h || 0)),
+          metric(t('cap_tokens24'), fmt(c.tokens_24h || 0), ''),
+          metric(t('cap_capacity'), '≈' + fmt(c.est_free_dau_max || 0) + ' free · ≈' + fmt(c.est_pro_dau_max || 0) + ' pro', t('cap_bottleneck')));
+        const chartWrap = h('div', { class: 'panel-sub' }, h('div', { class: 'muted', style: 'margin-bottom:6px;font-weight:600' }, t('chart_calls_day')), svgArea(calls, '#3a66f0'));
+        // Top users
+        const tb = h('table', null, h('thead', null, h('tr', null, h('th', null, t('email')), h('th', null, t('plan')), h('th', null, 'calls'), h('th', null, 'tokens'), h('th', null, t('cost')))));
+        const tbody = h('tbody');
+        (top.items || []).forEach((u) => tbody.append(h('tr', null, h('td', null, u.email || (u.user_id || '').slice(0, 8)), h('td', null, h('span', { class: 'badge badge--' + (u.plan === 'pro' ? 'pro' : 'free') }, u.plan || 'free')), h('td', null, fmt(u.calls)), h('td', null, fmt(u.tokens)), h('td', null, '$' + (Number(u.est_cost) || 0).toFixed(3)))));
+        tb.append(tbody);
+        clear(panel).append(h('h2', null, t('analytics_title')), capGrid, chartWrap, h('div', { class: 'panel-sub' }, h('div', { class: 'muted', style: 'margin:8px 0 6px;font-weight:600' }, t('top_users')), h('div', { class: 'table-wrap' }, tb)));
+      } catch (e) { clear(panel).append(h('h2', null, t('analytics_title')), h('div', { class: 'empty' }, t('error') + ': ' + (e.message || e))); }
+    })();
+    return panel;
+  }
+
   // ───────── PAGE: Dashboard ─────────
   async function pageDashboard(view) {
     const s = await api('stats/overview', {});
@@ -269,7 +325,7 @@
       h('div', { class: 'dist-row' }, h('span', null, t('credits_tok')), h('span', null, fmt(s.credits.tokUsed) + ' / ' + fmt(s.credits.tokTotal))), bar(s.credits.tokUsed, s.credits.tokTotal));
 
     const audit = h('div', { class: 'panel' }, h('h2', null, t('audit')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
-    clear(view).append(cards, h('div', { class: 'grid2' }, plans, credits), audit);
+    clear(view).append(cards, await analyticsPanel(), h('div', { class: 'grid2' }, plans, credits), audit);
     try {
       const a = await api('audit/list', {});
       const tb = h('table', null, h('thead', null, h('tr', null, h('th', null, 'time'), h('th', null, 'action'), h('th', null, 'target'), h('th', null, 'ip'))));
@@ -292,7 +348,7 @@
     const secPanel = h('div', { class: 'panel' }, h('h2', null, t('security')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
     const modelsPanel = h('div', { class: 'panel' }, h('h2', null, t('models_routing')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
     const usagePanel = h('div', { class: 'panel' }, h('h2', null, t('usage_title')), h('div', { class: 'empty' }, h('span', { class: 'spin' })));
-    view.append(healthPanel, transPanel, modelsPanel, usagePanel, h('div', { class: 'grid2' }, keysPanel, provPanel), addPanel, secPanel);
+    view.append(healthPanel, await analyticsPanel(), transPanel, modelsPanel, usagePanel, h('div', { class: 'grid2' }, keysPanel, provPanel), addPanel, secPanel);
 
     const [health, keys, provs, transCfg, me, models, usage] = await Promise.all([api('health', {}), api('keys/list', {}), api('providers/list', {}), api('settings/translation/get', {}), api('me', {}), api('models/list', {}), api('usage/summary', { days: 30 })]);
 
@@ -585,16 +641,36 @@
       const p = d.profile || {}; const dev = p.last_device || {}; const ev0 = (d.events && d.events[0]) || {};
       const fmtDT = (s) => s ? new Date(s).toLocaleString(lang === 'de' ? 'de-DE' : 'vi-VN') : '—';
       const row = (label, val) => h('div', { class: 'panel-row', style: 'justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0' }, h('span', { class: 'muted' }, label), h('b', null, (val == null || val === '') ? '—' : String(val)));
+      const flag = (cc) => cc ? String(cc).toUpperCase().replace(/./g, (ch) => String.fromCodePoint(127397 + ch.charCodeAt(0))) : '';
       const profileSec = h('div', { class: 'panel' }, h('h2', null, '👤 ' + t('nav_users')),
         row(t('email'), p.email), row('ID', p.id), row(t('created'), fmtDT(p.created_at)),
         row(t('last_login'), fmtDT(p.last_login_at)), row(t('last_seen'), fmtDT(p.last_seen_at)),
-        row(t('plan'), p.plan || 'free'), row(t('model_source'), p.model_source || 'server'));
+        row(t('plan'), p.plan || 'free'), row(t('plan_expires'), fmtDT(p.plan_expires_at)), row(t('model_source'), p.model_source || 'server'));
       const deviceSec = h('div', { class: 'panel' }, h('h2', null, '💻 ' + t('device')),
-        row(t('os'), dev.os), row(t('browser'), dev.browser), row(t('device'), dev.device), row(t('screen'), dev.screen), row(t('tz'), dev.timezone), row('Lang', dev.lang));
+        row(t('os'), dev.os), row(t('browser'), dev.browser), row(t('device'), dev.device), row(t('screen'), dev.screen), row(t('tz'), dev.timezone), row('Lang', dev.lang),
+        row(t('protocol'), ev0.http_protocol), row('TLS', ev0.tls_version));
       const netSec = h('div', { class: 'panel' }, h('h2', null, '🌐 ' + t('network')),
-        row(t('ip'), p.last_ip), row('IP ' + t('time'), p.prev_ip), row(t('country'), ev0.country), row(t('city'), ev0.city), row(t('isp'), ev0.isp), row('VPN/Proxy', t('none')));
+        row(t('ip'), p.last_ip), row('IP ' + t('prev'), p.prev_ip),
+        row(t('country'), (flag(ev0.country) + ' ' + (ev0.country || '')).trim()), row(t('region'), ev0.region), row(t('city'), ev0.city),
+        row(t('isp'), ev0.isp), row('ASN', ev0.asn), row('Colo', ev0.colo),
+        row('Geo', (ev0.latitude && ev0.longitude) ? (ev0.latitude + ', ' + ev0.longitude) : '—'));
+      // Impossible-travel: khoảng cách/thời gian giữa 2 login gần nhất (nếu có toạ độ).
+      let travel = null;
+      const e1 = (d.events && d.events[1]) || {};
+      if (ev0.latitude && ev0.longitude && e1.latitude && e1.longitude && ev0.ts && e1.ts) {
+        const R = 6371, toRad = (x) => x * Math.PI / 180;
+        const dLat = toRad(ev0.latitude - e1.latitude), dLon = toRad(ev0.longitude - e1.longitude);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(e1.latitude)) * Math.cos(toRad(ev0.latitude)) * Math.sin(dLon / 2) ** 2;
+        const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const hrs = Math.abs(new Date(ev0.ts) - new Date(e1.ts)) / 3.6e6;
+        const speed = hrs > 0 ? km / hrs : 0;
+        travel = { km: Math.round(km), speed: Math.round(speed), impossible: km > 500 && speed > 900 };
+      }
       const secSec = h('div', { class: 'panel' }, h('h2', null, '🔒 ' + t('security')),
-        row(t('email_verified'), '—'), row(t('active_sessions'), d.active_sessions), row(t('anomaly'), d.anomaly ? ('⚠️ ' + t('yes')) : t('no')));
+        row(t('active_sessions'), d.active_sessions),
+        row(t('anomaly'), d.anomaly ? ('⚠️ ' + t('yes') + ' (' + t('geo_change') + ')') : t('no')),
+        row(t('impossible_travel'), travel ? (travel.impossible ? ('⚠️ ' + travel.km + ' km @ ' + travel.speed + ' km/h') : (travel.km + ' km · ' + t('ok'))) : '—'),
+        h('button', { class: 'btn btn--sm btn--danger', style: 'margin-top:10px', onclick: async () => { if (!confirm(t('signout_confirm'))) return; await api('users/signout', { user_id: p.id }); toast(t('signed_out')); } }, '⎋ ' + t('revoke_sessions')));
       const lh = h('table', null, h('thead', null, h('tr', null, h('th', null, t('time')), h('th', null, t('ip')), h('th', null, t('device')), h('th', null, t('browser')), h('th', null, t('country')))));
       const lhb = h('tbody');
       (d.events || []).forEach((e) => lhb.append(h('tr', null, h('td', null, fmtDT(e.ts)), h('td', null, e.ip || '—'), h('td', null, ((e.os || '') + ' ' + (e.device || '')).trim() || '—'), h('td', null, e.browser || '—'), h('td', null, (e.country || '—') + (e.city ? ' / ' + e.city : '')))));

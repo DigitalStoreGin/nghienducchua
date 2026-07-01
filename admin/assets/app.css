@@ -106,3 +106,7 @@ tr:hover td{background:var(--panel2)}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-3px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .select-inline{width:auto;display:inline-block;padding:5px 8px;font-size:12px;border-radius:8px}
+
+/* Analytics chart + sub-panel (Phase C) */
+.chart { width:100%; border:1px solid var(--border); border-radius:10px; padding:8px; background:var(--bg); }
+.panel-sub { margin-top:14px; }
