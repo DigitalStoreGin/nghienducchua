@@ -201,6 +201,9 @@ async function handleTranslate(msg) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  // Bảo mật: chỉ nhận message từ CHÍNH extension này (content script / side panel của ta),
+  // bỏ qua nếu có id lạ (phòng externally_connectable/nhầm lẫn).
+  if (sender && sender.id && sender.id !== chrome.runtime.id) return;
   // Groq STT relay (content script -> background -> Worker). Async reply.
   if (msg && msg.sd === 'groq-transcribe') {
     handleGroqTranscribe(msg).then(reply).catch((e) => reply({ ok: false, _err: String((e && e.message) || e) }));

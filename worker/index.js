@@ -71,7 +71,14 @@ export default {
     // Phục vụ trang Admin SPA (static) cho GET trên trình duyệt. API là POST (+ /health, /me GET).
     // Guard bằng env.ASSETS → nếu chưa bật binding thì hành vi như cũ (không đổi gì).
     if (env.ASSETS && request.method === 'GET' && url.pathname !== '/health' && url.pathname !== '/me') {
-      return env.ASSETS.fetch(request);
+      // Header bảo mật cho trang Admin SPA (chống clickjacking / MIME sniffing / rò referrer).
+      const res = await env.ASSETS.fetch(request);
+      const hdr = new Headers(res.headers);
+      hdr.set('X-Frame-Options', 'DENY');
+      hdr.set('X-Content-Type-Options', 'nosniff');
+      hdr.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+      hdr.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers: hdr });
     }
 
     // Public health check
