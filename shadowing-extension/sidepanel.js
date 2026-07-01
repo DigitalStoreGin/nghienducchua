@@ -1192,6 +1192,7 @@
     setStatus(sw.checked ? t('ext_on', 'Đã bật extension') : t('ext_off', 'Đã tắt extension'), sw.checked ? 'ok' : 'warn');
   }; }
   $('#vsubs').onchange = (e) => { settings.videoSubs = e.target.checked; cmd('settings', settings); cmd('vsubs', { on: e.target.checked }); };
+  { const ao = $('#autoopen'); if (ao) ao.onchange = (e) => { settings.autoOpenPanel = e.target.checked; cmd('settings', settings); }; }
   $('#uilang').onchange = (e) => {
     settings.uiLang = e.target.value; cmd('settings', settings); applyI18n(settings.uiLang);
     // Render lại các view động để chuỗi đổi ngôn ngữ ngay (không sót tiếng cũ).
@@ -1209,6 +1210,7 @@
     updateHwInfo();
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
     $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;
+    if ($('#autoopen')) $('#autoopen').checked = settings.autoOpenPanel !== false;
     if ($('#serverurl')) $('#serverurl').value = settings.serverUrl || 'http://localhost:8000';
     if ($('#extEnabled')) $('#extEnabled').checked = settings.extEnabled !== false;
     applyMasterUI(settings.extEnabled !== false);
@@ -2212,7 +2214,7 @@
       ob_title:'Bắt đầu nhanh', ob1:'Mở video tiếng Đức trên YouTube.', ob2:'Phụ đề tự tải sau vài giây — không cần thao tác.', ob3:'Bấm "Bật mic", cho phép micro cho extension.', ob4:'Bấm một câu → nói lại → xem điểm.', ob_close:'Đã hiểu',
       status_init:'Mở video trên YouTube — phụ đề sẽ tự tải.',
       // Cài đặt
-      sec_settings:'Cài đặt', set_target:'Ngôn ngữ học', set_native:'Dịch sang', set_vsubs:'Phụ đề trên video', set_uilang:'Ngôn ngữ giao diện',
+      sec_settings:'Cài đặt', set_target:'Ngôn ngữ học', set_native:'Dịch sang', set_vsubs:'Phụ đề trên video', set_autoopen:'Tự mở bảng khi vào video', set_uilang:'Ngôn ngữ giao diện',
       // Action toolbar
       at_mic:'Bật mic', at_dict:'Chép', at_cloze:'Điền', at_vocab:'Từ vựng', at_menu:'Ôn tập',
       tt_mic:'Cho phép micro để chấm điểm phát âm', tt_dict:'Chép chính tả: nghe rồi gõ lại cả câu', tt_cloze:'Điền từ còn thiếu vào chỗ trống', tt_vocab:'Từ vựng đã lưu & từ phát âm yếu', tt_menu:'Luyện tập & ôn tập', tt_loop:'Lặp lại 1 câu (phím L)',
@@ -2266,7 +2268,7 @@
       nohost:'Open a YouTube or Netflix video, then come back here.',
       ob_title:'Quick start', ob1:'Open a German video on YouTube.', ob2:'Subtitles load automatically after a few seconds — no action needed.', ob3:'Click "Enable mic" and allow microphone access for the extension.', ob4:'Click a line → speak it back → see your score.', ob_close:'Got it',
       status_init:'Open a video on YouTube — subtitles load automatically.',
-      sec_settings:'Settings', set_target:'Target language', set_native:'Translate to', set_vsubs:'Subtitles on video', set_uilang:'UI language',
+      sec_settings:'Settings', set_target:'Target language', set_native:'Translate to', set_vsubs:'Subtitles on video', set_autoopen:'Auto-open panel on video', set_uilang:'UI language',
       at_mic:'Enable mic', at_dict:'Dictation', at_cloze:'Fill', at_vocab:'Vocabulary', at_menu:'Review',
       tt_mic:'Allow microphone to score pronunciation', tt_dict:'Dictation: listen then type the whole sentence', tt_cloze:'Fill in the missing words', tt_vocab:'Saved words & weak pronunciation words', tt_menu:'Practice & review', tt_loop:'Loop one sentence (key L)',
       bt_prev:'Prev', bt_play:'Play', bt_pause:'Pause', bt_next:'Next', bt_loop:'Loop',
@@ -2312,7 +2314,7 @@
       nohost:'Öffne ein YouTube- oder Netflix-Video und komm hierher zurück.',
       ob_title:'Schnellstart', ob1:'Öffne ein deutsches Video auf YouTube.', ob2:'Untertitel laden automatisch nach ein paar Sekunden — nichts zu tun.', ob3:'Klicke „Mikro an" und erlaube den Mikrofonzugriff.', ob4:'Klicke einen Satz → sprich ihn nach → sieh deine Punktzahl.', ob_close:'Verstanden',
       status_init:'Öffne ein Video auf YouTube — Untertitel laden automatisch.',
-      sec_settings:'Einstellungen', set_target:'Lernsprache', set_native:'Übersetzen nach', set_vsubs:'Untertitel im Video', set_uilang:'Oberflächensprache',
+      sec_settings:'Einstellungen', set_target:'Lernsprache', set_native:'Übersetzen nach', set_vsubs:'Untertitel im Video', set_autoopen:'Panel bei Video autom. öffnen', set_uilang:'Oberflächensprache',
       at_mic:'Mikro an', at_dict:'Diktat', at_cloze:'Lücken', at_vocab:'Wortschatz', at_menu:'Üben',
       tt_mic:'Mikrofon erlauben, um die Aussprache zu bewerten', tt_dict:'Diktat: hören und den ganzen Satz tippen', tt_cloze:'Fehlende Wörter ergänzen', tt_vocab:'Gespeicherte & schwache Wörter', tt_menu:'Üben & Wiederholen', tt_loop:'Einen Satz wiederholen (Taste L)',
       bt_prev:'Zurück', bt_play:'Play', bt_pause:'Pause', bt_next:'Weiter', bt_loop:'Schleife',

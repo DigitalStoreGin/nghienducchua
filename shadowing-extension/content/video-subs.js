@@ -7,6 +7,30 @@
   'use strict';
   root.SD = root.SD || {};
 
+  // ── Tự mở (ghim) Side Panel khi vào trang video ──────────────────────────
+  // Chrome BẮT BUỘC user-gesture để mở side panel → mở ở lần click/gõ phím ĐẦU TIÊN.
+  // Tắt được trong Cài đặt (settings.autoOpenPanel=false) = "gỡ ghim".
+  (function autoOpenPanelOnce() {
+    let done = false;
+    const openOnce = () => {
+      if (done) return; done = true;
+      document.removeEventListener('pointerdown', openOnce, true);
+      document.removeEventListener('keydown', openOnce, true);
+      try {
+        chrome.storage.local.get('sd_data_v1', (r) => {
+          const s = (r && r.sd_data_v1 && r.sd_data_v1.settings) || {};
+          if (s.autoOpenPanel === false) return;   // user đã gỡ ghim
+          if (s.extEnabled === false) return;       // extension đang tắt
+          try { chrome.runtime.sendMessage({ sd: 'openSidePanel' }, () => { if (chrome.runtime.lastError) {} }); } catch (_) {}
+        });
+      } catch (_) {}
+    };
+    try {
+      document.addEventListener('pointerdown', openOnce, true);
+      document.addEventListener('keydown', openOnce, true);
+    } catch (_) {}
+  })();
+
   function start() {
     const SD = root.SD;
     if (!SD.engine) return setTimeout(start, 500);
