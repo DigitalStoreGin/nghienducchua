@@ -317,6 +317,14 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       await audit(env, admin.sub, banned ? 'user.ban' : 'user.unban', 'user', body.user_id, null, null, ip);
       return json({ success: true });
     }
+    case '/admin/users/signout': {
+      // Thu hồi phiên: set mốc revoke (Worker chặn token cũ) + revoke refresh token qua Supabase admin.
+      if (!isUuid(body.user_id)) return json({ error: 'bad_id' }, 400);
+      await sbPatch(env, 'profiles', `id=eq.${body.user_id}`, { sessions_revoked_at: new Date().toISOString() });
+      try { await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${body.user_id}/logout`, { method: 'POST', headers: sbHeaders(env) }); } catch (_) {}
+      await audit(env, admin.sub, 'user.signout', 'user', body.user_id, null, null, ip);
+      return json({ success: true });
+    }
     case '/admin/users/delete': {
       if (!isUuid(body.user_id)) return json({ error: 'bad_id' }, 400);
       // Xoá auth user (cascade hồ sơ qua FK) + dọn hồ sơ phòng khi thiếu cascade.
@@ -621,5 +629,7 @@ export async function scheduledAdmin(env) {
     await sbDelete(env, 'admin_sessions', `expires_at=lt.${new Date(now - 864e5).toISOString()}`);
     // Gộp usage_rollup_daily cho NGÀY HÔM QUA (vấn đề #4 — bảng trước đây không được điền).
     try { await rpc(env, 'rollup_usage_daily', {}); } catch (e) { console.error('[ROLLUP-FAIL]', (e && e.message) || e); }
+    // Hạ gói Pro đã hết hạn về free (license enforcement).
+    try { await rpc(env, 'downgrade_expired_plans', {}); } catch (e) { console.error('[DOWNGRADE-FAIL]', (e && e.message) || e); }
   } catch (_) {}
 }

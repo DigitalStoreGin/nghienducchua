@@ -96,4 +96,55 @@ insert into public.app_settings (key, value, updated_at)
 values ('limits', '{"device_limit_per_day": 3, "device_limit_enabled": false}'::jsonb, now())
 on conflict (key) do nothing;
 
+-- Enforce hết hạn gói NGAY trong RPC cổng (Pro hết hạn plan_expires_at → tính như free).
+create or replace function public.free_hour_check(p_user_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_plan text; v_exp timestamptz; v_first timestamptz; v_elapsed numeric;
+begin
+  select coalesce(plan, 'free'), plan_expires_at into v_plan, v_exp from public.profiles where id = p_user_id;
+  if v_plan is null then v_plan := 'free'; end if;
+  if v_plan = 'pro' and v_exp is not null and v_exp < now() then v_plan := 'free'; end if;
+  if v_plan <> 'free' then
+    return jsonb_build_object('allowed', true, 'plan', v_plan);
+  end if;
+  insert into public.usage (user_id, date, first_used_at)
+  values (p_user_id, current_date, now())
+  on conflict (user_id, date) do update
+    set first_used_at = coalesce(usage.first_used_at, now()), updated_at = now();
+  select first_used_at into v_first from public.usage where user_id = p_user_id and date = current_date;
+  v_elapsed := extract(epoch from (now() - coalesce(v_first, now()))) / 60.0;
+  return jsonb_build_object('allowed', (v_elapsed <= 60), 'plan', v_plan, 'elapsed_min', round(v_elapsed), 'limit_min', 60);
+end; $$;
+
+create or replace function public.free_hour_status(p_user_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_plan text; v_exp timestamptz; v_first timestamptz; v_used int; v_remaining int;
+begin
+  select coalesce(plan, 'free'), plan_expires_at into v_plan, v_exp from public.profiles where id = p_user_id;
+  if v_plan is null then v_plan := 'free'; end if;
+  if v_plan = 'pro' and v_exp is not null and v_exp < now() then v_plan := 'free'; end if;
+  if v_plan <> 'free' then
+    return jsonb_build_object('plan', v_plan, 'unlimited', true);
+  end if;
+  select first_used_at into v_first from public.usage where user_id = p_user_id and date = current_date;
+  if v_first is null then
+    return jsonb_build_object('plan', 'free', 'unlimited', false, 'started', false, 'used_min', 0, 'remaining_min', 60, 'limit_min', 60);
+  end if;
+  v_used := floor(extract(epoch from (now() - v_first)) / 60.0)::int;
+  v_remaining := greatest(0, 60 - v_used);
+  return jsonb_build_object('plan', 'free', 'unlimited', false, 'started', true, 'used_min', v_used, 'remaining_min', v_remaining, 'limit_min', 60);
+end; $$;
+
+-- Cron hạ gói Pro hết hạn về free (chạy trong scheduledAdmin hằng ngày).
+create or replace function public.downgrade_expired_plans()
+returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  update public.profiles set plan = 'free', plan_expires_at = null, updated_at = now()
+  where plan = 'pro' and plan_expires_at is not null and plan_expires_at < now();
+  get diagnostics n = row_count;
+  return n;
+end; $$;
+grant execute on function public.downgrade_expired_plans() to service_role;
+
 commit;

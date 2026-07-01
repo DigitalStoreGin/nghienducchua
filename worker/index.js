@@ -141,9 +141,13 @@ export default {
       return json({ error: 'invalid_token', message: 'Session expired. Please log in again.' }, 401);
     }
 
-    // Chặn user bị cấm (Admin bấm "Cấm") — áp cho mọi route cần đăng nhập.
-    if (await isBanned(env, user.id)) {
+    // Chặn user bị cấm + phiên bị thu hồi (Admin) — áp cho mọi route cần đăng nhập.
+    const _flags = await userFlags(env, user.id);
+    if (_flags.banned) {
       return json({ error: 'banned', message: 'Tài khoản của bạn đã bị khoá. Vui lòng liên hệ quản trị.' }, 403);
+    }
+    if (sessionRevoked(_flags, token)) {
+      return json({ error: 'session_revoked', message: 'Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.' }, 401);
     }
 
     // Per-user burst rate limit (Cloudflare native, GA). Chống spam theo giây.
@@ -792,6 +796,14 @@ async function handleSessionPing(request, env, user, ctx) {
     lang: String(body.lang || '').slice(0, 20),
     timezone: String(body.timezone || '').slice(0, 60),
     country: cf.country || '', city: cf.city || '', isp: cf.asOrganization || '',
+    // Làm giàu geo/mạng kiểu browserscan từ Cloudflare edge (miễn phí, sẵn có).
+    region: String(cf.region || '').slice(0, 80),
+    asn: String(cf.asn || '').slice(0, 16),
+    colo: String(cf.colo || '').slice(0, 8),
+    tls_version: String(cf.tlsVersion || '').slice(0, 16),
+    http_protocol: String(cf.httpProtocol || '').slice(0, 16),
+    latitude: String(cf.latitude || '').slice(0, 20),
+    longitude: String(cf.longitude || '').slice(0, 20),
     method: 'supabase', success: true,
   };
   const sbHead = { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' };
@@ -848,17 +860,37 @@ async function freeHourGate(env, userId) {
   return null;
 }
 
-// Kiểm tra user bị cấm (profiles.banned). Fail-open: lỗi DB KHÔNG tự khoá user.
-async function isBanned(env, userId) {
+// Cờ user (cache 10s): banned, plan, plan_expires_at, model_source, sessions_revoked_at.
+// Gộp 1 lần đọc cho ban + thu hồi phiên + hết hạn gói (giảm số query).
+const _flagCache = new Map();
+const _FLAG_TTL = 10 * 1000;
+async function userFlags(env, userId) {
+  const now = Date.now();
+  const hit = _flagCache.get(userId);
+  if (hit && now - hit.at < _FLAG_TTL) return hit.v;
+  let v = { banned: false, plan: 'free', plan_expires_at: null, model_source: 'server', sessions_revoked_at: null, ok: false };
   try {
-    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=banned`, {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=banned,plan,plan_expires_at,model_source,sessions_revoked_at`, {
       headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY },
     });
-    if (!r.ok) return false;
-    const rows = await r.json().catch(() => []);
-    return !!(rows && rows[0] && rows[0].banned);
-  } catch (_) { return false; }
+    if (r.ok) { const rows = await r.json().catch(() => []); if (rows[0]) v = { banned: !!rows[0].banned, plan: rows[0].plan || 'free', plan_expires_at: rows[0].plan_expires_at || null, model_source: rows[0].model_source || 'server', sessions_revoked_at: rows[0].sessions_revoked_at || null, ok: true }; }
+  } catch (_) {}
+  _flagCache.set(userId, { v, at: now });
+  if (_flagCache.size > 500) { const k = _flagCache.keys().next().value; _flagCache.delete(k); }
+  return v;
 }
+// Gói hiệu lực: Pro hết hạn (plan_expires_at < now) → coi như free.
+function effectivePlan(f) {
+  if (f && f.plan === 'pro' && f.plan_expires_at && new Date(f.plan_expires_at).getTime() < Date.now()) return 'free';
+  return (f && f.plan) || 'free';
+}
+// Đọc iat từ JWT (Supabase đã verify chữ ký qua /auth/v1/user; đây chỉ đọc claim).
+function jwtIat(token) { try { const p = JSON.parse(atob(String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); return p && p.iat ? p.iat * 1000 : 0; } catch { return 0; } }
+// Phiên bị thu hồi: token phát hành TRƯỚC mốc sessions_revoked_at → chặn.
+function sessionRevoked(f, token) { if (!f || !f.sessions_revoked_at) return false; const iat = jwtIat(token); return iat > 0 && iat < new Date(f.sessions_revoked_at).getTime(); }
+
+// Kiểm tra user bị cấm (dùng cache flags). Fail-open: lỗi DB KHÔNG tự khoá user.
+async function isBanned(env, userId) { return !!(await userFlags(env, userId)).banned; }
 
 // ── Quota check + atomic increment via Supabase RPC ──────────
 async function checkQuota(userId, type, env) {
@@ -886,31 +918,20 @@ async function checkQuota(userId, type, env) {
 // ── /me  — return user profile + today's usage ───────────────
 async function handleMe(env, user) {
   try {
-    const [profileRes, usageRes] = await Promise.all([
-      fetch(
-        `${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=plan,email,full_name,model_source`,
-        {
-          headers: {
-            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
-            'apikey': env.SUPABASE_SERVICE_KEY,
-          },
-        }
-      ),
-      fetch(
-        `${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${encodeURIComponent(user.id)}&date=eq.${today()}&select=translation_count,ai_count`,
-        {
-          headers: {
-            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
-            'apikey': env.SUPABASE_SERVICE_KEY,
-          },
-        }
-      ),
+    const sbHdr = { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY };
+    const [profileRes, usageRes, flagsRes] = await Promise.all([
+      fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=plan,email,full_name,model_source,plan_expires_at`, { headers: sbHdr }),
+      fetch(`${env.SUPABASE_URL}/rest/v1/usage?user_id=eq.${encodeURIComponent(user.id)}&date=eq.${today()}&select=translation_count,ai_count`, { headers: sbHdr }),
+      fetch(`${env.SUPABASE_URL}/rest/v1/app_settings?key=eq.feature_flags&select=value`, { headers: sbHdr }),
     ]);
 
     const profiles = profileRes.ok ? await profileRes.json() : [];
     const usages   = usageRes.ok   ? await usageRes.json()   : [];
+    const flagsRows = flagsRes.ok  ? await flagsRes.json().catch(() => []) : [];
+    const featureFlags = (flagsRows[0] && flagsRows[0].value) || {};
     const profile  = profiles[0] || { plan: 'free', email: user.email };
-    const planName = profile.plan || 'free'; // tránh ?name=eq.undefined
+    // Gói hiệu lực: Pro hết hạn → free (license enforcement phía server).
+    const planName = effectivePlan(profile);
     const usage    = usages[0]   || { translation_count: 0, ai_count: 0 };
 
     // Get plan quotas
@@ -933,7 +954,9 @@ async function handleMe(env, user) {
       email: profile.email || user.email,
       plan: planName,
       planName: plan.display_name,
+      plan_expires_at: profile.plan_expires_at || null,
       model_source: profile.model_source || 'server', // server | local | dedicated
+      feature_flags: featureFlags,
       free_hour: fh || { plan: planName, unlimited: planName !== 'free', remaining_min: 60, limit_min: 60 },
       usage: {
         translations: { used: usage.translation_count, limit: plan.daily_translations },
