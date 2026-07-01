@@ -1,0 +1,125 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches: [main, claude/project-status-tasks-m1l1os]
+    paths:
+      - 'worker/**'
+      - 'admin/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Worker + Secrets
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      # ── Set Worker secrets (only updates if the GitHub Secret exists) ──
+
+      - name: Set SUPABASE_URL
+        if: ${{ secrets.SUPABASE_URL != '' }}
+        run: echo "${{ secrets.SUPABASE_URL }}" | wrangler secret put SUPABASE_URL --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set SUPABASE_SERVICE_KEY
+        if: ${{ secrets.SUPABASE_SERVICE_KEY != '' }}
+        run: echo "${{ secrets.SUPABASE_SERVICE_KEY }}" | wrangler secret put SUPABASE_SERVICE_KEY --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set ADMIN_KEY
+        if: ${{ secrets.ADMIN_KEY != '' }}
+        run: echo "${{ secrets.ADMIN_KEY }}" | wrangler secret put ADMIN_KEY --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set ADMIN_JWT_SECRET
+        if: ${{ secrets.ADMIN_JWT_SECRET != '' }}
+        run: echo "${{ secrets.ADMIN_JWT_SECRET }}" | wrangler secret put ADMIN_JWT_SECRET --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set KEY_ENCRYPTION_KEY
+        if: ${{ secrets.KEY_ENCRYPTION_KEY != '' }}
+        run: echo "${{ secrets.KEY_ENCRYPTION_KEY }}" | wrangler secret put KEY_ENCRYPTION_KEY --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set RESEND_API_KEY
+        if: ${{ secrets.RESEND_API_KEY != '' }}
+        run: echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set ALERT_EMAIL
+        if: ${{ secrets.ALERT_EMAIL != '' }}
+        run: echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set GROQ_API_KEY_1
+        if: ${{ secrets.GROQ_API_KEY_1 != '' }}
+        run: echo "${{ secrets.GROQ_API_KEY_1 }}" | wrangler secret put GROQ_API_KEY_1 --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set GROQ_API_KEY_2
+        if: ${{ secrets.GROQ_API_KEY_2 != '' }}
+        run: echo "${{ secrets.GROQ_API_KEY_2 }}" | wrangler secret put GROQ_API_KEY_2 --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set GROQ_API_KEY_3
+        if: ${{ secrets.GROQ_API_KEY_3 != '' }}
+        run: echo "${{ secrets.GROQ_API_KEY_3 }}" | wrangler secret put GROQ_API_KEY_3 --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set GROQ_API_KEY_4
+        if: ${{ secrets.GROQ_API_KEY_4 != '' }}
+        run: echo "${{ secrets.GROQ_API_KEY_4 }}" | wrangler secret put GROQ_API_KEY_4 --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Set GROQ_API_KEY_5
+        if: ${{ secrets.GROQ_API_KEY_5 != '' }}
+        run: echo "${{ secrets.GROQ_API_KEY_5 }}" | wrangler secret put GROQ_API_KEY_5 --name nghienducchua-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      # ── Deploy the Worker + Admin SPA ──
+
+      - name: Deploy Worker
+        run: wrangler deploy
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Print deployed URL
+        run: echo "Deployed to https://nghienducchua-proxy.thoatran21012.workers.dev/"

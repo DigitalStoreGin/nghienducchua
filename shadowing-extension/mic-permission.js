@@ -23,7 +23,9 @@
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Dừng track ngay — chỉ cần lấy quyền, Side Panel sẽ tự mở mic khi cần.
       stream.getTracks().forEach((t) => t.stop());
-      show('ok', '✅ Đã cấp quyền micro! Quay lại Side Panel và bấm <b>Bật mic</b>. Có thể đóng tab này.');
+      // Báo Side Panel đã cấp xong → tự chấm lại (không cần bấm lại).
+      try { chrome.runtime.sendMessage({ sd: 'mic-granted' }); } catch (_) {}
+      show('ok', '✅ Đã cấp quyền micro! Quay lại Side Panel — hệ thống sẽ tự chấm điểm. Có thể đóng tab này.');
     } catch (e) {
       const name = (e && e.name) || '';
       if (name === 'NotAllowedError') {

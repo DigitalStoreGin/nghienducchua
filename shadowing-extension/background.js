@@ -84,8 +84,9 @@ async function handleGroqTranscribe(msg) {
     const ext = mime.includes('ogg') ? 'ogg' : 'webm';
     form.append('file', blob, 'recording.' + ext);
     form.append('lang', msg.lang || 'de');
+    const _tok = await bgSessionToken();
     const resp = await Promise.race([
-      fetch(WORKER_URL + '/transcribe', { method: 'POST', body: form }),
+      fetch(WORKER_URL + '/transcribe', { method: 'POST', headers: _tok ? { 'Authorization': 'Bearer ' + _tok } : {}, body: form }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('groq-timeout')), 10000)),
     ]);
     const data = await resp.json().catch(() => null);
@@ -141,18 +142,68 @@ async function bgMyMemoryTranslate(text, from, to) {
   const j = await r.json();
   return (j && j.responseData && j.responseData.translatedText) || '';
 }
-async function handleTranslate(msg) {
-  const text = (msg && msg.text) || '';
-  const from = (msg && msg.from) || 'de';
-  const to = (msg && msg.to) || 'vi';
-  if (!text) return { ok: false };
+// ── Phân tầng dịch theo GÓI ──────────────────────────────────
+// User TRẢ PHÍ → dịch qua Worker /translate (provider do Admin chọn: Gemini/DeepL/…).
+// User FREE/chưa đăng nhập → dịch miễn phí (Microsoft → Google → MyMemory) như cũ.
+// Worker tự quyết định free/paid; ở đây cache kết quả để khỏi gọi Worker mỗi câu khi free.
+async function bgSessionToken() {
+  try { const r = await chrome.storage.local.get('shadowecho_session'); return (r && r.shadowecho_session && r.shadowecho_session.access_token) || ''; } catch (_) { return ''; }
+}
+// trạng thái tầng dịch: 'premium' | 'free' | 'fallback' | 'unknown'
+let _transTier = { state: 'unknown', at: 0 };
+const _TIER_TTL = { free: 5 * 60 * 1000, fallback: 60 * 1000 };
+async function bgWorkerTranslate(token, text, from, to) {
+  const r = await fetch(WORKER_URL + '/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ text, from, to }),
+  });
+  const data = await r.json().catch(() => null);
+  return { status: r.status, ok: r.ok, data };
+}
+async function bgFreeTranslate(text, from, to) {
   try { const t = await bgMicrosoftTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'ms' }; } catch (e) {}
   try { const t = await bgGoogleTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'google' }; } catch (e) {}
   try { const t = await bgMyMemoryTranslate(text, from, to); if (t) return { ok: true, text: t, src: 'mymemory' }; } catch (e) {}
   return { ok: false };
 }
+async function handleTranslate(msg) {
+  const text = (msg && msg.text) || '';
+  const from = (msg && msg.from) || 'de';
+  const to = (msg && msg.to) || 'vi';
+  if (!text) return { ok: false };
+
+  const token = await bgSessionToken();
+  const now = Date.now();
+  // Có thử Worker không? Bỏ qua khi vừa xác định là free/fallback (còn hạn cache).
+  let tryWorker = !!token;
+  if (token && _transTier.state === 'free' && now - _transTier.at < _TIER_TTL.free) tryWorker = false;
+  if (token && _transTier.state === 'fallback' && now - _transTier.at < _TIER_TTL.fallback) tryWorker = false;
+
+  if (tryWorker) {
+    try {
+      const res = await bgWorkerTranslate(token, text, from, to);
+      if (res.ok && res.data) {
+        if (res.data.text && !res.data.free) {
+          _transTier = { state: 'premium', at: now };
+          return { ok: true, text: res.data.text, src: res.data.src || res.data.provider || 'api' };
+        }
+        if (res.data.free) {
+          // provider==='free' → user free thật; có error → tạm lỗi (cache ngắn rồi thử lại).
+          _transTier = { state: res.data.provider === 'free' && !res.data.error ? 'free' : 'fallback', at: now };
+        }
+      } else if (res.status === 401) {
+        _transTier = { state: 'fallback', at: now }; // token hết hạn → dùng free tạm
+      }
+    } catch (_) { /* lỗi mạng → rơi xuống free */ }
+  }
+  return bgFreeTranslate(text, from, to);
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  // Bảo mật: chỉ nhận message từ CHÍNH extension này (content script / side panel của ta),
+  // bỏ qua nếu có id lạ (phòng externally_connectable/nhầm lẫn).
+  if (sender && sender.id && sender.id !== chrome.runtime.id) return;
   // Groq STT relay (content script -> background -> Worker). Async reply.
   if (msg && msg.sd === 'groq-transcribe') {
     handleGroqTranscribe(msg).then(reply).catch((e) => reply({ ok: false, _err: String((e && e.message) || e) }));
@@ -211,3 +262,66 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
     relayToSidePanel({ _tabUpdated: tabId });
   }
 });
+
+/* ── Đồng bộ từ vựng theo TÀI KHOẢN (qua Worker /sync) ──────────────────────
+ * Vấn đề: từ vựng/câu đã lưu trước đây chỉ nằm ở chrome.storage.local (theo trình
+ * duyệt), nên đăng nhập máy/trình duyệt mới sẽ KHÔNG thấy. Nay đồng bộ qua server:
+ *  - pull khi đăng nhập / SW khởi động → MERGE (hợp nhất) vào local, rồi push superset.
+ *  - mỗi khi sd_data_v1 đổi → push (replace) sau 2.5s (debounce).
+ * Background SW có host_permissions nên gọi được Worker (content script bị page-CSP chặn). */
+const STORE_KEY = 'sd_data_v1';
+let _syncTimer = null;
+function _unionBy(a, b, keyFn) {
+  const m = new Map();
+  for (const x of [].concat(a || [], b || [])) { const k = keyFn(x); if (k == null || k === '') continue; if (!m.has(k)) m.set(k, x); }
+  return Array.from(m.values());
+}
+async function _getLocalData() { try { const r = await chrome.storage.local.get(STORE_KEY); return (r && r[STORE_KEY]) || null; } catch (_) { return null; } }
+async function syncPull() {
+  const token = await bgSessionToken(); if (!token) return;
+  try {
+    const r = await fetch(WORKER_URL + '/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ action: 'pull' }) });
+    if (!r.ok) return;
+    const srv = await r.json().catch(() => null); if (!srv || !srv.ok) return;
+    const d = (await _getLocalData()) || {};
+    d.savedWords = _unionBy(d.savedWords, srv.saved_words, (w) => (w && (w.word || '')).toLowerCase());
+    d.savedSentences = _unionBy(d.savedSentences, srv.saved_sentences, (s) => (s && (s.text || '')));
+    d.favorites = _unionBy(d.favorites, srv.favorites, (f) => (f && (f.text || '')));
+    await chrome.storage.local.set({ [STORE_KEY]: d });
+    await syncPush(true); // đẩy superset để server có đủ dữ liệu của mọi thiết bị
+  } catch (_) {}
+}
+async function syncPush(force) {
+  const token = await bgSessionToken(); if (!token) return;
+  const d = await _getLocalData(); if (!d) return;
+  try {
+    await fetch(WORKER_URL + '/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ action: 'push', saved_words: d.savedWords || [], saved_sentences: d.savedSentences || [], favorites: d.favorites || [], force: !!force }) });
+  } catch (_) {}
+}
+function scheduleSyncPush() { if (_syncTimer) clearTimeout(_syncTimer); _syncTimer = setTimeout(() => { _syncTimer = null; syncPush(false); }, 2500); }
+
+// Đăng nhập / đổi tài khoản: nếu user khác lần trước trên CÙNG trình duyệt → xoá
+// từ vựng cục bộ của người trước (chống trộn dữ liệu), rồi mới kéo dữ liệu user mới.
+async function onSessionChanged(nv) {
+  if (!nv || !nv.access_token) return;
+  const uid = (nv.user && nv.user.id) || '';
+  try {
+    const r = await chrome.storage.local.get('sd_sync_uid');
+    const prev = r && r.sd_sync_uid;
+    if (uid && prev && prev !== uid) {
+      const d = (await _getLocalData()) || {};
+      d.savedWords = []; d.savedSentences = []; d.favorites = [];
+      await chrome.storage.local.set({ [STORE_KEY]: d });
+    }
+    if (uid) await chrome.storage.local.set({ sd_sync_uid: uid });
+  } catch (_) {}
+  syncPull();
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes[STORE_KEY]) scheduleSyncPush();
+  if (changes['shadowecho_session']) { onSessionChanged(changes['shadowecho_session'].newValue); }
+});
+// SW khởi động khi đã đăng nhập sẵn → đồng bộ ngay.
+syncPull();

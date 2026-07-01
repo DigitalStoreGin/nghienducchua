@@ -15,13 +15,27 @@ compatibility_flags = ["nodejs_compat"]
 # GROQ_API_KEY_4      Groq Whisper key 4
 # GROQ_API_KEY_5      Groq Whisper key 5
 # GROQ_API_KEY_1..5 cũng được dùng cho /score-ai (Groq Llama 3.3 70B là primary)
-# RESEND_API_KEY      (tuỳ chọn — gửi email cảnh báo khi tất cả Groq keys hết quota)
-# ALERT_EMAIL         (tuỳ chọn — email nhận cảnh báo; mặc định email chủ tài khoản Resend)
-# ALERT_FROM          (tuỳ chọn — địa chỉ gửi sau khi xác thực domain ở Resend)
+# RESEND_API_KEY      (tuỳ chọn — email cho CHỦ; nếu thiếu/lỗi sẽ tự fallback sang Brevo)
+# ALERT_EMAIL         email CHỦ nhận đơn Pro + cảnh báo (nên đặt = email của bạn)
+# ALERT_FROM          (tuỳ chọn — địa chỉ gửi Resend sau khi xác thực domain)
+# BREVO_API_KEY       BẮT BUỘC để gửi email XÁC NHẬN cho KHÁCH (và fallback cho chủ).
+#                     Lấy ở app.brevo.com → SMTP & API → API Keys. THIẾU KEY ⇒ KHÔNG có email.
+# BREVO_SENDER        Email người gửi đã VERIFY ở Brevo (mặc định thoatran21012@gmail.com)
 # SENTRY_DSN          (tuỳ chọn — bật giám sát lỗi qua /log; chưa set thì ghi console)
 # ADMIN_JWT_SECRET    khoá ký JWT phiên admin (trang Admin SPA)         — BẮT BUỘC cho admin
 # KEY_ENCRYPTION_KEY  khoá AES-GCM mã hoá API key lưu trong DB (admin)  — BẮT BUỘC cho admin
 # SEPAY_WEBHOOK_KEY   khoá xác thực webhook SePay (thanh toán)          — khi bật SePay
+# SEPAY_HMAC_SECRET   (tuỳ chọn — bật xác thực HMAC-SHA256 webhook SePay, header X-Sepay-Signature)
+
+# Phục vụ trang Admin SPA (thư mục ../admin) NGAY trên domain Worker.
+# Sau khi `wrangler deploy`: mở https://nghienducchua-proxy.thoatran21012.workers.dev/ là ra trang Admin.
+# (API vẫn là POST /admin/*, /translate… và GET /health, /me — không đụng tới việc phục vụ static.)
+[assets]
+directory = "../admin"
+binding = "ASSETS"
+# Admin dùng hash-routing (#dashboard, #users…) nên path luôn là "/" → không cần SPA fallback.
+# "none": GET không khớp file tĩnh sẽ rơi xuống Worker (giữ nguyên API GET /health, /me).
+not_found_handling = "none"
 
 # Cron: reset hạn mức API key theo chu kỳ + dọn session admin hết hạn (00:00 UTC mỗi ngày).
 [triggers]

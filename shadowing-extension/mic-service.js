@@ -265,6 +265,25 @@
     if (!data.spoke) return { transcript: '', spoke: false, peakRms: data.peakRms, spokenMs: data.spokenMs, engine: 'no-voice' };
     _lastBlob = data.blob; // lưu để replay
 
+    // LOCAL (admin đặt model_source='local'): CHỈ Whisper offline — KHÔNG BAO GIỜ gọi Groq server.
+    if (opts.modelSource === 'local') {
+      if (!_whisperEngineReady) {
+        if (!_warmupStarted) warmupWhisper('auto').catch(() => {});
+        return { error: 'WHISPER_LOADING', spoke: false };
+      }
+      try {
+        const lang = opts.lang2 === 'de' ? 'german' : (opts.lang2 || 'german');
+        const result = await transcribeAudio16k(data.audio16k, { language: lang });
+        if (result && result.text) {
+          return { transcript: result.text, words: result.words || [], pitch: data.pitch, spokenMs: data.spokenMs, spoke: true, peakRms: data.peakRms, engine: 'whisper:' + (result.modelShort || 'local') };
+        }
+        return { transcript: '', spoke: true, peakRms: data.peakRms, spokenMs: data.spokenMs, engine: 'whisper-empty' };
+      } catch (_) {
+        _whisperEngineReady = false; _warmupStarted = false; warmupWhisper('auto').catch(() => {});
+        return { error: 'WHISPER_LOADING', spoke: false };
+      }
+    }
+
     // Chiến lược tuần tự — KHÔNG BAO GIỜ chạy cả 2 engine song song:
     //   Giai đoạn 1 (whisper chưa ready): dùng Groq (250ms)
     //   Giai đoạn 2 (whisper ready): dùng Whisper local (miễn phí)
@@ -288,6 +307,10 @@
     if (groq && !groq._err && (groq.text || '').trim()) {
       return { transcript: groq.text.trim(), words: groq.words || [], pitch: data.pitch, spokenMs: data.spokenMs, spoke: true, peakRms: data.peakRms, engine: 'groq-whisper' };
     }
+    // Hết 1 giờ free hôm nay (server chặn) → báo rõ để mở nâng cấp.
+    if (groq && /free_hour_over/.test(groq._err || '')) return { error: 'free_hour_over', spoke: false };
+    // Server yêu cầu dùng local (model_source=local) nhưng Whisper chưa sẵn → tải model.
+    if (groq && /use_local/.test(groq._err || '')) return { error: 'WHISPER_LOADING', spoke: false };
     // Groq quota hết + local Whisper chưa sẵn → báo UI để người dùng hiểu
     if (groq && groq._err === 'groq_exhausted' && !_whisperEngineReady) {
       return { error: 'WHISPER_LOADING', spoke: false };

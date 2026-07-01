@@ -203,8 +203,15 @@
   }
 
   // Also listen via chrome.runtime.onMessage for events not going through port
+  let pendingScore = false; // true khi đang chờ user cấp quyền micro để chấm lại
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.sd === 'evt') handleEvent(msg);
+    // Trang mic-permission.html báo đã cấp quyền micro xong → tự chấm lại nếu đang chờ.
+    if (msg && msg.sd === 'mic-granted') {
+      try { const b = $('#micButton'); if (b) { b.classList.remove('pending'); b.classList.add('ready'); b.dataset.ready = '1'; } } catch (_) {}
+      setStatus('🎤 Đã cấp quyền micro — sẵn sàng.', 'ok');
+      if (pendingScore) { pendingScore = false; setTimeout(() => { try { scoreNow(); } catch (_) {} }, 200); }
+    }
   });
 
   function setStatus(t, kind) { const s = $('#status'); s.textContent = t; s.className = 'status' + (kind ? ' ' + kind : ''); }
@@ -344,7 +351,18 @@
     card.hidden = !has;
     if (!has) return;
     const s = sentences[current] || sentences[0];
-    const txt = $('#try-card-text'); if (txt) txt.textContent = s ? '”' + s.text + '”' : '—';
+    // Render từng từ tương tác (hover/click → popup dịch + phát âm + Lưu + DWDS/LEO).
+    const txt = $('#try-card-text');
+    if (txt) {
+      if (s) {
+        txt.innerHTML = '';
+        const inner = document.createElement('span');
+        txt.appendChild(document.createTextNode('”'));
+        txt.appendChild(inner);
+        txt.appendChild(document.createTextNode('”'));
+        wireWordLookup(inner, s.text, {});
+      } else txt.textContent = '—';
+    }
     // Trạng thái nút ⭐ theo câu hiện tại
     const favB = $('#try-fav-btn');
     if (favB && s) {
@@ -469,7 +487,7 @@
       const r = await Promise.race([
         fetch(WORKER_URL + '/score-ai', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: workerHeaders(),
           body: JSON.stringify({ target, transcript, targetLang: settings.targetLang || 'de', nativeLang: settings.nativeLang || 'vi' }),
         }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
@@ -618,7 +636,7 @@
       if (/server-unavailable/.test(f.error)) { m = 'Không kết nối được STT Server (' + f.error.replace('server-unavailable:', '') + '). Đổi Engine sang Web Speech trong Cài đặt.'; shortMsg = 'Lỗi server'; }
       else if (/whisper-unavailable/.test(f.error)) { m = 'Whisper chưa sẵn sàng — đang dùng Web Speech tạm. Thử lại sau giây lát.'; shortMsg = 'Đang tải model…'; }
       else if (/score-timeout/.test(f.error)) { m = '⏱️ Chấm quá lâu (mạng chậm hoặc model đang tải). Hãy thử lại — nói rõ, gần micro.'; shortMsg = 'Hết thời gian — thử lại'; hint = 'Nhấn 🎤 Chấm điểm để thử lại.'; }
-      else if (/^mic|not-allowed|denied|audio-capture/.test(f.error)) { m = 'Cần quyền micro. Bấm 🔒/🎤 cạnh thanh địa chỉ của tab video → Microphone → Allow, rồi bấm Chấm điểm lại.'; micFix = true; shortMsg = 'Cần quyền micro'; hint = 'Cấp quyền micro rồi thử lại.'; }
+      else if (/(^mic|not.?allowed|denied|audio-capture|permission|dismiss)/i.test(f.error)) { m = 'Cần quyền micro. Cửa sổ cấp quyền vừa mở (nếu chưa, bấm nút bên dưới) → bấm <b>Cho phép / Allow</b>, rồi quay lại bấm Chấm điểm.'; micFix = true; shortMsg = 'Cần quyền micro'; hint = 'Cấp quyền micro rồi thử lại.'; }
       else if (/empty-transcript|silent/.test(f.error)) {
         const eng = f.engine || '';
         if (eng.includes('no-voice')) {
@@ -676,9 +694,12 @@
       '<div class="heard">You said: <i>' + esc(sc.transcript || '(nothing heard)') + '</i> · ' + esc(sc.engine || '') + '</div>' +
       (sc.lowConfidence ? '<div class="err" style="margin-top:6px">🤔 Nhận diện chưa chắc chắn — thử nói lại rõ hơn để chấm chính xác.</div>' : '') +
       '<div class="ai-score ai-score--loading">⏳ Đang chấm bằng AI…</div>';
-    // Async: AI (Groq Llama) scores in background, updates UI when ready
+    // Async: AI (Groq Llama) scores in background, updates UI when ready.
+    // LOCAL: KHÔNG gọi /score-ai (server Groq) — chỉ chấm bằng phonetic.js local.
     const aiBox = box.querySelector('.ai-score');
-    if (aiBox && sc.transcript && f.sentence && f.sentence.text) {
+    if ((settings.modelSource || 'server') === 'local') {
+      if (aiBox) aiBox.hidden = true;
+    } else if (aiBox && sc.transcript && f.sentence && f.sentence.text) {
       claudeScoreAsync(f.sentence.text, sc.transcript, aiBox);
     } else if (aiBox) {
       aiBox.hidden = true;
@@ -762,63 +783,36 @@
       // hoverOnly (danh sách câu): KHÔNG bắt click để click vẫn chọn câu; chỉ hover dịch.
       if (!opts.hoverOnly) sp.onclick = (e) => { e.stopPropagation(); lookup(w, text, e.clientX, e.clientY); };
       if (_canHover) {
-        sp.addEventListener('mouseenter', () => { clearHoverTimers(); const r = sp.getBoundingClientRect(); _hoverTimer = setTimeout(() => hoverPopup(w, r.left, r.bottom), 350); });
+        sp.addEventListener('mouseenter', () => { clearHoverTimers(); const r = sp.getBoundingClientRect(); _hoverTimer = setTimeout(() => hoverPopup(w, text, r.left, r.bottom), 250); });
         sp.addEventListener('mouseleave', () => scheduleHoverHide());
       }
       container.appendChild(sp);
     });
   }
 
-  // ===== Popup HOVER (di chuột vào từ → dịch + IPA + 🔊), nhẹ hơn popup click =====
+  // ===== Popup từ vựng dùng chung (hover & click): dịch + IPA + phát âm + DWDS/LEO + nút Lưu =====
   let _hoverPop = null, _hoverTimer = null, _hoverHideTimer = null;
   function clearHoverTimers() { if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; } if (_hoverHideTimer) { clearTimeout(_hoverHideTimer); _hoverHideTimer = null; } }
   function removeHoverPop() { if (_hoverPop) { try { _hoverPop.remove(); } catch (_) {} _hoverPop = null; } }
-  function scheduleHoverHide() { clearHoverTimers(); _hoverHideTimer = setTimeout(removeHoverPop, 220); }
-  function hoverPopup(word, x, y) {
-    removeHoverPop();
-    const clean = String(word || '').replace(/[^A-Za-zÀ-ÿäöüÄÖÜß]/g, '');
-    if (!clean) return;
+  function scheduleHoverHide() { clearHoverTimers(); _hoverHideTimer = setTimeout(removeHoverPop, 260); }
+
+  // Dựng 1 popup ĐẦY ĐỦ cho 1 từ. ctx = câu chứa từ (lưu kèm ngữ cảnh). hover=true → bản hover.
+  function buildWordPop(clean, ctx, hover) {
     const lang = settings.targetLang || 'de';
+    const isDe = lang === 'de';
     const pop = document.createElement('div');
-    pop.className = 'pop pop--hover';
-    pop.style.left = Math.min(x, innerWidth - 240) + 'px';
-    pop.style.top = (y + 6) + 'px';
-    pop.innerHTML =
-      '<div class="pop-head"><b class="pop-word">' + esc(clean) + '</b>' +
-      '<span class="pop-ipa"></span>' +
-      '<button class="pop-tts" title="' + esc(t('pop_listen')) + '">🔊</button></div>' +
-      '<div class="pop-trans">' + esc(t('pop_loading')) + '</div>';
-    const ttsB = pop.querySelector('.pop-tts'); if (ttsB) ttsB.onclick = (e) => { e.stopPropagation(); speakText(clean); };
-    pop.addEventListener('mouseenter', () => clearHoverTimers());
-    pop.addEventListener('mouseleave', () => scheduleHoverHide());
-    document.body.appendChild(pop);
-    _hoverPop = pop;
-    const gloss = pop.querySelector('.pop-trans');
-    fetchGloss(clean).then((g) => { if (_hoverPop === pop && gloss) gloss.textContent = g || t('pop_nomean'); });
-    fetchWordCard(clean, lang).then((c) => { if (_hoverPop === pop && c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
-  }
-  // Ẩn hover popup khi cuộn (vị trí cũ không còn đúng).
-  window.addEventListener('scroll', removeHoverPop, true);
-  function lookup(word, ctx, x, y) {
-    document.querySelectorAll('.pop').forEach((p) => p.remove());
-    const clean = word.replace(/[^A-Za-zäöüÄÖÜß]/g, '');
-    const isDe = (settings.targetLang || 'de') === 'de';
-    const pop = document.createElement('div');
-    pop.className = 'pop pop--word';
-    pop.style.left = Math.min(x, innerWidth - 230) + 'px';
-    pop.style.top = (y + 8) + 'px';
-    // Gợi ý phát âm (chỉ tiếng Đức) từ germanHints().
+    // Luôn gắn pop--word để hưởng style giàu (hint/links/nút Lưu); thêm pop--hover khi hover (gọn hơn).
+    pop.className = 'pop pop--word' + (hover ? ' pop--hover' : '');
     let phonHtml = '';
     if (isDe) {
       const hints = germanHints(clean);
       if (hints.length) phonHtml = '<div class="pop-phon">🗣 ' + esc(t('pop_pron')) + ': ' +
         hints.map((h) => '<span class="pop-phon-c">' + esc(h.cluster) + '</span> ' + esc(h.hint)).join(' · ') + '</div>';
     }
-    // Liên kết từ điển theo ngôn ngữ học: Đức → DWDS/LEO; Anh → Cambridge/Wiktionary.
     const links = isDe
       ? '<a target="_blank" href="https://www.dwds.de/wb/' + encodeURIComponent(clean) + '">DWDS</a>' +
         '<a target="_blank" href="https://dict.leo.org/german-english/' + encodeURIComponent(clean) + '">LEO</a>'
-      : ((settings.targetLang || '') === 'en'
+      : (lang === 'en'
         ? '<a target="_blank" href="https://dictionary.cambridge.org/dictionary/english/' + encodeURIComponent(clean) + '">Cambridge</a>' +
           '<a target="_blank" href="https://en.wiktionary.org/wiki/' + encodeURIComponent(clean) + '">Wiktionary</a>'
         : '');
@@ -830,19 +824,47 @@
       phonHtml +
       (links ? '<div class="pop-links">' + links + '</div>' : '') +
       '<div class="pop-actions"><button class="pop-save">⭐ ' + esc(t('pop_save')) + '</button></div>';
-    pop.querySelector('.pop-tts').onclick = (e) => { e.stopPropagation(); speakText(clean); };
+    const ttsB = pop.querySelector('.pop-tts'); if (ttsB) ttsB.onclick = (e) => { e.stopPropagation(); speakText(clean); };
     const saveBtn = pop.querySelector('.pop-save');
-    saveBtn.onclick = (e) => {
-      e.stopPropagation();
-      cmd('saveWord', { word: clean, context: ctx, lang: settings.targetLang });
-      markWordSaved(clean);
-      saveBtn.textContent = '✅ ' + t('pop_saved');
-      saveBtn.classList.add('saved'); saveBtn.disabled = true;
-    };
-    isWordSaved(clean).then((saved) => { if (saved) { saveBtn.textContent = '✅ ' + t('pop_saved'); saveBtn.classList.add('saved'); saveBtn.disabled = true; } });
+    if (saveBtn) {
+      saveBtn.onclick = (e) => {
+        e.stopPropagation();
+        cmd('saveWord', { word: clean, context: ctx || '', lang: settings.targetLang });
+        markWordSaved(clean);
+        saveBtn.textContent = '✅ ' + t('pop_saved');
+        saveBtn.classList.add('saved'); saveBtn.disabled = true;
+      };
+      isWordSaved(clean).then((saved) => { if (saved) { saveBtn.textContent = '✅ ' + t('pop_saved'); saveBtn.classList.add('saved'); saveBtn.disabled = true; } });
+    }
     const gloss = pop.querySelector('.pop-trans');
-    fetchGloss(clean).then((g) => { gloss.textContent = g || t('pop_nomean'); });
-    fetchWordCard(clean, settings.targetLang).then((c) => { if (c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
+    fetchGloss(clean).then((g) => { if (gloss) gloss.textContent = g || t('pop_nomean'); });
+    fetchWordCard(clean, lang).then((c) => { if (c && c.ipa) { const ie = pop.querySelector('.pop-ipa'); if (ie) ie.textContent = c.ipa; } });
+    return pop;
+  }
+
+  function hoverPopup(word, ctx, x, y) {
+    removeHoverPop();
+    const clean = String(word || '').replace(/[^A-Za-zÀ-ÿäöüÄÖÜß]/g, '');
+    if (!clean) return;
+    const pop = buildWordPop(clean, ctx, true);
+    pop.style.left = Math.min(x, innerWidth - 250) + 'px';
+    pop.style.top = (y + 6) + 'px';
+    pop.addEventListener('mouseenter', () => clearHoverTimers());
+    pop.addEventListener('mouseleave', () => scheduleHoverHide());
+    document.body.appendChild(pop);
+    _hoverPop = pop;
+  }
+  // Ẩn hover popup khi cuộn (vị trí cũ không còn đúng).
+  window.addEventListener('scroll', removeHoverPop, true);
+  // Click = ghim popup (giống hover nhưng không tự ẩn). Tái dùng buildWordPop.
+  function lookup(word, ctx, x, y) {
+    document.querySelectorAll('.pop').forEach((p) => p.remove());
+    clearHoverTimers(); _hoverPop = null;
+    const clean = word.replace(/[^A-Za-zäöüÄÖÜß]/g, '');
+    if (!clean) return;
+    const pop = buildWordPop(clean, ctx, false);
+    pop.style.left = Math.min(x, innerWidth - 230) + 'px';
+    pop.style.top = (y + 8) + 'px';
     document.body.appendChild(pop);
     setTimeout(() => document.addEventListener('click', function h() { pop.remove(); document.removeEventListener('click', h); }), 50);
   }
@@ -965,7 +987,7 @@
     const closeB = box.querySelector('.vd-close'); if (closeB) closeB.onclick = () => { box.hidden = true; };
     const ta = box.querySelector('.vd-notes'); if (ta) ta.onchange = () => { w.notes = ta.value; cmd('updateWord', { word: w.word, fields: { notes: ta.value } }); };
     const forgetB = box.querySelector('.vd-forget'); if (forgetB) forgetB.onclick = async () => { await cmd('removeWord', { word: w.word }); markWordRemoved(w.word); box.hidden = true; renderVocabView(); };
-    const reviewB = box.querySelector('.vd-review'); if (reviewB) reviewB.onclick = () => { if (typeof openVocabGame === 'function') openVocabGame({ mode: 'speak', words: [w] }); };
+    const reviewB = box.querySelector('.vd-review'); if (reviewB) reviewB.onclick = () => { if (typeof openVocabGame === 'function') openVocabGame({ mode: 'choice', words: [w] }); };
     // Lưu lại card đã tra để lần sau khỏi gọi mạng.
     const patch = {};
     if (ipa && !w.ipa) { w.ipa = ipa; patch.ipa = ipa; }
@@ -1029,10 +1051,8 @@
     const body = $('#vg-body'); if (!body) return;
     const ttl = $('#vg-title'); if (ttl) ttl.textContent = t('game_title', '🎮 Ôn tập từ vựng');
     const modes = [
-      { m: 'flashcard', icon: '🃏', label: t('game_flashcard', 'Lật thẻ') },
       { m: 'choice', icon: '🔤', label: t('game_choice', 'Trắc nghiệm') },
       { m: 'type', icon: '⌨️', label: t('game_type', 'Nghe & gõ') },
-      { m: 'speak', icon: '🎤', label: t('game_speak', 'Nói & chấm') },
     ];
     body.innerHTML =
       (msg ? '<div class="vg-msg">' + esc(msg) + '</div>' : '') +
@@ -1059,10 +1079,8 @@
   }
   function renderGameStep() {
     const s = _vgState; if (!s) return;
-    if (s.mode === 'flashcard') return gameFlashcard();
     if (s.mode === 'choice') return gameChoice();
     if (s.mode === 'type') return gameType();
-    if (s.mode === 'speak') return gameSpeak();
   }
   async function gameFlashcard() {
     const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
@@ -1119,33 +1137,6 @@
     }
     const cb = $('#vg-check'); if (cb) cb.onclick = doCheck;
   }
-  async function gameSpeak() {
-    const s = _vgState; const it = s.pool[s.idx]; const body = $('#vg-body'); if (!body) return;
-    body.innerHTML = gameProgressHtml() +
-      '<div class="vg-card"><div class="vg-word">' + esc(it.word) + '</div><button class="vg-tts">🔊</button></div>' +
-      '<div class="vg-actions"><button class="vg-btn vg-btn--primary" id="vg-rec">🎤 ' + esc(t('game_speak_btn', 'Nói')) + '</button><button class="vg-btn" id="vg-skip">' + esc(t('game_skip', 'Bỏ qua')) + '</button></div>' +
-      '<div class="vg-result" id="vg-result" hidden></div>';
-    body.querySelector('.vg-tts').onclick = () => speakText(it.word);
-    const sk = $('#vg-skip'); if (sk) sk.onclick = () => gameNext();
-    const rec = $('#vg-rec'); if (rec) rec.onclick = async () => {
-      if (!window.ShadowMic || !window.ShadowMic.recordAndTranscribe) { setStatus(t('mic_not_ready', 'Mic chưa sẵn sàng — tải lại extension.'), 'warn'); return; }
-      rec.disabled = true; rec.textContent = '● ' + t('st_listening', 'Đang nghe…');
-      let res;
-      try { res = await window.ShadowMic.recordAndTranscribe({ maxMs: 5000, lang2: it.lang || settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad }); }
-      catch (e) { res = { error: 'rec' }; }
-      rec.disabled = false; rec.textContent = '🎤 ' + t('game_speak_btn', 'Nói');
-      const res2 = $('#vg-result'); res2.hidden = false;
-      if (!res || res.error || !res.transcript) { res2.className = 'vg-result bad'; res2.textContent = '✗ ' + t('empty_heard', 'Không nghe rõ — thử lại.'); return; }
-      let score = null;
-      try { if (window.SD && window.SD.phonetic) score = window.SD.phonetic.analyze(it.word, res.transcript, { lang: it.lang || settings.targetLang || 'de' }); } catch (_) {}
-      const pct = score ? Math.round(score.overall) : 0;
-      const ok = pct >= 70;
-      res2.className = 'vg-result ' + (ok ? 'ok' : 'bad');
-      res2.textContent = (ok ? '✓ ' : '✗ ') + pct + '% · ' + t('you_said', 'Bạn nói') + ': ' + (res.transcript || '');
-      if (ok) { s.correct++; gameMarkLearned(it.word); }
-      setTimeout(gameNext, 1600);
-    };
-  }
   function gameMarkLearned(word) {
     const key = String(word || '').toLowerCase();
     if (weakWords[key] && weakWords[key].miss > 0) { weakWords[key].miss--; if (weakWords[key].miss <= 0) delete weakWords[key]; try { chrome.storage.local.set({ [WEAK_KEY]: weakWords }); } catch (_) {} }
@@ -1162,7 +1153,9 @@
       if (c === 'stop') { try { window.ShadowMic && window.ShadowMic.abortRecording(); } catch (e) {} pageMicSignal('abort'); const fb = $('#finalizeBtn'); if (fb) fb.hidden = true; }
       cmd(c, { target: settings.targetLang, native: settings.nativeLang });
     };
-    if (c === 'mic') b.onclick = () => enableMic();
+    // "Bật mic": luôn mở trang cấp quyền (cùng origin extension) — Side Panel không tự hiện
+    // được hộp thoại micro. Cấp xong, mic-permission.html gửi 'mic-granted' về để dùng ngay.
+    if (c === 'mic') b.onclick = () => { openMicPermissionPage(); enableMic(); };
     if (c === 'live') b.onclick = async () => { const r = await cmd('live'); if (r) b.classList.toggle('on', !!r.running); };
     if (c === 'loop') b.onclick = async () => { const r = await cmd('loop'); if (r) b.classList.toggle('on', !!r.loop); };
     if (c === 'shadowCur') b.onclick = () => startShadow(current);
@@ -1199,6 +1192,7 @@
     setStatus(sw.checked ? t('ext_on', 'Đã bật extension') : t('ext_off', 'Đã tắt extension'), sw.checked ? 'ok' : 'warn');
   }; }
   $('#vsubs').onchange = (e) => { settings.videoSubs = e.target.checked; cmd('settings', settings); cmd('vsubs', { on: e.target.checked }); };
+  { const ao = $('#autoopen'); if (ao) ao.onchange = (e) => { settings.autoOpenPanel = e.target.checked; cmd('settings', settings); }; }
   $('#uilang').onchange = (e) => {
     settings.uiLang = e.target.value; cmd('settings', settings); applyI18n(settings.uiLang);
     // Render lại các view động để chuỗi đổi ngôn ngữ ngay (không sót tiếng cũ).
@@ -1216,6 +1210,7 @@
     updateHwInfo();
     $('#target').value = settings.targetLang || 'de'; $('#native').value = settings.nativeLang || 'vi';
     $('#uilang').value = settings.uiLang || 'vi'; $('#vsubs').checked = settings.videoSubs !== false;
+    if ($('#autoopen')) $('#autoopen').checked = settings.autoOpenPanel !== false;
     if ($('#serverurl')) $('#serverurl').value = settings.serverUrl || 'http://localhost:8000';
     if ($('#extEnabled')) $('#extEnabled').checked = settings.extEnabled !== false;
     applyMasterUI(settings.extEnabled !== false);
@@ -1314,7 +1309,6 @@
     'google/gemma-4-31b-it:free',
     'google/gemma-4-26b-a4b-it:free',
   ];
-  const DEEPL_TGT = { vi: 'VI', en: 'EN-US', de: 'DE', fr: 'FR', es: 'ES', it: 'IT', ja: 'JA', zh: 'ZH', ko: 'KO' };
   const LANG_NAME = { vi: 'Vietnamese', en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean' };
 
   function workerHeaders() {
@@ -1324,18 +1318,18 @@
   // Khi đã hết quota trong phiên -> ngừng gọi lại (tránh spam 429 + bật modal liên tục).
   let _quotaHitDeepL = false, _quotaHitAI = false;
 
-  async function deeplTranslate(text, from, to) {
+  // Dịch qua Worker /translate (gói trả phí → provider Admin chọn). Worker tự quyết
+  // free/paid: trả {free:true} cho user free → trả '' để rơi xuống nguồn miễn phí.
+  async function workerTranslate(text, from, to) {
     if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn() || _quotaHitDeepL) return '';
-    const tgt = DEEPL_TGT[to]; if (!tgt) return '';
-    const body = { text, target_lang: tgt };
-    if (DEEPL_TGT[from]) body.source_lang = DEEPL_TGT[from].split('-')[0];
-    const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: workerHeaders(), body: JSON.stringify(body) });
+    const r = await fetch(WORKER_URL + '/translate', { method: 'POST', headers: workerHeaders(), body: JSON.stringify({ text, from, to }) });
     if (!r.ok) {
       if (r.status === 429) { _quotaHitDeepL = true; try { await r.json(); } catch (_) {} showUpgradeModal('Đã hết hạn mức dịch hôm nay. Nâng cấp để tiếp tục.'); return ''; }
-      throw new Error('worker-deepl-' + r.status);
+      throw new Error('worker-translate-' + r.status);
     }
     const j = await r.json();
-    return (j.translations && j.translations[0] && j.translations[0].text) || '';
+    if (j && j.free) return ''; // user free → nguồn miễn phí xử lý
+    return (j && j.text) || '';
   }
 
   async function openrouterTranslate(text, from, to, model) {
@@ -1435,7 +1429,7 @@
     // Mỗi nguồn đều KIỂM TRA kết quả; rỗng/sai thì hạ xuống nguồn kế. Thử 2 vòng có backoff.
     const attempts = [
       () => bgTranslate(text, from, to),
-      () => deeplTranslate(text, from, to),
+      () => workerTranslate(text, from, to),
       () => googleFreeTranslate(text, from, to),
       () => microsoftFreeTranslate(text, from, to),
       () => myMemoryTranslate(text, from, to),
@@ -1468,6 +1462,23 @@
       if (!r.ok) return null;
       return await r.json();
     } catch { return null; }
+  }
+
+  // Gửi thông tin phiên (thiết bị/mạng) cho Worker → Admin Users 360°.
+  async function sendSessionPing(event) {
+    try {
+      if (typeof ShadowAuth === 'undefined' || !ShadowAuth.isLoggedIn()) return;
+      await fetch(WORKER_URL + '/session/ping', {
+        method: 'POST', headers: workerHeaders(),
+        body: JSON.stringify({
+          event: event || 'ping',
+          ua: navigator.userAgent,
+          screen: (screen.width + 'x' + screen.height),
+          lang: navigator.language || '',
+          timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || '',
+        }),
+      });
+    } catch (_) {}
   }
 
   const glossCache = {};
@@ -1686,6 +1697,7 @@
     const modal = document.getElementById('upgrade-modal');
     const reasonEl = document.getElementById('upgrade-reason');
     if (reasonEl && reason) reasonEl.textContent = reason;
+    const payBox = document.getElementById('pay-flow'); if (payBox) payBox.hidden = true; // reset mỗi lần mở
     if (modal) modal.hidden = false;
   }
 
@@ -1701,15 +1713,100 @@
     const backdrop = document.getElementById('upgrade-modal');
     if (backdrop) backdrop.onclick = (e) => { if (e.target === backdrop) hideUpgradeModal(); };
 
-    // Plan buttons — open email contact
-    document.querySelectorAll('.upgrade-plan-btn').forEach((btn) => {
-      btn.onclick = () => {
-        const plan = btn.dataset.plan;
-        const subject = encodeURIComponent('NghienDe Upgrade — ' + plan);
-        const body = encodeURIComponent('Hi, I want to upgrade to the ' + plan + ' plan.\n\nEmail: ' + (ShadowAuth.getUser()?.email || ''));
-        window.open('mailto:contact@spiragiving.dev?subject=' + subject + '&body=' + body, '_blank');
-      };
-    });
+    // "Chọn Pro" → luồng 3 bước: chọn phương thức → điền thông tin → gửi yêu cầu (email).
+    let _payInfo = null, _paySelected = null, _payRef = '';
+    // Mã nội dung chuyển khoản DE-##### (hiện NGAY trên form để khách ghi khi CK).
+    const genDeRef = () => 'DE-' + String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+    // Định dạng tiền: EUR luôn hiện cho IBAN/PayPal, VND cho QR ngân hàng VN.
+    const fmtEur = (x) => (Number(x) || 0).toFixed(2) + ' €';
+    const fmtVnd = (x) => String(Math.round(Number(x) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' ₫';
+    const showPayStep = (step) => {
+      ['method', 'form', 'done'].forEach((s) => { const el = document.getElementById('pay-step-' + s); if (el) el.hidden = (s !== step); });
+      const flow = document.getElementById('pay-flow'); if (flow) flow.hidden = false;
+    };
+    const renderMethodInstr = (m) => {
+      const rowsEl = document.getElementById('pay-rows'); const qrEl = document.getElementById('pay-qr');
+      // Giá hiển thị theo đúng phương thức: VN QR → VND, IBAN/PayPal → EUR.
+      const pro = (_payInfo && _payInfo.price_table && _payInfo.price_table.pro) || {};
+      const isVnd = m.type === 'vn_qr';
+      const priceStr = isVnd ? fmtVnd(pro.VND) : fmtEur(pro.EUR);
+      const pEl = document.getElementById('pay-price');
+      if (pEl) { pEl.innerHTML = ''; const s = document.createElement('span'); s.textContent = t('plan_pro_name', 'Pro'); const b = document.createElement('b'); b.textContent = priceStr; pEl.appendChild(s); pEl.appendChild(b); }
+      // Mã nội dung CK sinh ngay khi chọn phương thức → hiện trên form + gửi kèm khi đặt đơn.
+      _payRef = genDeRef();
+      if (rowsEl) {
+        rowsEl.innerHTML = '';
+        const add = (label, val, hl) => { if (!val) return; const d = document.createElement('div'); d.className = 'pay-info-row' + (hl ? ' pay-info-row--ref' : ''); const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); d.appendChild(s); d.appendChild(b); rowsEl.appendChild(d); };
+        if (m.type === 'iban') { add(t('pay_beneficiary', 'Người nhận'), m.beneficiary); add('IBAN', m.iban); add(t('pay_bank', 'Ngân hàng'), m.bank); add('BIC', m.bic); }
+        else if (m.type === 'paypal') { add('PayPal', m.link || m.email); }
+        else if (m.type === 'vn_qr') { add(t('pay_form_label', 'Hình thức'), t('pay_scan_qr', 'Quét QR ngân hàng')); }
+        // Nhãn nội dung CK theo phương thức: IBAN → Verwendungszweck (Đức); QR VN → Nội dung chuyển khoản.
+        const refLabel = m.type === 'iban' ? t('pay_ref_iban', 'Verwendungszweck') : t('pay_ref_qr', 'Nội dung chuyển khoản');
+        add(refLabel, _payRef, true);
+      }
+      if (qrEl) { if (m.type === 'vn_qr' && m.qr_image) { qrEl.src = m.qr_image; qrEl.hidden = false; } else qrEl.hidden = true; }
+    };
+    // Cập nhật giá niêm yết (EUR) trên thẻ Pro ngay khi mở modal.
+    const refreshProPrice = async () => {
+      try {
+        const r = await fetch(WORKER_URL + '/pay-info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        _payInfo = await r.json();
+        const pro = (_payInfo.price_table || {}).pro || {};
+        const cardPrice = document.getElementById('upgrade-pro-price');
+        if (cardPrice && pro.EUR) { cardPrice.innerHTML = ''; cardPrice.appendChild(document.createTextNode(fmtEur(pro.EUR))); const sp = document.createElement('span'); sp.textContent = t('per_month', '/tháng'); cardPrice.appendChild(sp); }
+      } catch (_) {}
+    };
+    const proBtn = document.getElementById('btn-choose-pro');
+    if (proBtn) proBtn.onclick = async () => {
+      const methodsEl = document.getElementById('pay-methods');
+      showPayStep('method');
+      if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">' + esc(t('loading', 'Đang tải…')) + '</div>';
+      try {
+        if (!_payInfo) await refreshProPrice();
+        const methods = (_payInfo && _payInfo.methods || []).filter((m) => m && m.enabled !== false);
+        if (methodsEl) {
+          methodsEl.innerHTML = '';
+          if (!methods.length) { methodsEl.innerHTML = '<div class="pay-info-note">' + esc(t('pay_no_method', 'Chưa cấu hình phương thức. Liên hệ admin.')) + '</div>'; return; }
+          methods.forEach((m) => {
+            const cur = m.type === 'vn_qr' ? 'VND' : (m.type === 'paypal' ? '' : 'EUR');
+            const ico = m.type === 'vn_qr' ? '🏦' : m.type === 'paypal' ? '🅿️' : '🇪🇺';
+            const b = document.createElement('button');
+            b.className = 'pay-method-btn';
+            b.innerHTML = '<span class="pm-ico">' + ico + '</span><span class="pm-label">' + esc(m.label || m.type) + '</span>' + (cur ? '<span class="pm-cur">' + cur + '</span>' : '');
+            b.onclick = () => { _paySelected = m; renderMethodInstr(m); showPayStep('form'); };
+            methodsEl.appendChild(b);
+          });
+        }
+      } catch (_) {
+        if (methodsEl) methodsEl.innerHTML = '<div class="pay-info-note">' + esc(t('pay_load_err', 'Không tải được thông tin thanh toán. Liên hệ admin.')) + '</div>';
+      }
+    };
+    const paySubmit = document.getElementById('pay-submit');
+    if (paySubmit) paySubmit.onclick = async () => {
+      const name = (document.getElementById('pay-name') || {}).value || '';
+      const email = (document.getElementById('pay-email') || {}).value || '';
+      const errEl = document.getElementById('pay-form-err');
+      if (errEl) errEl.textContent = '';
+      if (!name.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { if (errEl) errEl.textContent = t('pay_invalid', 'Vui lòng nhập Họ tên và email hợp lệ.'); return; }
+      paySubmit.disabled = true; paySubmit.textContent = t('pay_sending', 'Đang gửi…');
+      try {
+        const r = await fetch(WORKER_URL + '/upgrade-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), email: email.trim(), method: (_paySelected && _paySelected.id) || '', ref: _payRef }) });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.message || 'fail');
+        const rowsEl = document.getElementById('pay-done-rows');
+        if (rowsEl) {
+          rowsEl.innerHTML = '';
+          const add = (label, val, hl) => { if (val == null || val === '') return; const dv = document.createElement('div'); dv.className = 'pay-info-row' + (hl ? ' pay-info-row--ref' : ''); const s = document.createElement('span'); s.textContent = label; const b = document.createElement('b'); b.textContent = String(val); dv.appendChild(s); dv.appendChild(b); rowsEl.appendChild(dv); };
+          const doneRefLabel = (_paySelected && _paySelected.type === 'iban') ? t('pay_ref_iban', 'Verwendungszweck') : t('pay_ref_qr', 'Nội dung chuyển khoản');
+          add(t('pay_amount', 'Số tiền'), d.amount || '');
+          add(t('pay_method', 'Phương thức'), (_paySelected && _paySelected.label) || '');
+          add(doneRefLabel, d.reference_code || _payRef, true);
+        }
+        showPayStep('done');
+      } catch (e) {
+        if (errEl) errEl.textContent = t('pay_send_err', 'Lỗi gửi yêu cầu') + ': ' + (e.message || e) + '.';
+      } finally { paySubmit.disabled = false; paySubmit.textContent = t('pay_submit', 'Gửi yêu cầu nâng cấp'); }
+    };
 
     // btn-upgrade in menu
     const upgradeMenuBtn = document.getElementById('btn-upgrade');
@@ -1718,8 +1815,11 @@
       const menuOverlay = document.getElementById('menu-overlay');
       if (slideMenu) slideMenu.hidden = true;
       if (menuOverlay) menuOverlay.hidden = true;
-      showUpgradeModal('Nâng cấp để có nhiều lượt dịch và AI hơn mỗi ngày.');
+      showUpgradeModal(t('upgrade_subtitle', 'Học không giới hạn — luyện phát âm với AI mỗi ngày.'));
     };
+
+    // Lấy giá niêm yết EUR (live) cho thẻ Pro ngay khi khởi động.
+    refreshProPrice();
   }
 
   // ===== 🎵 WAVEFORM VISUALIZER =====
@@ -2116,10 +2216,10 @@
       ob_title:'Bắt đầu nhanh', ob1:'Mở video tiếng Đức trên YouTube.', ob2:'Phụ đề tự tải sau vài giây — không cần thao tác.', ob3:'Bấm "Bật mic", cho phép micro cho extension.', ob4:'Bấm một câu → nói lại → xem điểm.', ob_close:'Đã hiểu',
       status_init:'Mở video trên YouTube — phụ đề sẽ tự tải.',
       // Cài đặt
-      sec_settings:'Cài đặt', set_target:'Ngôn ngữ học', set_native:'Dịch sang', set_vsubs:'Phụ đề trên video', set_uilang:'Ngôn ngữ giao diện',
+      sec_settings:'Cài đặt', set_target:'Ngôn ngữ học', set_native:'Dịch sang', set_vsubs:'Phụ đề trên video', set_autoopen:'Tự mở bảng khi vào video', set_uilang:'Ngôn ngữ giao diện',
       // Action toolbar
-      at_mic:'Bật mic', at_dict:'Chép', at_cloze:'Điền', at_vocab:'Từ vựng', at_menu:'Menu',
-      tt_mic:'Cho phép micro để chấm điểm phát âm', tt_dict:'Chép chính tả: nghe rồi gõ lại cả câu', tt_cloze:'Điền từ còn thiếu vào chỗ trống', tt_vocab:'Từ vựng đã lưu & từ phát âm yếu', tt_menu:'Mở menu cài đặt', tt_loop:'Lặp lại 1 câu (phím L)',
+      at_mic:'Bật mic', at_dict:'Chép', at_cloze:'Điền', at_vocab:'Từ vựng', at_menu:'Ôn tập',
+      tt_mic:'Cho phép micro để chấm điểm phát âm', tt_dict:'Chép chính tả: nghe rồi gõ lại cả câu', tt_cloze:'Điền từ còn thiếu vào chỗ trống', tt_vocab:'Từ vựng đã lưu & từ phát âm yếu', tt_menu:'Luyện tập & ôn tập', tt_loop:'Lặp lại 1 câu (phím L)',
       // Bottom toolbar
       bt_prev:'Trước', bt_play:'Phát', bt_pause:'Dừng', bt_next:'Sau', bt_loop:'Lặp',
       t_prev:'Câu trước', t_play:'Phát/Dừng', t_loop:'Lặp 1 câu', t_next:'Câu sau', t_shadow:'Luyện', t_listen:'Nghe', t_dict:'Chép chính tả', t_cloze:'Điền chỗ trống', t_blur:'Ẩn chữ (tự kiểm tra)',
@@ -2129,6 +2229,7 @@
       // Record panel
       rp_ready:'Sẵn sàng', rp_target:'Đang luyện', rp_match:'Độ khớp %', rp_yousaid:'BẠN ĐÃ NÓI',
       rp_listen:'🔊 Nghe mẫu', rp_replay:'🔁 Nghe lại', rescore_go:'🎤 Chấm điểm', rescore_stop:'⏹ Dừng & chấm', wd_speak:'🔊 Nghe phát âm đúng',
+      fab_speak:'Nói & chấm', tt_speak_fab:'Nói câu này rồi chấm điểm phát âm',
       // Slide menu
       menu_title:'Menu', menu_logout:'Đăng xuất', usage_trans:'Dịch hôm nay', usage_ai:'AI hôm nay', btn_upgrade:'⚡ Nâng cấp Pro',
       sec_vocab:'Từ vựng', sec_flash:'Thẻ ghi nhớ', voc_saved_title:'📚 Từ đã lưu', voc_weak_title:'⚠️ Từ phát âm yếu', fc_hard:'Khó', fc_good:'Tốt', fc_skip:'Bỏ qua', flash_empty:'⭐ Thêm câu yêu thích để bắt đầu luyện thẻ ghi nhớ!',
@@ -2148,21 +2249,37 @@
       game_pool:'Nguồn từ', game_pool_sent:'Câu đã lưu', game_reveal:'Hiện nghĩa', game_done:'Hoàn thành!', game_again:'🔁 Chơi lại', game_menu:'☰ Chọn chế độ', game_correct:'Chính xác!', game_check:'Kiểm tra', game_type_ph:'Gõ từ bạn nghe…', game_replay:'Nghe lại', game_speak_btn:'Nói', game_skip:'Bỏ qua',
       you_said:'Bạn nói', empty_heard:'Không nghe rõ — thử lại.', mic_not_ready:'Mic chưa sẵn sàng — tải lại extension.',
       tc_pause_tt:'Tự dừng cuối mỗi câu để bạn luyện',
+      // Gói & thanh toán
+      plan_free_chip:'Free: 1 giờ/ngày', plan_pro_chip:'Pro: Không giới hạn',
+      plan_free_name:'Free', plan_free_price:'Miễn phí', plan_pro_name:'Pro', plan_popular:'⭐ Phổ biến', per_month:'/tháng', choose_pro:'Chọn Pro',
+      feat_free_hour:'1 giờ luyện tập / ngày', feat_free_basic:'Ghi âm & chấm điểm AI', feat_free_shadow:'Shadowing cùng video',
+      feat_pro_unlimited:'AI không giới hạn thời gian', feat_pro_ai:'Ghi âm & chấm điểm AI', feat_pro_translate:'Dịch chất lượng cao (Gemini/DeepL)', feat_pro_support:'Ưu tiên hỗ trợ',
+      unlimited:'Không giới hạn', usage_today:'Hôm nay', free_remaining:'Còn {n} phút',
+      upgrade_title:'Nâng cấp NghienDeutsch Pro', upgrade_subtitle:'Học không giới hạn — luyện phát âm với AI mỗi ngày.',
+      pay_choose_method:'💳 Chọn phương thức thanh toán', pay_your_info:'📝 Thông tin của bạn',
+      pay_name_ph:'Họ và tên', pay_email_ph:'Email', pay_submit:'Gửi yêu cầu nâng cấp',
+      pay_done_title:'✅ Đã gửi yêu cầu', pay_done_note:'Đã gửi hướng dẫn thanh toán tới email của bạn. Sau khi chuyển khoản đúng nội dung, chúng tôi sẽ kích hoạt Pro cho tài khoản này.',
+      contact_label:'Liên hệ', loading:'Đang tải…',
+      pay_no_method:'Chưa cấu hình phương thức. Liên hệ admin.', pay_load_err:'Không tải được thông tin thanh toán. Liên hệ admin.',
+      pay_beneficiary:'Người nhận', pay_bank:'Ngân hàng', pay_form_label:'Hình thức', pay_scan_qr:'Quét QR ngân hàng',
+      pay_invalid:'Vui lòng nhập Họ tên và email hợp lệ.', pay_sending:'Đang gửi…',
+      pay_amount:'Số tiền', pay_ref:'Nội dung CK (Verwendungszweck)', pay_ref_iban:'Verwendungszweck', pay_ref_qr:'Nội dung chuyển khoản', pay_method:'Phương thức', pay_send_err:'Lỗi gửi yêu cầu',
     },
     en: {
       tab_practice:'Practice', tab_vocab:'Words', tab_flash:'Cards', tab_progress:'Progress',
       nohost:'Open a YouTube or Netflix video, then come back here.',
       ob_title:'Quick start', ob1:'Open a German video on YouTube.', ob2:'Subtitles load automatically after a few seconds — no action needed.', ob3:'Click "Enable mic" and allow microphone access for the extension.', ob4:'Click a line → speak it back → see your score.', ob_close:'Got it',
       status_init:'Open a video on YouTube — subtitles load automatically.',
-      sec_settings:'Settings', set_target:'Target language', set_native:'Translate to', set_vsubs:'Subtitles on video', set_uilang:'UI language',
-      at_mic:'Enable mic', at_dict:'Dictation', at_cloze:'Fill', at_vocab:'Vocabulary', at_menu:'Menu',
-      tt_mic:'Allow microphone to score pronunciation', tt_dict:'Dictation: listen then type the whole sentence', tt_cloze:'Fill in the missing words', tt_vocab:'Saved words & weak pronunciation words', tt_menu:'Open settings menu', tt_loop:'Loop one sentence (key L)',
+      sec_settings:'Settings', set_target:'Target language', set_native:'Translate to', set_vsubs:'Subtitles on video', set_autoopen:'Auto-open panel on video', set_uilang:'UI language',
+      at_mic:'Enable mic', at_dict:'Dictation', at_cloze:'Fill', at_vocab:'Vocabulary', at_menu:'Review',
+      tt_mic:'Allow microphone to score pronunciation', tt_dict:'Dictation: listen then type the whole sentence', tt_cloze:'Fill in the missing words', tt_vocab:'Saved words & weak pronunciation words', tt_menu:'Practice & review', tt_loop:'Loop one sentence (key L)',
       bt_prev:'Prev', bt_play:'Play', bt_pause:'Pause', bt_next:'Next', bt_loop:'Loop',
       t_prev:'Previous', t_play:'Play/Pause', t_loop:'Loop one', t_next:'Next', t_shadow:'Practice', t_listen:'Listen', t_dict:'Dictation', t_cloze:'Fill blanks', t_blur:'Hide text (self-test)',
       kbd_hint:'⌨ Space: speak · ◀ ▶: line · ▲ ▼: speed · R: listen · L: loop · B: hide',
       tc_title:'Practice this sentence', tc_pause_on:'⏸ Auto-pause: On', tc_pause_off:'▶ Auto-pause: Off', tc_pause_msg_on:'⏸ Auto-pause at each sentence: ON', tc_pause_msg_off:'▶ Auto-pause at each sentence: OFF', tc_next:'Next ›', tc_listen:'▷ Listen', tc_speak:'🎤 Speak & score', tc_fav:'Favorite this sentence',
       rp_ready:'Ready', rp_target:'Practicing', rp_match:'Match %', rp_yousaid:'YOU SAID',
       rp_listen:'🔊 Listen', rp_replay:'🔁 Replay', rescore_go:'🎤 Score', rescore_stop:'⏹ Stop & score', wd_speak:'🔊 Hear correct pronunciation',
+      fab_speak:'Speak & score', tt_speak_fab:'Speak this sentence and score your pronunciation',
       menu_title:'Menu', menu_logout:'Log out', usage_trans:'Translations today', usage_ai:'AI today', btn_upgrade:'⚡ Upgrade to Pro',
       sec_vocab:'Vocabulary', sec_flash:'Flashcards', voc_saved_title:'📚 Saved words', voc_weak_title:'⚠️ Weak words', fc_hard:'Hard', fc_good:'Good', fc_skip:'Skip', flash_empty:'⭐ Add favorite sentences to start practicing flashcards!',
       pop_listen:'Listen', pop_save:'Save', pop_saved:'Saved', pop_loading:'… looking up', pop_nomean:'(no translation)', pop_pron:'Pronounce',
@@ -2178,21 +2295,37 @@
       game_pool:'Word source', game_pool_sent:'Saved sentences', game_reveal:'Reveal', game_done:'Done!', game_again:'🔁 Play again', game_menu:'☰ Modes', game_correct:'Correct!', game_check:'Check', game_type_ph:'Type what you hear…', game_replay:'Replay', game_speak_btn:'Speak', game_skip:'Skip',
       you_said:'You said', empty_heard:"Didn't catch that — try again.", mic_not_ready:'Mic not ready — reload the extension.',
       tc_pause_tt:'Auto-pause at the end of each sentence',
+      // Plan & payment
+      plan_free_chip:'Free: 1 hour/day', plan_pro_chip:'Pro: Unlimited',
+      plan_free_name:'Free', plan_free_price:'Free', plan_pro_name:'Pro', plan_popular:'⭐ Popular', per_month:'/month', choose_pro:'Choose Pro',
+      feat_free_hour:'1 hour of practice / day', feat_free_basic:'Recording & AI scoring', feat_free_shadow:'Shadowing with videos',
+      feat_pro_unlimited:'Unlimited AI time', feat_pro_ai:'Recording & AI scoring', feat_pro_translate:'High-quality translation (Gemini/DeepL)', feat_pro_support:'Priority support',
+      unlimited:'Unlimited', usage_today:'Today', free_remaining:'{n} min left',
+      upgrade_title:'Upgrade to NghienDeutsch Pro', upgrade_subtitle:'Learn without limits — practice pronunciation with AI every day.',
+      pay_choose_method:'💳 Choose a payment method', pay_your_info:'📝 Your details',
+      pay_name_ph:'Full name', pay_email_ph:'Email', pay_submit:'Send upgrade request',
+      pay_done_title:'✅ Request sent', pay_done_note:'Payment instructions were sent to your email. After you transfer with the correct reference, we will activate Pro for this account.',
+      contact_label:'Contact', loading:'Loading…',
+      pay_no_method:'No payment method configured. Contact admin.', pay_load_err:'Could not load payment info. Contact admin.',
+      pay_beneficiary:'Beneficiary', pay_bank:'Bank', pay_form_label:'Method', pay_scan_qr:'Scan bank QR',
+      pay_invalid:'Please enter a valid name and email.', pay_sending:'Sending…',
+      pay_amount:'Amount', pay_ref:'Transfer reference (Verwendungszweck)', pay_ref_iban:'Verwendungszweck', pay_ref_qr:'Transfer note', pay_method:'Method', pay_send_err:'Failed to send request',
     },
     de: {
       tab_practice:'Üben', tab_vocab:'Wörter', tab_flash:'Karten', tab_progress:'Fortschritt',
       nohost:'Öffne ein YouTube- oder Netflix-Video und komm hierher zurück.',
       ob_title:'Schnellstart', ob1:'Öffne ein deutsches Video auf YouTube.', ob2:'Untertitel laden automatisch nach ein paar Sekunden — nichts zu tun.', ob3:'Klicke „Mikro an" und erlaube den Mikrofonzugriff.', ob4:'Klicke einen Satz → sprich ihn nach → sieh deine Punktzahl.', ob_close:'Verstanden',
       status_init:'Öffne ein Video auf YouTube — Untertitel laden automatisch.',
-      sec_settings:'Einstellungen', set_target:'Lernsprache', set_native:'Übersetzen nach', set_vsubs:'Untertitel im Video', set_uilang:'Oberflächensprache',
-      at_mic:'Mikro an', at_dict:'Diktat', at_cloze:'Lücken', at_vocab:'Wortschatz', at_menu:'Menü',
-      tt_mic:'Mikrofon erlauben, um die Aussprache zu bewerten', tt_dict:'Diktat: hören und den ganzen Satz tippen', tt_cloze:'Fehlende Wörter ergänzen', tt_vocab:'Gespeicherte & schwache Wörter', tt_menu:'Einstellungen öffnen', tt_loop:'Einen Satz wiederholen (Taste L)',
+      sec_settings:'Einstellungen', set_target:'Lernsprache', set_native:'Übersetzen nach', set_vsubs:'Untertitel im Video', set_autoopen:'Panel bei Video autom. öffnen', set_uilang:'Oberflächensprache',
+      at_mic:'Mikro an', at_dict:'Diktat', at_cloze:'Lücken', at_vocab:'Wortschatz', at_menu:'Üben',
+      tt_mic:'Mikrofon erlauben, um die Aussprache zu bewerten', tt_dict:'Diktat: hören und den ganzen Satz tippen', tt_cloze:'Fehlende Wörter ergänzen', tt_vocab:'Gespeicherte & schwache Wörter', tt_menu:'Üben & Wiederholen', tt_loop:'Einen Satz wiederholen (Taste L)',
       bt_prev:'Zurück', bt_play:'Play', bt_pause:'Pause', bt_next:'Weiter', bt_loop:'Schleife',
       t_prev:'Vorheriger', t_play:'Play/Pause', t_loop:'Einen wiederholen', t_next:'Nächster', t_shadow:'Üben', t_listen:'Hören', t_dict:'Diktat', t_cloze:'Lücken füllen', t_blur:'Text verbergen (Selbsttest)',
       kbd_hint:'⌨ Leertaste: sprechen · ◀ ▶: Satz · ▲ ▼: Tempo · R: hören · L: Schleife · B: verbergen',
       tc_title:'Diesen Satz üben', tc_pause_on:'⏸ Auto-Pause: An', tc_pause_off:'▶ Auto-Pause: Aus', tc_pause_msg_on:'⏸ Auto-Pause nach jedem Satz: AN', tc_pause_msg_off:'▶ Auto-Pause nach jedem Satz: AUS', tc_next:'Weiter ›', tc_listen:'▷ Hören', tc_speak:'🎤 Sprechen & bewerten', tc_fav:'Diesen Satz favorisieren',
       rp_ready:'Bereit', rp_target:'Übung läuft', rp_match:'Übereinstimmung %', rp_yousaid:'DU SAGTEST',
       rp_listen:'🔊 Anhören', rp_replay:'🔁 Wiederholen', rescore_go:'🎤 Bewerten', rescore_stop:'⏹ Stopp & bewerten', wd_speak:'🔊 Richtige Aussprache hören',
+      fab_speak:'Sprechen & bewerten', tt_speak_fab:'Diesen Satz sprechen und Aussprache bewerten',
       menu_title:'Menü', menu_logout:'Abmelden', usage_trans:'Übersetzungen heute', usage_ai:'KI heute', btn_upgrade:'⚡ Auf Pro upgraden',
       sec_vocab:'Wortschatz', sec_flash:'Lernkarten', voc_saved_title:'📚 Gespeicherte Wörter', voc_weak_title:'⚠️ Schwache Wörter', fc_hard:'Schwer', fc_good:'Gut', fc_skip:'Überspringen', flash_empty:'⭐ Füge Lieblingssätze hinzu, um Lernkarten zu üben!',
       pop_listen:'Hören', pop_save:'Speichern', pop_saved:'Gespeichert', pop_loading:'… wird übersetzt', pop_nomean:'(keine Übersetzung)', pop_pron:'Aussprache',
@@ -2208,6 +2341,21 @@
       game_pool:'Wortquelle', game_pool_sent:'Gespeicherte Sätze', game_reveal:'Aufdecken', game_done:'Fertig!', game_again:'🔁 Nochmal', game_menu:'☰ Modi', game_correct:'Richtig!', game_check:'Prüfen', game_type_ph:'Tippe, was du hörst…', game_replay:'Wiederholen', game_speak_btn:'Sprechen', game_skip:'Überspringen',
       you_said:'Du sagtest', empty_heard:'Nicht verstanden — versuch es nochmal.', mic_not_ready:'Mikro nicht bereit — Extension neu laden.',
       tc_pause_tt:'Nach jedem Satz automatisch pausieren',
+      // Paket & Zahlung
+      plan_free_chip:'Free: 1 Stunde/Tag', plan_pro_chip:'Pro: Unbegrenzt',
+      plan_free_name:'Free', plan_free_price:'Kostenlos', plan_pro_name:'Pro', plan_popular:'⭐ Beliebt', per_month:'/Monat', choose_pro:'Pro wählen',
+      feat_free_hour:'1 Stunde Übung / Tag', feat_free_basic:'Aufnahme & KI-Bewertung', feat_free_shadow:'Shadowing mit Videos',
+      feat_pro_unlimited:'KI ohne Zeitlimit', feat_pro_ai:'Aufnahme & KI-Bewertung', feat_pro_translate:'Hochwertige Übersetzung (Gemini/DeepL)', feat_pro_support:'Priorisierter Support',
+      unlimited:'Unbegrenzt', usage_today:'Heute', free_remaining:'Noch {n} Min',
+      upgrade_title:'Auf NghienDeutsch Pro upgraden', upgrade_subtitle:'Ohne Limit lernen — täglich Aussprache mit KI üben.',
+      pay_choose_method:'💳 Zahlungsart wählen', pay_your_info:'📝 Ihre Angaben',
+      pay_name_ph:'Vollständiger Name', pay_email_ph:'E-Mail', pay_submit:'Upgrade anfragen',
+      pay_done_title:'✅ Anfrage gesendet', pay_done_note:'Die Zahlungsanweisungen wurden an Ihre E-Mail gesendet. Nach Überweisung mit korrektem Verwendungszweck aktivieren wir Pro für dieses Konto.',
+      contact_label:'Kontakt', loading:'Lädt…',
+      pay_no_method:'Keine Zahlungsart konfiguriert. Admin kontaktieren.', pay_load_err:'Zahlungsinfo konnte nicht geladen werden. Admin kontaktieren.',
+      pay_beneficiary:'Empfänger', pay_bank:'Bank', pay_form_label:'Art', pay_scan_qr:'Bank-QR scannen',
+      pay_invalid:'Bitte gültigen Namen und E-Mail eingeben.', pay_sending:'Senden…',
+      pay_amount:'Betrag', pay_ref:'Verwendungszweck', pay_ref_iban:'Verwendungszweck', pay_ref_qr:'Verwendungszweck', pay_method:'Methode', pay_send_err:'Anfrage fehlgeschlagen',
     },
   };
   // Tra cứu chuỗi UI theo ngôn ngữ đang chọn (cho chuỗi động trong JS).
@@ -2447,7 +2595,7 @@
   function openMenu() { const m = $('#slide-menu'), o = $('#menu-overlay'); if (m) m.hidden = false; if (o) o.hidden = false; const sv = $('#section-vocab'); if (sv && sv.open) renderVocabView(); }
   function closeMenu() { const m = $('#slide-menu'), o = $('#menu-overlay'); if (m) m.hidden = true; if (o) o.hidden = true; }
   { const b = $('#btn-open-menu'); if (b) b.onclick = openMenu; }
-  { const b = $('#btn-menu'); if (b) b.onclick = openMenu; }
+  { const b = $('#btn-menu'); if (b) b.onclick = () => openVocabGame({ mode: 'menu' }); }
   { const b = $('#btn-menu-close'); if (b) b.onclick = closeMenu; }
   { const o = $('#menu-overlay'); if (o) o.onclick = closeMenu; }
 
@@ -2488,6 +2636,8 @@
   // "Nghe" CHỈ phát lại đoạn video gốc của câu (không TTS chồng tiếng) — tránh xung đột âm.
   { const b = $('#try-card-listen'); if (b) b.onclick = () => { if (sentences[current]) cmd('listenSeg', { i: current }); }; }
   { const b = $('#try-card-speak'); if (b) b.onclick = () => { if (!sentences.length) return; openPractice(current); showRecordPanel(true); scoreNow(); }; }
+  // FAB tròn "Nói & chấm" trên trang luyện — mở panel luyện nói + bắt đầu chấm câu hiện tại.
+  { const b = $('#btn-speak-fab'); if (b) b.onclick = () => { if (!sentences.length) return; showRecordPanel(true); scoreNow(); }; }
   { const b = $('#try-card-next'); if (b) b.onclick = () => { if (current + 1 < sentences.length) selectRow(current + 1); }; }
   // Nút ⭐ trên thẻ "Luyện câu này" — thêm/bỏ yêu thích câu hiện tại.
   { const b = $('#try-fav-btn'); if (b) b.onclick = async () => {
@@ -2570,6 +2720,23 @@
     const idx = Math.max(0, Math.min(current, sentences.length - 1));
     const s = sentences[idx]; if (!s) return;
     current = idx;
+    // Pre-flight quyền micro: KHÔNG tin navigator.permissions.query (trong Side Panel luôn trả
+    // 'prompt' kể cả khi đã cấp ở tab khác). Thay vào đó PROBE getUserMedia trực tiếp: thử mở mic
+    // rồi tắt ngay. OK → đã được phép, ghi âm bình thường. Lỗi quyền → mở trang cấp quyền và đặt
+    // cờ pendingScore; khi tab cấp xong gửi 'mic-granted' về (onMessage) → tự chấm lại.
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+      probe.getTracks().forEach((tr) => tr.stop());
+    } catch (err) {
+      if (isMicBlocked(err)) {
+        pendingScore = true;
+        openMicPermissionPage();
+        setStatus('🎤 Cửa sổ cấp quyền micro vừa mở — bấm "Cho phép / Allow", rồi quay lại đây (sẽ tự chấm).', 'warn');
+        renderFeedback({ error: 'mic:blocked' });
+        return;
+      }
+      // Lỗi khác (không phải quyền) → vẫn thử ghi âm, mic-service sẽ báo lỗi cụ thể.
+    }
     showRecordPanel(true);
     setRecordScore(null);
     { const el = $('#you-said-text'); if (el) el.textContent = ''; }
@@ -2582,7 +2749,7 @@
     panelRecording = true; setPanelRecUI(true); startWaveform();
     let res;
     try {
-      res = await window.ShadowMic.recordAndTranscribe({ maxMs: 7000, lang2: settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad });
+      res = await window.ShadowMic.recordAndTranscribe({ maxMs: 7000, lang2: settings.targetLang || 'de', useSileroVad: !!settings.useSileroVad, modelSource: settings.modelSource || 'server' });
     } catch (e) { res = { error: 'rec:' + ((e && e.message) || e) }; }
     panelRecording = false; setPanelRecUI(false); stopWaveform();
     cmd('releasePause');
@@ -2591,6 +2758,12 @@
       if (res && res.error === 'WHISPER_LOADING') {
         const st = $('#record-status-text'); if (st) st.textContent = t('st_ready');
         setStatus('⏳ Model phát âm offline đang tải (~2 phút). Hãy thử lại sau.', 'warn');
+        return;
+      }
+      if (res && res.error === 'free_hour_over') {
+        const st = $('#record-status-text'); if (st) st.textContent = t('st_ready');
+        setStatus('⏳ Đã hết 1 giờ dùng thử miễn phí hôm nay. Quay lại ngày mai hoặc nâng cấp Pro.', 'warn');
+        try { showUpgradeModal('Bạn đã dùng hết 1 giờ miễn phí hôm nay. Nâng cấp Pro để dùng không giới hạn.'); } catch (_) {}
         return;
       }
       renderFeedback({ error: (res && res.error) || 'unknown' });
@@ -2733,24 +2906,36 @@
   // Account UI updater
   function updateAccountUI(user, profile) {
     const emailEl = $('#account-email'); if (emailEl) emailEl.textContent = (user && user.email) || '—';
+    const plan = (profile && profile.plan) || 'free';
+    // Cache nguồn model + gói để các luồng khác dùng (mic local, free-hour…).
+    if (profile && profile.model_source) settings.modelSource = profile.model_source;
+    settings.plan = plan;
     const planEl  = $('#account-plan-badge');
     if (planEl) {
-      const plan = (profile && profile.plan) || 'free';
-      const names = { free: 'Free', basic: 'Basic', pro: 'Pro', lifetime: 'Lifetime' };
+      const names = { free: 'Free', pro: 'Pro' };
       planEl.textContent = names[plan] || plan;
       planEl.className = 'account-plan-badge plan-' + plan;
     }
+    // Đã là Pro → ẩn mọi nút "Nâng cấp Pro".
+    const isPro = plan === 'pro';
+    document.querySelectorAll('#btn-upgrade, .btn-upgrade').forEach((b) => { b.style.display = isPro ? 'none' : ''; });
   }
 
   async function updateUsageUI(profile) {
-    if (!profile || !profile.usage) return;
-    const { translations, ai } = profile.usage;
-    const tPct = Math.min(100, Math.round((translations.used / (translations.limit || 1)) * 100));
-    const aPct = Math.min(100, Math.round((ai.used / (ai.limit || 1)) * 100));
-    const tc = $('#usage-trans-count'); if (tc) tc.textContent = translations.used + ' / ' + translations.limit;
-    const ac = $('#usage-ai-count');    if (ac) ac.textContent = ai.used + ' / ' + ai.limit;
-    const tb = $('#usage-trans-bar');   if (tb) tb.style.width = tPct + '%';
-    const ab = $('#usage-ai-bar');      if (ab) ab.style.width = aPct + '%';
+    if (!profile) return;
+    const statusEl = $('#usage-status'); const barEl = $('#usage-status-bar');
+    const fh = profile.free_hour || null;
+    const isPro = (profile.plan || 'free') === 'pro' || (fh && fh.unlimited);
+    if (isPro) {
+      if (statusEl) statusEl.textContent = t('unlimited', 'Không giới hạn');
+      if (barEl) { barEl.style.width = '100%'; barEl.classList.add('usage-bar-fill--ok'); }
+      return;
+    }
+    // Free: số phút còn lại trong ngày (1 giờ/ngày).
+    const lim = (fh && fh.limit_min) || 60;
+    const rem = fh && typeof fh.remaining_min === 'number' ? fh.remaining_min : lim;
+    if (statusEl) statusEl.textContent = t('free_remaining', 'Còn {n} phút').replace('{n}', rem);
+    if (barEl) { barEl.classList.remove('usage-bar-fill--ok'); barEl.style.width = Math.max(0, Math.min(100, Math.round((rem / lim) * 100))) + '%'; }
   }
 
   // Vocab/flashcard sections in slide menu
@@ -2813,6 +2998,7 @@
           updateAccountUI(user, profile);
           updateUsageUI(profile);
         });
+        sendSessionPing('login');
         refresh();
       } else {
         // Not logged in → show auth

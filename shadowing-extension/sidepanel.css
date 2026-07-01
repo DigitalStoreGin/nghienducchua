@@ -191,6 +191,11 @@ select:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.2); }
 }
+/* Ôn tập (review) — accent tím vui mắt, đồng bộ với game ôn tập */
+.at-btn--review { color: #8b5cf6; border-color: #c4b5fd; }
+.at-btn--review .at-label { color: #8b5cf6; }
+.at-btn--review:hover { background: #f5f3ff; border-color: #8b5cf6; }
+
 .at-btn .mic-dot {
   position: absolute;
   top: 5px;
@@ -1174,6 +1179,60 @@ body.dark .word-detail-close { color: var(--text2); }
 body.dark .word-detail-close:hover { background: var(--bg2); }
 
 /* ===== BOTTOM TOOLBAR ===== */
+/* ===== FAB "Nói & chấm" — nút nổi tròn trên trang luyện (image 4) ===== */
+.speak-fab {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--toolbar-h) + 14px);
+  transform: translateX(-50%);
+  z-index: 31;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 22px 11px 16px;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  background: linear-gradient(135deg, #1a73e8 0%, #6c4cf1 100%);
+  box-shadow: 0 6px 20px rgba(58, 86, 233, .42), 0 2px 6px rgba(0,0,0,.12);
+  transition: transform .16s ease, box-shadow .16s ease, opacity .2s ease;
+  animation: speakFabIn .26s cubic-bezier(.34,1.56,.64,1) both;
+}
+.speak-fab:hover { transform: translateX(-50%) translateY(-2px) scale(1.04); box-shadow: 0 10px 28px rgba(58,86,233,.5); }
+.speak-fab:active { transform: translateX(-50%) scale(.97); }
+.speak-fab-ring {
+  position: absolute;
+  left: 16px;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(255,255,255,.55);
+  animation: speakFabPulse 1.9s ease-out infinite;
+  pointer-events: none;
+}
+.speak-fab-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.22);
+  font-size: 19px;
+}
+.speak-fab-label { white-space: nowrap; }
+@keyframes speakFabIn { from { opacity: 0; transform: translateX(-50%) translateY(14px) scale(.9); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+@keyframes speakFabPulse {
+  0% { box-shadow: 0 0 0 0 rgba(255,255,255,.5); }
+  70% { box-shadow: 0 0 0 13px rgba(255,255,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
+}
+/* Ẩn FAB khi panel luyện nói đang mở (đang dùng nút trong panel) hoặc khi không ở view luyện */
+#view-practice.panel-active .speak-fab { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(14px) scale(.9); }
+#view-practice[hidden] .speak-fab { display: none; }
+
 .bottom-toolbar {
   position: fixed;
   bottom: 0;
@@ -2100,7 +2159,7 @@ body.dark .pop--word .pop-phon-c { color: #ffd966; }
 body.dark .pop--word .pop-save.saved { background: rgba(52,168,83,.18); border-color: #34a853; color: #81c995; }
 
 /* Hover popup (di chuột vào từ — A6): gọn hơn popup click */
-.pop--hover { gap: 5px; min-width: 160px; max-width: 260px; padding: 9px 11px; }
+.pop--hover { gap: 6px; min-width: 210px; max-width: 280px; padding: 10px 12px; }
 .pop--hover .pop-head { display: flex; align-items: center; gap: 7px; }
 .pop--hover .pop-word { font-size: 15px; font-weight: 700; color: #1a73e8; }
 .pop--hover .pop-trans { font-size: 12.5px; color: #137333; line-height: 1.35; min-height: 16px; }
@@ -2982,6 +3041,50 @@ body.dark .upgrade-plan-features { color: #9aa0a6; }
   text-align: center; font-size: 12px; color: #80868b; margin: 0;
 }
 .upgrade-contact a { color: #1a73e8; }
+
+/* Khối thông tin thanh toán (hiện khi bấm "Chọn Pro") */
+.pay-info {
+  margin: 14px 0 8px; padding: 14px; border: 1px solid #dadce0; border-radius: 12px;
+  background: #f8fbff; display: flex; flex-direction: column; gap: 8px;
+}
+.pay-info-title { margin: 0; font-size: 15px; }
+.pay-info-price { font-weight: 700; color: #137333; font-size: 14px; }
+.pay-info-rows { display: flex; flex-direction: column; gap: 5px; }
+.pay-info-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.pay-info-row span { color: #5f6368; }
+.pay-info-row b { color: #202124; word-break: break-all; text-align: right; }
+.pay-info-qr { display: block; max-width: 180px; margin: 4px auto 0; border-radius: 8px; border: 1px solid #e0e0e0; }
+.pay-info-note { margin: 4px 0 0; font-size: 12px; color: #b06000; }
+.pay-flow { margin: 14px 0 8px; padding: 14px; border: 1px solid #dadce0; border-radius: 12px; background: #f8fbff; }
+.pay-methods { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.pay-method-btn { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid #c9d6f0; border-radius: 12px; background: #fff; font-weight: 600; font-size: 14px; cursor: pointer; text-align: left; transition: background .12s, border-color .12s; }
+.pay-method-btn:hover { background: #eef4ff; border-color: #2563EB; }
+.pay-info-title { margin: 0 0 6px; font-size: 15px; }
+body.dark .pay-flow { background: rgba(100,130,255,.08); border-color: #33333d; }
+body.dark .pay-method-btn { background: #1c1c22; border-color: #33333d; color: #e8eaed; }
+body.dark .pay-info { background: rgba(100,130,255,.08); border-color: #33333d; }
+body.dark .pay-info-row b { color: #e8eaed; }
+body.dark .pay-info-row span { color: #9aa0a6; }
+
+/* Pro upgrade UI — tinh chỉnh kiểu sàn TMĐT (icon + nhãn + chip tiền tệ + thẻ giá) */
+.pay-method-btn .pm-ico { font-size: 18px; }
+.pay-method-btn .pm-label { flex: 1; }
+.pay-method-btn .pm-cur { font-size: 11px; font-weight: 700; color: #2563EB; background: #eef4ff; border: 1px solid #c9d6f0; border-radius: 999px; padding: 2px 9px; }
+body.dark .pay-method-btn .pm-cur { background: rgba(85,128,255,.14); border-color: #33333d; color: #8AACFF; }
+.pay-info-price { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: linear-gradient(135deg,#e8f0fe,#d2e3fc); border: 1px solid #c9d6f0; margin-bottom: 10px; }
+.pay-info-price span { color: #1a3a8f; font-weight: 600; font-size: 13px; }
+.pay-info-price b { color: #1a73e8; font-weight: 800; font-size: 20px; }
+body.dark .pay-info-price { background: rgba(85,128,255,.12); border-color: #33333d; }
+body.dark .pay-info-price span { color: #c9d6f0; }
+body.dark .pay-info-price b { color: #8AACFF; }
+.upgrade-plan--pro { box-shadow: 0 6px 20px rgba(26,115,232,.18); }
+/* Nội dung CK (Verwendungszweck) — xếp DỌC (nhãn trên, mã dưới) để mã KHÔNG bị xuống dòng lẻ ký tự */
+.pay-info-row--ref { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 6px; padding: 8px 10px; background: #fff7e0; border: 1px solid #f5d98a; border-radius: 8px; }
+.pay-info-row--ref span { color: #92600a; font-weight: 600; }
+.pay-info-row--ref b { color: #92600a; font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; letter-spacing: 1px; font-size: 17px; text-align: left; white-space: nowrap; word-break: normal; max-width: 100%; overflow-x: auto; }
+body.dark .pay-info-row--ref { background: rgba(240,164,41,.12); border-color: rgba(240,164,41,.35); }
+body.dark .pay-info-row--ref span, body.dark .pay-info-row--ref b { color: #f0c46a; }
+.usage-bar-fill--ok { background: #2dc98c !important; }
 
 /* ============================================================
    FEATURE: FLASHCARD SRS (improved)

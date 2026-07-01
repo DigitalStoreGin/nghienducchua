@@ -4,7 +4,9 @@
   root.SD = root.SD || {};
   const KEY = 'sd_data_v1';
   const DEFAULTS = {
-    settings: { repeat: 3, autoNext: true, autoRecord: true, segPause: true, rate: 1, offsetMs: 0, engine: 'webspeech', whisperModel: 'auto', useSileroVad: false, nativeLang: 'vi', targetLang: 'de', videoSubs: true, extEnabled: true, uiLang: 'vi', deeplKey: '', openrouterKey: '' },
+    settings: { repeat: 3, autoNext: true, autoRecord: true, segPause: true, rate: 1, offsetMs: 0, engine: 'webspeech', whisperModel: 'auto', useSileroVad: false, nativeLang: 'vi', targetLang: 'de', videoSubs: true, extEnabled: true, autoOpenPanel: true, uiLang: 'vi', deeplKey: '', openrouterKey: '',
+      // Kiểu phụ đề trên video (Language Reactor style) — chỉnh trong bánh răng ⚙ trên player.
+      subStyle: { font: 'sans', deColor: '#ffffff', trColor: '#ffd966', sizePct: 100, bgColor: '#000000', bgOpacity: 0, winColor: '#000000', winOpacity: 80 } },
     history: [], savedWords: [], favorites: [], savedSentences: [],
   };
   function get() {

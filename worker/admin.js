@@ -14,6 +14,8 @@
  *   ADMIN_KEY            (đã có) — chỉ dùng cho /admin/bootstrap lần đầu
  */
 
+import { DEFAULT_PRO_EMAIL } from './index.js';
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -38,7 +40,7 @@ async function pbkdf2(password, salt, iterations) {
 }
 async function hashPassword(password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iterations = 150000;
+  const iterations = 10000; // Cloudflare Workers CPU limit — verifyPassword handles any stored iteration count
   const hash = await pbkdf2(password, salt, iterations);
   return `pbkdf2$${iterations}$${b64(salt)}$${b64(hash)}`;
 }
@@ -170,7 +172,7 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     const rows = await sbGet(env, `admin_users?email=eq.${encodeURIComponent(email)}&select=*`);
     const u = rows && rows[0];
     const fail = () => json({ error: 'invalid_credentials' }, 401);
-    if (!u) { await pbkdf2('dummy', enc.encode('dummy'), 150000); return fail(); } // chống timing
+    if (!u) { await pbkdf2('dummy', enc.encode('dummy'), 10000); return fail(); } // chống timing
     if (u.locked_until && new Date(u.locked_until).getTime() > Date.now()) return json({ error: 'locked', message: 'Tài khoản tạm khoá, thử lại sau.' }, 423);
     const okPw = await verifyPassword(String(body.password || ''), u.password_hash);
     if (!okPw) {
@@ -199,7 +201,10 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       await sbPatch(env, 'admin_sessions', `id=eq.${admin.jti}`, { revoked: true });
       return json({ success: true });
     }
-    case '/admin/me': return json({ email: admin.email, role: admin.role });
+    case '/admin/me': {
+      const meRows = await sbGet(env, `admin_users?id=eq.${admin.sub}&select=totp_enabled`);
+      return json({ email: admin.email, role: admin.role, totp_enabled: !!(meRows[0] && meRows[0].totp_enabled) });
+    }
     case '/admin/refresh': {
       const jti = crypto.randomUUID();
       const expSec = Math.floor(Date.now() / 1000) + 60 * 60;
@@ -228,14 +233,26 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       const secret = randomBase32(32);
       await sbPatch(env, 'admin_users', `id=eq.${admin.sub}`, { totp_secret: secret, totp_enabled: false });
       await audit(env, admin.sub, 'auth.2fa_enroll', 'admin', admin.sub, null, null, ip);
-      const label = encodeURIComponent('NghienDe Admin:' + admin.email);
-      return json({ secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=NghienDe` });
+      const label = encodeURIComponent('nghienducchua:' + admin.email);
+      return json({ secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=nghienducchua` });
     }
     case '/admin/2fa/verify': {
       const rows = await sbGet(env, `admin_users?id=eq.${admin.sub}&select=totp_secret`);
       if (!rows[0] || !await verifyTOTP(rows[0].totp_secret, body.totp)) return json({ error: 'invalid_totp' }, 400);
       await sbPatch(env, 'admin_users', `id=eq.${admin.sub}`, { totp_enabled: true });
       await audit(env, admin.sub, 'auth.2fa_enable', 'admin', admin.sub, null, null, ip);
+      return json({ success: true });
+    }
+    case '/admin/2fa/disable': {
+      // Tắt 2FA: yêu cầu xác thực lại bằng mật khẩu HOẶC mã TOTP hiện tại.
+      const rows = await sbGet(env, `admin_users?id=eq.${admin.sub}&select=totp_enabled,password_hash,totp_secret`);
+      const u0 = rows && rows[0];
+      if (!u0 || !u0.totp_enabled) return json({ success: true }); // đã tắt sẵn
+      const okPw = body.password && await verifyPassword(String(body.password), u0.password_hash);
+      const okTotp = body.totp && await verifyTOTP(u0.totp_secret, body.totp);
+      if (!okPw && !okTotp) return json({ error: 'reauth_required' }, 401);
+      await sbPatch(env, 'admin_users', `id=eq.${admin.sub}`, { totp_enabled: false, totp_secret: null });
+      await audit(env, admin.sub, 'auth.2fa_disable', 'admin', admin.sub, null, null, ip);
       return json({ success: true });
     }
 
@@ -263,8 +280,9 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     // ───────── Users ─────────
     case '/admin/users/list': {
       const q = String(body.q || '').trim();
-      let query = 'profiles?select=id,email,full_name,plan,created_at,model_source,banned&order=created_at.desc&limit=100';
-      if (q) query = `profiles?select=id,email,full_name,plan,created_at,model_source,banned&email=ilike.*${encodeURIComponent(q)}*&limit=100`;
+      const sel = 'select=id,email,full_name,plan,created_at,model_source,banned,translation_provider,premium_translate';
+      let query = `profiles?${sel}&order=created_at.desc&limit=100`;
+      if (q) query = `profiles?${sel}&email=ilike.*${encodeURIComponent(q)}*&limit=100`;
       return json({ items: await sbGet(env, query) });
     }
     case '/admin/users/detail': {
@@ -297,6 +315,14 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       const banned = pathname.endsWith('/ban');
       await sbPatch(env, 'profiles', `id=eq.${body.user_id}`, { banned });
       await audit(env, admin.sub, banned ? 'user.ban' : 'user.unban', 'user', body.user_id, null, null, ip);
+      return json({ success: true });
+    }
+    case '/admin/users/signout': {
+      // Thu hồi phiên: set mốc revoke (Worker chặn token cũ) + revoke refresh token qua Supabase admin.
+      if (!isUuid(body.user_id)) return json({ error: 'bad_id' }, 400);
+      await sbPatch(env, 'profiles', `id=eq.${body.user_id}`, { sessions_revoked_at: new Date().toISOString() });
+      try { await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${body.user_id}/logout`, { method: 'POST', headers: sbHeaders(env) }); } catch (_) {}
+      await audit(env, admin.sub, 'user.signout', 'user', body.user_id, null, null, ip);
       return json({ success: true });
     }
     case '/admin/users/delete': {
@@ -365,6 +391,56 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     case '/admin/keys/disable': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbPatch(env, 'api_keys', `id=eq.${body.id}`, { status: 'disabled' }); return json({ success: true }); }
     case '/admin/keys/delete': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbDelete(env, 'api_keys', `id=eq.${body.id}`); await audit(env, admin.sub, 'key.delete', 'api_key', body.id, null, null, ip); return json({ success: true }); }
 
+    // ───────── Catalog model (9Router-style: thêm/bật/tắt model theo provider) ─────────
+    case '/admin/models/list': {
+      const rows = await sbGet(env, 'api_models?select=*&order=capability.asc,priority.asc,display_name.asc');
+      return json({ items: rows });
+    }
+    case '/admin/models/add': {
+      if (!body.provider_id || !body.model_id || !body.capability) return json({ error: 'bad_args' }, 400);
+      const row = {
+        provider_id: body.provider_id, model_id: String(body.model_id).slice(0, 200),
+        display_name: body.display_name || body.model_id, capability: body.capability,
+        enabled: body.enabled !== false, priority: body.priority || 100,
+        cost_per_mtok: body.cost_per_mtok || 0, notes: body.notes || null,
+      };
+      const r = await sbInsert(env, 'api_models', row);
+      await audit(env, admin.sub, 'model.add', 'api_model', r && r[0] && r[0].id, null, { provider_id: body.provider_id, model_id: row.model_id, capability: body.capability }, ip);
+      return r ? json({ success: true, id: r[0] && r[0].id }) : json({ error: 'db_error_or_duplicate' }, 500);
+    }
+    case '/admin/models/update': {
+      if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400);
+      const patch = {};
+      ['display_name', 'enabled', 'priority', 'cost_per_mtok', 'notes', 'model_id', 'capability'].forEach((k) => { if (body[k] !== undefined) patch[k] = body[k]; });
+      await sbPatch(env, 'api_models', `id=eq.${body.id}`, patch);
+      await audit(env, admin.sub, 'model.update', 'api_model', body.id, null, Object.keys(patch), ip);
+      return json({ success: true });
+    }
+    case '/admin/models/delete': { if (!isUuid(body.id)) return json({ error: 'bad_id' }, 400); await sbDelete(env, 'api_models', `id=eq.${body.id}`); await audit(env, admin.sub, 'model.delete', 'api_model', body.id, null, null, ip); return json({ success: true }); }
+
+    // ───────── Thống kê usage (dashboard) ─────────
+    case '/admin/usage/summary': {
+      const days = Math.min(Math.max(parseInt(body.days, 10) || 30, 1), 365);
+      const data = await rpc(env, 'usage_summary', { p_days: days });
+      return json({ days, items: Array.isArray(data) ? data : [] });
+    }
+    // ───────── Analytics chuyên sâu (biểu đồ theo ngày / top user / công suất) ─────────
+    case '/admin/analytics/timeseries': {
+      const days = Math.min(Math.max(parseInt(body.days, 10) || 14, 1), 90);
+      const data = await rpc(env, 'usage_timeseries', { p_days: days });
+      return json({ days, items: Array.isArray(data) ? data : [] });
+    }
+    case '/admin/analytics/top-users': {
+      const days = Math.min(Math.max(parseInt(body.days, 10) || 30, 1), 90);
+      const limit = Math.min(Math.max(parseInt(body.limit, 10) || 10, 1), 100);
+      const data = await rpc(env, 'usage_by_user', { p_days: days, p_limit: limit });
+      return json({ days, items: Array.isArray(data) ? data : [] });
+    }
+    case '/admin/analytics/capacity': {
+      const data = await rpc(env, 'capacity_estimate', {});
+      return json({ capacity: data || {} });
+    }
+
     case '/admin/health': {
       const out = { worker: { ok: true }, supabase: { ok: false }, providers: [] };
       try { const r = await fetch(`${env.SUPABASE_URL}/rest/v1/plans?select=name&limit=1`, { headers: sbHeaders(env) }); out.supabase.ok = r.ok; } catch (_) {}
@@ -374,6 +450,14 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       out.providers = Object.values(byProv);
       out.groqEnvKeys = [env.GROQ_API_KEY_1, env.GROQ_API_KEY_2, env.GROQ_API_KEY_3, env.GROQ_API_KEY_4, env.GROQ_API_KEY_5].filter(Boolean).length;
       out.deepl = !!env.DEEPL_API_KEY; out.openrouter = !!env.OPENROUTER_API_KEY;
+      // Trạng thái email (vấn đề #8): có cấu hình key không + lỗi gần nhất (lưu ở ALERT_KV).
+      out.email = { brevo: !!env.BREVO_API_KEY, resend: !!env.RESEND_API_KEY, sender: env.BREVO_SENDER || 'thoatran21012@gmail.com', last_error: null };
+      try { if (env.ALERT_KV) { const e = await env.ALERT_KV.get('email_last_error'); if (e) out.email.last_error = JSON.parse(e); } } catch (_) {}
+      // Số model theo capability (cho biết ghi âm/chấm/dịch đã có model chưa).
+      const models = await sbGet(env, 'api_models?select=capability,enabled');
+      const mc = {};
+      models.forEach((m) => { const c = mc[m.capability] = mc[m.capability] || { total: 0, enabled: 0 }; c.total++; if (m.enabled) c.enabled++; });
+      out.models = mc;
       return json(out);
     }
 
@@ -384,13 +468,47 @@ export async function handleAdminV2(request, pathname, env, ctx) {
     }
     case '/admin/payout-config/update': {
       const fields = {};
-      ['beneficiary_name', 'iban', 'bic', 'bank_name', 'paypal_link', 'sepay_account_number', 'sepay_bank_code', 'iban_ref_prefix', 'sepay_ref_prefix', 'price_table'].forEach((k) => { if (body[k] !== undefined) fields[k] = body[k]; });
+      ['beneficiary_name', 'iban', 'bic', 'bank_name', 'paypal_link', 'sepay_account_number', 'sepay_bank_code', 'iban_ref_prefix', 'sepay_ref_prefix', 'price_table', 'qr_image', 'payment_methods'].forEach((k) => { if (body[k] !== undefined) fields[k] = body[k]; });
       fields.updated_at = new Date().toISOString();
       const existing = await sbGet(env, 'payout_config?select=id&limit=1');
       if (existing[0]) await sbPatch(env, 'payout_config', `id=eq.${existing[0].id}`, fields);
       else await sbInsert(env, 'payout_config', fields, 'return=minimal');
       await audit(env, admin.sub, 'payout_config.update', 'config', null, null, Object.keys(fields), ip);
       return json({ success: true });
+    }
+    // ───────── Doanh thu: đơn Pro (kèm thông tin khách) ─────────
+    case '/admin/revenue/list': {
+      const rows = await sbGet(env, 'payments?select=reference_code,customer_name,customer_email,plan,amount,currency,status,created_at,paid_at&order=created_at.desc&limit=200');
+      const paid = rows.filter((p) => p.status === 'paid');
+      const totals = {}; paid.forEach((p) => { const c = p.currency || 'EUR'; totals[c] = (totals[c] || 0) + Number(p.amount || 0); });
+      return json({ items: rows, totals, paid_count: paid.length });
+    }
+    // ───────── Email template (Pro) ─────────
+    case '/admin/email-template/get': {
+      const rows = await sbGet(env, "app_settings?key=eq.email_pro&select=value");
+      // Chưa lưu → trả mẫu mặc định (thương hiệu) để admin thấy & sửa đúng nội dung đang gửi.
+      const value = (rows[0] && rows[0].value) || DEFAULT_PRO_EMAIL;
+      return json({ value, is_default: !(rows[0] && rows[0].value) });
+    }
+    case '/admin/email-template/set': {
+      const value = { subject: String(body.subject || '').slice(0, 300), html: String(body.html || '').slice(0, 60000) };
+      await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings`, { method: 'POST', headers: { ...sbHeaders(env), Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ key: 'email_pro', value, updated_at: new Date().toISOString() }) });
+      await audit(env, admin.sub, 'email_template.set', 'email', 'email_pro', null, null, ip);
+      return json({ success: true });
+    }
+    // ───────── User 360°: chi tiết hồ sơ + thiết bị + mạng + lịch sử đăng nhập ─────────
+    case '/admin/users/detail': {
+      if (!isUuid(body.user_id)) return json({ error: 'bad_id' }, 400);
+      const uid = body.user_id;
+      const prof = (await sbGet(env, `profiles?id=eq.${uid}&select=*`))[0] || null;
+      const events = await sbGet(env, `login_events?user_id=eq.${uid}&select=*&order=ts.desc&limit=50`);
+      // Phiên/thiết bị hoạt động: ping trong 15 phút gần nhất, đếm device khác nhau.
+      const since = new Date(Date.now() - 15 * 60000).toISOString();
+      const active = events.filter((e) => e.event === 'ping' && e.ts > since);
+      const devices = new Set(active.map((e) => (e.device || '') + '|' + (e.os || '') + '|' + (e.browser || '')));
+      const anomaly = events.length >= 2 && events[0].country && events[1].country && events[0].country !== events[1].country;
+      const subs = await sbGet(env, `subscriptions?user_id=eq.${uid}&select=plan,status,current_period_end&order=created_at.desc&limit=1`);
+      return json({ profile: prof, events, active_sessions: devices.size, anomaly, subscription: subs[0] || null });
     }
     case '/admin/payments/list': {
       const rows = await sbGet(env, 'payments?select=*&order=created_at.desc&limit=100');
@@ -420,6 +538,38 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       return json({ success: true });
     }
 
+    // ───────── Cấu hình dịch (provider mặc định cho gói trả phí) ─────────
+    case '/admin/settings/translation/get': {
+      const rows = await sbGet(env, "app_settings?key=eq.translation&select=value");
+      const value = (rows[0] && rows[0].value) || { paid_provider: 'gemini', free_source: 'free' };
+      // Kèm danh sách provider đang bật (dùng cho dropdown ở UI).
+      const providers = await sbGet(env, 'api_providers?select=id,display_name,enabled,kind&order=display_name.asc');
+      return json({ value, providers });
+    }
+    case '/admin/settings/translation/set': {
+      const value = {
+        paid_provider: String(body.paid_provider || 'gemini'),
+        free_source: String(body.free_source || 'free'),
+      };
+      await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings`, {
+        method: 'POST',
+        headers: { ...sbHeaders(env), Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({ key: 'translation', value, updated_at: new Date().toISOString() }),
+      });
+      await audit(env, admin.sub, 'settings.translation', 'config', 'translation', null, value, ip);
+      return json({ success: true, value });
+    }
+    case '/admin/users/translation': {
+      if (!isUuid(body.user_id)) return json({ error: 'bad_id' }, 400);
+      const patch = {};
+      // provider: '' / null = theo mặc định hệ thống.
+      if (body.translation_provider !== undefined) patch.translation_provider = body.translation_provider || null;
+      if (body.premium_translate !== undefined) patch.premium_translate = !!body.premium_translate;
+      await sbPatch(env, 'profiles', `id=eq.${body.user_id}`, patch);
+      await audit(env, admin.sub, 'user.translation', 'user', body.user_id, null, patch, ip);
+      return json({ success: true });
+    }
+
     default: return json({ error: 'unknown_admin_action', pathname }, 404);
   }
 }
@@ -430,7 +580,18 @@ export async function handleSepayWebhook(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const key = auth.startsWith('Apikey ') ? auth.slice(7).trim() : '';
   if (!env.SEPAY_WEBHOOK_KEY || key !== env.SEPAY_WEBHOOK_KEY) return json({ success: false, error: 'unauthorized' }, 401);
-  const body = await request.json().catch(() => ({}));
+  // Đọc raw để (tuỳ chọn) xác thực HMAC-SHA256 khi đã cấu hình SEPAY_HMAC_SECRET (vấn đề #4/#5).
+  const raw = await request.text();
+  if (env.SEPAY_HMAC_SECRET) {
+    const sig = (request.headers.get('X-Sepay-Signature') || request.headers.get('X-Signature') || '').trim().toLowerCase();
+    try {
+      const k = await crypto.subtle.importKey('raw', enc.encode(env.SEPAY_HMAC_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const mac = await crypto.subtle.sign('HMAC', k, enc.encode(raw));
+      const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      if (!sig || sig !== hex) return json({ success: false, error: 'bad_signature' }, 401);
+    } catch (_) { return json({ success: false, error: 'sig_error' }, 401); }
+  }
+  let body = {}; try { body = JSON.parse(raw || '{}'); } catch (_) { body = {}; }
   const txnId = String(body.id || body.referenceCode || '');
   const content = String(body.content || body.description || '');
   const amount = Number(body.transferAmount || body.amount || 0);
@@ -466,5 +627,9 @@ export async function scheduledAdmin(env) {
     }
     // Dọn session hết hạn.
     await sbDelete(env, 'admin_sessions', `expires_at=lt.${new Date(now - 864e5).toISOString()}`);
+    // Gộp usage_rollup_daily cho NGÀY HÔM QUA (vấn đề #4 — bảng trước đây không được điền).
+    try { await rpc(env, 'rollup_usage_daily', {}); } catch (e) { console.error('[ROLLUP-FAIL]', (e && e.message) || e); }
+    // Hạ gói Pro đã hết hạn về free (license enforcement).
+    try { await rpc(env, 'downgrade_expired_plans', {}); } catch (e) { console.error('[DOWNGRADE-FAIL]', (e && e.message) || e); }
   } catch (_) {}
 }
