@@ -416,6 +416,22 @@ export async function handleAdminV2(request, pathname, env, ctx) {
       const data = await rpc(env, 'usage_summary', { p_days: days });
       return json({ days, items: Array.isArray(data) ? data : [] });
     }
+    // ───────── Analytics chuyên sâu (biểu đồ theo ngày / top user / công suất) ─────────
+    case '/admin/analytics/timeseries': {
+      const days = Math.min(Math.max(parseInt(body.days, 10) || 14, 1), 90);
+      const data = await rpc(env, 'usage_timeseries', { p_days: days });
+      return json({ days, items: Array.isArray(data) ? data : [] });
+    }
+    case '/admin/analytics/top-users': {
+      const days = Math.min(Math.max(parseInt(body.days, 10) || 30, 1), 90);
+      const limit = Math.min(Math.max(parseInt(body.limit, 10) || 10, 1), 100);
+      const data = await rpc(env, 'usage_by_user', { p_days: days, p_limit: limit });
+      return json({ days, items: Array.isArray(data) ? data : [] });
+    }
+    case '/admin/analytics/capacity': {
+      const data = await rpc(env, 'capacity_estimate', {});
+      return json({ capacity: data || {} });
+    }
 
     case '/admin/health': {
       const out = { worker: { ok: true }, supabase: { ok: false }, providers: [] };
